@@ -27,7 +27,8 @@ func (w *sceneWalk) tabBars() {
 		return
 	}
 	rgba := func(c [3]uint8) color.RGBA { return color.RGBA{c[0], c[1], c[2], 255} }
-	activeBg, inactiveBg := rgba(w.active), rgba(w.inactive)
+	fill := tabBarFill(w.inactive, w.bg, w.active)
+	activeBg, inactiveBg := rgba(w.active), rgba(fill)
 	activeInk, inactiveInk := overlaydraw.InkFor(activeBg), overlaydraw.MutedInk(inactiveBg)
 	for _, bar := range w.s.TabBars {
 		if bar.Rect.W <= 0 || bar.Rect.H <= 0 {
@@ -38,7 +39,7 @@ func (w *sceneWalk) tabBars() {
 		// windows (with gaps), at most the bar height; bottom square.
 		radius := min(float32(math.Round(float64(bar.Radius)*w.scale)), float32(full.Dy()))
 		w.square = cornersBottom
-		w.fillRounded(full, w.inactive, radius)
+		w.fillRounded(full, fill, radius)
 		for i, tab := range bar.Tabs {
 			rect := w.physRect(tab.Rect.X, tab.Rect.Y, tab.Rect.W, tab.Rect.H)
 			bg, ink := inactiveBg, inactiveInk
@@ -63,6 +64,30 @@ func (w *sceneWalk) tabBars() {
 		}
 	}
 	w.square = 0
+}
+
+// tabBarBlend is the share of Border.Active in a bar fill that would
+// otherwise vanish into the background.
+const tabBarBlend = 0.25
+
+// tabBarFill is the bar colour: Border.Inactive, or, when that is (nearly)
+// the output background, Border.Active blended over the background at
+// tabBarBlend, so the bar stays visible.
+func tabBarFill(inactive, bg, active [3]uint8) [3]uint8 {
+	near := true
+	for i := range inactive {
+		if d := int(inactive[i]) - int(bg[i]); d > 4 || d < -4 {
+			near = false
+		}
+	}
+	if !near {
+		return inactive
+	}
+	var c [3]uint8
+	for i := range c {
+		c[i] = uint8(math.Round(tabBarBlend*float64(active[i]) + (1-tabBarBlend)*float64(bg[i])))
+	}
+	return c
 }
 
 // tabSquare is the square-corner mask of a window or flash at r (logical):

@@ -2,9 +2,11 @@ package vulkan
 
 import (
 	"image"
+	"image/color"
 	"math"
 	"testing"
 
+	"github.com/bnema/neferwl/internal/adapters/overlaydraw"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/stretchr/testify/require"
 )
@@ -188,4 +190,31 @@ func TestTabBarDelta(t *testing.T) {
 			t.Errorf("%s: %v, want %v", tc.name, got, tc.want)
 		}
 	}
+}
+
+// A bar whose Border.Inactive is (nearly) the background is Border.Active
+// over the background at 25 %; a distinct one is kept. Its inactive title
+// ink keeps the contrast against that fill.
+func TestTabBarFill(t *testing.T) {
+	bg, active := [3]uint8{0x11, 0x11, 0x11}, [3]uint8{0x99, 0x99, 0x99}
+	for _, c := range []struct {
+		inactive, want [3]uint8
+	}{
+		{bg, [3]uint8{0x33, 0x33, 0x33}},
+		{[3]uint8{0x13, 0x10, 0x14}, [3]uint8{0x33, 0x33, 0x33}},
+		{[3]uint8{0x22, 0x22, 0x22}, [3]uint8{0x22, 0x22, 0x22}},
+	} {
+		got := tabBarFill(c.inactive, bg, active)
+		require.Equal(t, c.want, got, "inactive %v", c.inactive)
+		fill := color.RGBA{got[0], got[1], got[2], 255}
+		require.Equal(t, color.RGBA{192, 192, 192, 255}, overlaydraw.MutedInk(fill))
+	}
+
+	// Drawn: the default inactive bar on the default background.
+	r := newTestRenderer(t, 256, 64)
+	defer r.Close()
+	s := tabScene("b")
+	s.Background, s.Border.Active, s.Border.Inactive = "#111111", "#999999", "#111111"
+	got := r.draws(s, nil, newDamage(&target{}, s, image.Rect(0, 0, 256, 64)))
+	require.Equal(t, uint8(0x33), uint8(got[0].pc.color[0]*255+0.5), "visible bar")
 }

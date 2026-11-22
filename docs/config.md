@@ -570,7 +570,7 @@ A tabbed column shows one of its windows at a time, under a title bar with one t
 
 - `toggle-column-tabbed` (`cmd+t`) turns the focused column into tabs, or back into a stack with equal row heights. It does nothing on a float, a stash window or a column with one window.
 - `focus-window-up/down` switches tabs. At the first or last tab it leaves the column like in a stack. `move-window-up/down` reorders the tabs.
-- The bar shows each window's title in `font`, cut with `…` when too long, in an ink that contrasts with the bar. The visible tab is filled with `border.active`, the rest of the bar with `border.inactive`. Its height follows the [hint](#hint-mode) font size.
+- The bar shows each window's title in `font`, cut with `…` when too long, in an ink that contrasts with the bar. The visible tab is filled with `border.active`, the rest of the bar with `border.inactive`; when that is the background colour (the default), with `border.active` blended over the background at 25 %. Its height follows the [hint](#hint-mode) font size.
 - With `layout.gaps`, the bar is the visible window's attached title bar: it sits 2 pixels above the window, its top corners are rounded with `border.radius` and its bottom corners are square, and the window below loses its top rounding. The active tab is rounded only where it meets the bar's top corners. Without gaps, the bar and the window are square and flush.
 - A click on a tab shows it; the window under it gets no click. `cmd` + drag on a tab drags that window, even a hidden one.
 - Dropping a window on another window's center (`drop.window.center = tab`, the default) adds it to that window's column as a new tab and makes the whole column tabbed.
