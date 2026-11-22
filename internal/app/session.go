@@ -315,6 +315,9 @@ func (s *session) run(ctx context.Context, inject func(chan<- ports.InputEvent))
 	opts, plan, log, p, hw, km, security := s.opts, s.plan, s.log, s.p, s.hw, s.km, s.security
 	childEnv, curs, xdisplay, statePath := s.childEnv, s.curs, s.xdisplay, s.statePath
 	server, captureAllow, c, child, wsIDs, sizes, path := s.server, s.captureAllow, s.core, s.child, s.wsIDs, s.sizes, s.path
+	// The startup font is in place before core and the renderer draw text.
+	fonts := fontLoader{log: logging.For(ctx, "config")}
+	fonts.load(opts.Config.Font)
 	if opts.Session {
 		launcher.ExportSession(ctx, childEnv, logging.For(ctx, "launcher"))
 		launcher.NotifyReady(os.Getenv("NOTIFY_SOCKET"), logging.For(ctx, "launcher"))
@@ -349,7 +352,7 @@ func (s *session) run(ctx context.Context, inject func(chan<- ports.InputEvent))
 		if s.control != nil {
 			controlKeymaps = p.controlKeymaps
 		}
-		relayConfig(ctx, opts.Config, p.watched, p.filtered, p.keymaps, p.deviceConfigs, curs, p.commands, logging.For(ctx, "config"), controlKeymaps)
+		relayConfig(ctx, opts.Config, p.watched, p.filtered, p.keymaps, p.deviceConfigs, curs, p.commands, logging.For(ctx, "config"), controlKeymaps, fonts)
 	}()
 	go func() {
 		defer workers.Done()
