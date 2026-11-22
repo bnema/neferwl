@@ -69,17 +69,6 @@ func MarkArg(a Action) (op MarkOp, name string, cmd []string, ok bool) {
 	return 0, "", nil, false
 }
 
-// tileAt returns the column and row of a tile, ok false for a float,
-// a stashed window or a window not on w.
-func (w *Workspace) tileAt(id WindowID) (col, row int, ok bool) {
-	for i, c := range w.Columns {
-		if j := slices.Index(c.Windows, id); j >= 0 {
-			return i, j, true
-		}
-	}
-	return 0, 0, false
-}
-
 // isDialogParent reports whether a float of w is a dialog over id.
 func (w *Workspace) isDialogParent(id WindowID) bool {
 	return slices.ContainsFunc(w.Floats, func(f Float) bool { return f.over == id })
@@ -105,12 +94,12 @@ func SwapWindows(a *Workspace, ida WindowID, b *Workspace, idb WindowID) bool {
 	if ida == idb || !a.markable(ida) || !b.markable(idb) {
 		return false
 	}
-	if ca, ra, ok := a.tileAt(ida); ok {
-		cb, rb, ok := b.tileAt(idb)
-		if !ok {
+	if ca, ra := a.Cell(ida); ca > 0 {
+		cb, rb := b.Cell(idb)
+		if cb == 0 {
 			return false
 		}
-		a.Columns[ca].Windows[ra], b.Columns[cb].Windows[rb] = idb, ida
+		a.Columns[ca-1].Windows[ra-1], b.Columns[cb-1].Windows[rb-1] = idb, ida
 		return true
 	}
 	fa, fb := a.floatIndex(ida), b.floatIndex(idb)
@@ -131,20 +120,13 @@ func MoveTileBelow(from *Workspace, id WindowID, to *Workspace, target WindowID)
 	if focused, ok := from.Focused(); !ok || focused != id || from.OnFloat() {
 		return false
 	}
-	if _, _, ok := from.tileAt(id); !ok {
+	if c, _ := from.Cell(id); c == 0 {
 		return false
 	}
-	if _, _, ok := to.tileAt(target); !ok {
+	if c, _ := to.Cell(target); c == 0 {
 		return false
 	}
-	if taken, ok := from.takeWindow(); !ok || taken != id {
-		return false
-	}
-	// The take may have dropped a column of to: find target again.
-	col, row, _ := to.tileAt(target)
-	c := &to.Columns[col]
-	c.Windows = slices.Insert(c.Windows, row+1, id)
-	c.Shares = nil
+	Drop(from, to, id, DropSpot{Kind: DropBelow, Anchor: target})
 	to.FocusID(id)
 	return true
 }
