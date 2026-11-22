@@ -244,6 +244,16 @@ func MarkArg(a Action) (op MarkOp, name string, cmd []string, ok bool) {
 	return workspacedomain.MarkArg(a)
 }
 
+// SwapWindows calls workspace.SwapWindows.
+func SwapWindows(a *Workspace, ida WindowID, b *Workspace, idb WindowID) bool {
+	return workspacedomain.SwapWindows(a, ida, b, idb)
+}
+
+// MoveTileBelow calls workspace.MoveTileBelow.
+func MoveTileBelow(from *Workspace, id WindowID, to *Workspace, target WindowID) bool {
+	return workspacedomain.MoveTileBelow(from, id, to, target)
+}
+
 // SpawnCommands calls workspace.SpawnCommands.
 func SpawnCommands(a Action) (commands [][]string, mark string, ok bool) {
 	return workspacedomain.SpawnCommands(a)

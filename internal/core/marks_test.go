@@ -133,3 +133,83 @@ func TestMarkOverviewNoop(t *testing.T) {
 		}
 	})
 }
+
+// markMoveRig runs two outputs with mark binds on Alt+Ctrl+Shift: m marks
+// a, w swaps with a, v moves below a, o and p focus the right and left
+// outputs, d toggles the named workspace dev, whose slot runs code.
+func markMoveRig(t *testing.T) *multiRig {
+	t.Helper()
+	return startMulti(t, func(c *domain.Config) {
+		for k, a := range map[string]string{"m": "mark a", "w": "swap-mark a", "v": "move-to-mark a", "o": "focus-monitor-right", "p": "focus-monitor-left", "d": "workspace dev"} {
+			c.Binds["Alt+Ctrl+Shift+"+k] = a
+		}
+		c.Workspaces = []domain.WorkspaceConfig{{Name: "dev", Slots: []domain.SlotConfig{{Index: 1, Cells: 1, Argv: []string{"code"}}}}}
+	}, left, right)
+}
+
+// press sends a mark rig bind and returns the state it published.
+func (r *multiRig) press(t *testing.T, key string) domain.State {
+	t.Helper()
+	r.input <- ports.KeyEvent{Keysym: key, Mods: domain.ModAlt | domain.ModCtrl | domain.ModShift, Pressed: true}
+	return stateAfter(t, r.state, func(domain.State) bool { return true })
+}
+
+// swap-mark across outputs exchanges the windows; the focus stays in place,
+// on the marked window.
+func TestSwapMarkAcrossOutputs(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := markMoveRig(t)
+		r.mapApp(t, 1, "")
+		r.press(t, "o")
+		r.mapApp(t, 2, "")
+		r.mapApp(t, 3, "")
+		r.press(t, "m")
+		r.press(t, "p")
+		st := r.press(t, "w")
+		if a, b := stWindow(st, 3), stWindow(st, 1); a.Output != "DP-1" || b.Output != "DP-2" || stFocus(st) != 3 {
+			t.Fatalf("3 on %s, 1 on %s, focus %d", a.Output, b.Output, stFocus(st))
+		}
+	})
+}
+
+// move-to-mark puts the focused tile below the marked one on another
+// workspace, focused.
+func TestMoveToMarkAcrossWorkspaces(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := markMoveRig(t)
+		r.mapApp(t, 1, "")
+		r.press(t, "m")
+		r.key(t, "Next", domain.ModAlt)
+		r.mapApp(t, 2, "")
+		r.mapApp(t, 3, "")
+		st := r.press(t, "v")
+		target, moved := stWindow(st, 1), stWindow(st, 3)
+		if moved.Workspace != target.Workspace || moved.Column != target.Column || moved.Row != target.Row+1 || stFocus(st) != 3 {
+			t.Fatalf("moved %+v target %+v focus %d", moved, target, stFocus(st))
+		}
+	})
+}
+
+// A slot window does not trade places.
+func TestSwapMarkRefusesSlotWindow(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := markMoveRig(t)
+		r.mapApp(t, 1, "")
+		r.press(t, "d")
+		code := receive(t, r.spawn)
+		r.client <- ports.WindowMapped{ID: 2, Slot: slotToken(t, code)}
+		r.stateWith(t, 2)
+		r.press(t, "m")
+		r.press(t, "d")
+		r.input <- ports.KeyEvent{Keysym: "w", Mods: domain.ModAlt | domain.ModCtrl | domain.ModShift, Pressed: true}
+		synctest.Wait()
+		if len(r.state) != 0 {
+			t.Fatal("refused swap published a state")
+		}
+		// Moving the mark to 1 publishes the layout.
+		st := r.press(t, "m")
+		if w := stWindow(st, 2); w.Marks != "" || w.WorkspaceName != "dev" || stWindow(st, 1).WorkspaceName == "dev" || stWindow(st, 1).Marks != "a" {
+			t.Fatalf("slot window moved: %+v", st.Windows)
+		}
+	})
+}

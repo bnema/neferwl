@@ -110,6 +110,8 @@ func (c *Core) runMark(ctx context.Context, op MarkOp, name string, cmd []string
 		return c.layoutAction(ctx, func() Effect {
 			return Effect{Spawn: true, Commands: [][]string{cmd}, Mark: name}
 		})
+	case MarkSwap, MarkMoveTo:
+		return c.markMove(ctx, op, focused, c.markHolder(name))
 	}
 	if changed {
 		return c.publish(ctx)
@@ -129,4 +131,43 @@ func (c *Core) claimMark(v ports.WindowMapped) {
 	if target.kind == spawnMarked {
 		delete(c.placement.pending, v.Slot)
 	}
+}
+
+// slotWindow reports whether id fills a configured slot.
+func (c *Core) slotWindow(id WindowID) bool {
+	for _, st := range c.slots {
+		if st.window == id {
+			return true
+		}
+	}
+	return false
+}
+
+// markMove swaps the focused window with the holder of a mark, or moves it
+// below the holder, across workspaces and outputs. A refused move is a
+// no-op.
+func (c *Core) markMove(ctx context.Context, op MarkOp, id, holder WindowID) error {
+	if id == 0 || holder == 0 || id == holder || c.slotWindow(id) || c.slotWindow(holder) {
+		return nil
+	}
+	sa, wa := c.screenOf(id)
+	sb, wb := c.screenOf(holder)
+	if wa == nil || wb == nil {
+		return nil
+	}
+	return c.layoutAction(ctx, func() Effect {
+		if op == MarkSwap {
+			if !SwapWindows(wa, id, wb, holder) {
+				return Effect{}
+			}
+		} else if !MoveTileBelow(wa, id, wb, holder) {
+			return Effect{}
+		}
+		sa.mon.normalize()
+		sb.mon.normalize()
+		if op == MarkMoveTo {
+			c.raise(id)
+		}
+		return Effect{}
+	})
 }
