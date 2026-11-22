@@ -202,15 +202,21 @@ func consumeScenes(ctx context.Context, scenes <-chan []domain.Scene, configErro
 		case t := <-binds:
 			logInputTrace(log, t)
 		case err := <-configErrors:
-			// A warning leaves the config in effect; anything else rejected it.
-			if w, ok := errors.AsType[domain.ConfigWarning](err); ok {
-				wlog := logging.For(ctx, w.Component)
-				wlog.Warn().Msg(w.Msg)
-				continue
-			}
-			configLog.Warn().Err(err).Msg("config rejected")
+			logConfigError(ctx, configLog, err)
 		}
 	}
+}
+
+// logConfigError logs an error core reports about a config: a warning
+// leaves the config in effect and is logged by its component; anything
+// else rejected it.
+func logConfigError(ctx context.Context, configLog zerowrap.Logger, err error) {
+	if w, ok := errors.AsType[domain.ConfigWarning](err); ok {
+		wlog := logging.For(ctx, w.Component)
+		wlog.Warn().Msg(w.Msg)
+		return
+	}
+	configLog.Warn().Err(err).Msg("config rejected")
 }
 
 // logInputTrace logs a bind dispatch or a seat input reset at debug level.
