@@ -1,7 +1,5 @@
 package workspace
 
-import "github.com/bnema/neferwl/internal/domain"
-
 // ToggleTabbed shows the focused column as tabs, or back as a stack. It does
 // nothing on a float, a stash window or a one-window column. Both ways the
 // rows lose their set heights: tabs have none, and the stack comes back as an
@@ -19,13 +17,9 @@ func (w *Workspace) ToggleTabbed() {
 }
 
 // TabInset is what a tabbed column's bar takes from the top of its visible
-// tab: the bar and, with gaps, domain.TabBarGap (at most the tile gap)
-// between the bar and the window.
+// tab: the bar, flush with the window.
 func (w *Workspace) TabInset() int {
-	if w.TabBar <= 0 {
-		return 0
-	}
-	return w.TabBar + min(w.Gap(), domain.TabBarGap)
+	return max(w.TabBar, 0)
 }
 
 // TabWindow moves the focused tile into the neighbor column in direction

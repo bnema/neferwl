@@ -206,15 +206,14 @@ func TestTabbedAppendLayoutAllocs(t *testing.T) {
 	}
 }
 
-// With gaps, domain.TabBarGap (not the tile gap) separates the bar from the
-// visible tab.
+// With gaps, the visible tab is flush under its bar, with no top inset.
 func TestTabbedPlacementWithGaps(t *testing.T) {
 	w := tabbedWorkspace(OverflowScroll)
 	w.SetGaps(8)
 	col := w.columnRects()[0]
-	want := Rect{X: col.X, Y: col.Y + 20 + domain.TabBarGap, W: col.W, H: col.H - 20 - domain.TabBarGap}
-	if p := tabPlacement(t, w.Layout(), 2); p.Rect != want {
-		t.Fatalf("visible tab %+v, want %+v", p.Rect, want)
+	want := Rect{X: col.X, Y: col.Y + 20, W: col.W, H: col.H - 20}
+	if p := tabPlacement(t, w.Layout(), 2); p.Rect != want || p.Inset != domain.SideAll&^domain.SideTop {
+		t.Fatalf("visible tab %+v inset %v, want %+v", p.Rect, p.Inset, want)
 	}
 }
 

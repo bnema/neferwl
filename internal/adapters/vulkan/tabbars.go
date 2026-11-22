@@ -116,7 +116,7 @@ func (w *sceneWalk) tabSquare(r domain.Rect) uint32 {
 func tabRing(bars []domain.TabBar, r domain.Rect) (domain.Rect, bool) {
 	for i := range bars {
 		b := &bars[i].Rect
-		if gap := r.Y - b.Y - b.H; r.X == b.X && r.W == b.W && gap >= 0 && gap <= domain.TabBarGap {
+		if r.Y == b.Y+b.H && r.X == b.X && r.W == b.W {
 			return domain.Rect{X: r.X, Y: b.Y, W: r.W, H: r.Y + r.H - b.Y}, true
 		}
 	}

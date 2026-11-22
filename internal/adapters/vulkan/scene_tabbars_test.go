@@ -94,16 +94,16 @@ func TestSceneTabBarsRounded(t *testing.T) {
 		require.Equal(t, c.want, got[at].square, "active tab %d", c.active)
 	}
 
-	// The visible tab 2 px under the bar, and a window elsewhere.
+	// The visible tab right under the bar, and a window elsewhere.
 	s.Border.Width = 2
 	s.Windows = []domain.SceneWindow{
-		{ID: 2, Rect: domain.Rect{X: 0, Y: 23, W: 240, H: 60}, Radius: 12, Focused: true},
+		{ID: 2, Rect: domain.Rect{X: 0, Y: 21, W: 240, H: 62}, Radius: 12, Focused: true},
 		{ID: 4, Rect: domain.Rect{X: 0, Y: 90, W: 100, H: 30}, Radius: 12},
 	}
 	got = r.draws(s, nil, newDamage(&target{}, s, bounds))
 	tab, other := 0, 0
 	for _, d := range got {
-		if d.pc.misc[1]&flagRounded == 0 || d.square == cornersBottom || d.round[1] < 23 {
+		if d.pc.misc[1]&flagRounded == 0 || d.square == cornersBottom || d.round[1] < 21 {
 			continue
 		}
 		if d.round[1] < 90 {
@@ -220,13 +220,14 @@ func TestTabBarFill(t *testing.T) {
 }
 
 // ringedTab is tabScene's bar with radius 12 over its visible tab (window
-// 2, 2 px under it) with gaps: the window owns its four border lines.
+// 2, right under it) with gaps: the window owns its four border lines and
+// its content touches the bar.
 func ringedTab(active bool) domain.Scene {
 	s := tabScene("b")
 	s.TabBars[0].Radius = 12
 	s.Border.Width, s.Border.Radius = 2, 12
-	win := domain.Rect{X: 0, Y: 23, W: 240, H: 60}
-	s.Windows = []domain.SceneWindow{{ID: 2, Rect: win, Radius: 12, Inset: domain.SideAll, Focused: active}}
+	win := domain.Rect{X: 0, Y: 21, W: 240, H: 62}
+	s.Windows = []domain.SceneWindow{{ID: 2, Rect: win, Radius: 12, Inset: domain.SideAll &^ domain.SideTop, Focused: active}}
 	for _, side := range []domain.Sides{domain.SideLeft, domain.SideRight, domain.SideTop, domain.SideBottom} {
 		r := win
 		switch side {
@@ -278,12 +279,12 @@ func TestSceneTabRingEnclosesBar(t *testing.T) {
 	require.Equal(t, float32(10), math.Float32frombits(bar.radii[0]), "inner radius")
 	body := 0
 	for _, d := range got {
-		if d.pc.misc[1]&flagRing == 0 && d.round[1] == 25 && d.pc.misc[1]&flagRounded != 0 {
+		if d.pc.misc[1]&flagRing == 0 && d.round[1] == 21 && d.pc.misc[1]&flagRounded != 0 {
 			require.Equal(t, cornersTop, d.square, "content clip square on top")
 			body++
 		}
 	}
-	require.NotZero(t, body)
+	require.NotZero(t, body, "content from the bar's bottom")
 
 	// No more allocations than the same scene without the ring.
 	bare := s

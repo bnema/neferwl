@@ -586,6 +586,16 @@ func (w *Workspace) AppendLayout(dst []Placement) []Placement {
 	// Lines are shared within the usable area: a tile under a panel (the
 	// next cascade band starts right below a bottom one) is no neighbor.
 	setVisibleNeighbors(tiles, gap, w.Usable)
+	// A visible tab's content touches its bar: no top border.
+	k := 0
+	for _, c := range w.Columns {
+		if c.Tabbed && c.Focus < len(c.Windows) {
+			if p := &tiles[k+c.Focus]; !p.Hidden && !p.Fullscreen {
+				p.Inset &^= domain.SideTop
+			}
+		}
+		k += len(c.Windows)
+	}
 	// tiles lives in the workspace's scratch until they are copied below.
 	w.tileBuf = tiles
 	// The column/stash group sits between demoted covering floats and

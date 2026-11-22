@@ -189,7 +189,7 @@ func TestTabbedStateTileRects(t *testing.T) {
 	})
 }
 
-// With gaps the bar sits TabBarGap above the visible tab, rounded like it.
+// With gaps the bar sits right above the visible tab, rounded like it.
 func TestTabBarWithGaps(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := startMulti(t, func(c *domain.Config) { c.Layout.Gaps = 8; c.Border.Radius = 10 }, left)
@@ -205,7 +205,7 @@ func TestTabBarWithGaps(t *testing.T) {
 		}
 		bar := set[0].TabBars[0]
 		for _, w := range set[0].Windows {
-			if w.ID == 2 && (w.Rect.Y != bar.Rect.Y+bar.Rect.H+2 || w.Rect.X != bar.Rect.X || w.Rect.W != bar.Rect.W) {
+			if w.ID == 2 && (w.Rect.Y != bar.Rect.Y+bar.Rect.H || w.Inset&domain.SideTop != 0 || w.Rect.X != bar.Rect.X || w.Rect.W != bar.Rect.W) {
 				t.Fatalf("tab %+v, bar %+v", w.Rect, bar.Rect)
 			}
 		}
