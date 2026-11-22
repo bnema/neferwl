@@ -799,7 +799,7 @@ func TestSwitcherShownIsAPreview(t *testing.T) {
 		if _, _, ok := c.draggable(card); ok {
 			t.Fatal("a card can be dragged")
 		}
-		if tgt := c.dropAt(card, x, y); tgt.a.Kind != AnchorNone {
+		if tgt := c.dropAt(nil, card, x, y); tgt.a.Kind != AnchorNone {
 			t.Fatalf("a drop target %+v under the cards", tgt)
 		}
 		// A map and an unmap behind the cards do not animate.

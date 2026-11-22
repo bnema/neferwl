@@ -18,7 +18,7 @@ func TestAdvanceDropPreviewReusesUnchanged(t *testing.T) {
 		}
 		r, _ := modelPlaced(w, 2)
 		c.cursorX, c.cursorY = float64(r.X+r.W/2), float64(r.Y+r.H/2)
-		c.retarget()
+		c.retarget(w)
 		c.advanceDropPreview(c.now())
 		p := c.drag.target.preview
 		if p == nil || p.Label == "" {
