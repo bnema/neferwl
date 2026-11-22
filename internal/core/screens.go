@@ -16,6 +16,8 @@ type screen struct {
 	// hintSize is hint.size, logical px (0 follows the output density); it
 	// sizes the tab bar (applyTabBar).
 	hintSize float64
+	// tabs is the scratch of the tab bars of the scene being built.
+	tabs tabBarScratch
 	routeBuf, routes []WindowID
 	routeGen         uint64
 	routeSent        bool // a route was sent: Scene.Routes carries routeGen

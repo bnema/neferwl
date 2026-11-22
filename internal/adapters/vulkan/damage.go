@@ -388,6 +388,7 @@ func sceneDelta(old, cur domain.Scene, phys func(domain.Rect) image.Rectangle, l
 		}
 	}
 	area = area.Union(separatorDelta(old.Separators, cur.Separators, phys))
+	area = area.Union(tabBarDelta(old.TabBars, cur.TabBars, phys))
 	if area.Dx()*area.Dy() > limit {
 		return image.Rectangle{}, false
 	}
@@ -495,4 +496,22 @@ func countSeparator(list []domain.Separator, sep domain.Separator) int {
 		}
 	}
 	return n
+}
+
+// tabBarDelta is the area of the bars that differ between old and cur: the
+// old and new rect of each changed bar, every bar of the longer list past
+// the shorter one.
+func tabBarDelta(old, cur []domain.TabBar, phys func(domain.Rect) image.Rectangle) image.Rectangle {
+	var area image.Rectangle
+	for i := range max(len(old), len(cur)) {
+		switch {
+		case i >= len(old):
+			area = area.Union(phys(cur[i].Rect))
+		case i >= len(cur):
+			area = area.Union(phys(old[i].Rect))
+		case old[i].Rect != cur[i].Rect || !slices.Equal(old[i].Tabs, cur[i].Tabs):
+			area = area.Union(phys(old[i].Rect)).Union(phys(cur[i].Rect))
+		}
+	}
+	return area
 }

@@ -19,7 +19,7 @@ import (
 func TestSceneFieldCount(t *testing.T) {
 	// Routes and Animating are scheduling metadata, intentionally ignored
 	// by sceneDelta: neither draws anything.
-	const fields = 28
+	const fields = 29
 	assert.Equal(t, fields, len(reflect.VisibleFields(reflect.TypeOf(domain.Scene{}))),
 		"Scene fields changed: check sceneDelta (a field it does not compare must force a full redraw or be covered), then this count")
 }
@@ -660,4 +660,22 @@ func TestDamageDeltaEdgeLabel(t *testing.T) {
 	require.False(t, d.all())
 	_, h := dropPillBound(old.DropPreview, 1)
 	assert.Equal(t, image.Rect(0, 468-dropLabelMargin-h-2, 1000, 500), d.area)
+}
+
+// A changed tab bar damages its rect only.
+func TestSceneDeltaTabBar(t *testing.T) {
+	bar := func(title string) []domain.TabBar {
+		return []domain.TabBar{{Rect: domain.Rect{X: 10, Y: 20, W: 100, H: 16}, Tabs: []domain.TabTitle{{Rect: domain.Rect{X: 10, Y: 20, W: 100, H: 16}, Title: title, Active: true, Window: 1}}}}
+	}
+	old, cur := deltaScene(1), deltaScene(2)
+	old.TabBars, cur.TabBars = bar("a"), bar("b")
+	phys := func(r domain.Rect) image.Rectangle { return image.Rect(r.X, r.Y, r.X+r.W, r.Y+r.H) }
+	area, ok := sceneDelta(old, cur, phys, 1<<30)
+	if !ok || area != image.Rect(10, 20, 110, 36) {
+		t.Fatalf("area %v ok %v", area, ok)
+	}
+	cur.TabBars = bar("a")
+	if area, ok := sceneDelta(old, cur, phys, 1<<30); !ok || !area.Empty() {
+		t.Fatalf("unchanged: area %v ok %v", area, ok)
+	}
 }

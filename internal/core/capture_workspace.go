@@ -171,6 +171,10 @@ func (c *Core) captureScene(seq uint64) *domain.Scene {
 	for i := range s.Separators {
 		s.Separators[i].Rect = rebase(s.Separators[i].Rect)
 	}
+	// Tab bars are decorations, captured like the separators.
+	var tabs tabBarScratch
+	c.appendTabBars(&tabs, cw.ws, cw.placements, view, f)
+	s.TabBars = publishTabBars(&tabs, nil)
 	for _, id := range c.popupOrder {
 		p := c.popups[id]
 		if p == nil || !p.mapped {

@@ -19,6 +19,7 @@ func sameSceneBase() Scene {
 		Border:       Border{Width: 2, Active: "#ffffff", Inactive: "#222222"},
 		Windows:      []SceneWindow{{ID: 1, Rect: Rect{X: 1, W: 10, H: 10}}},
 		Separators:   []Separator{{Rect: Rect{W: 1, H: 10}}},
+		TabBars:      []TabBar{{Rect: Rect{W: 20, H: 4}, Tabs: []TabTitle{{Rect: Rect{W: 10, H: 4}, Title: "a", Active: true, Window: 1}, {Rect: Rect{X: 10, W: 10, H: 4}, Title: "b", Window: 2}}}},
 		DropPreview:  &DropPreview{Rect: Rect{W: 5, H: 5}, Fill: 0.18, Label: "swap", Thumb: 1},
 		Layers:       []SceneLayer{{ID: 9, Rect: Rect{W: 100, H: 5}}},
 		Capture:      &SceneCapture{Shown: 1, Excluded: []WindowID{3}},
@@ -71,6 +72,10 @@ func TestSceneSameAs(t *testing.T) {
 		"dim behind":       func(s *Scene) { s.DimBehind = true },
 		"separator":        func(s *Scene) { s.Separators[0].Active = true },
 		"drop preview nil": func(s *Scene) { s.DropPreview = nil },
+		"tab bars nil":     func(s *Scene) { s.TabBars = nil },
+		"tab bar rect":     func(s *Scene) { s.TabBars[0].Rect.X++ },
+		"tab title":        func(s *Scene) { s.TabBars[0].Tabs[1].Title = "c" },
+		"tab active":       func(s *Scene) { s.TabBars[0].Tabs[1].Active = true },
 		"drop preview rect": func(s *Scene) {
 			s.DropPreview = &DropPreview{Rect: Rect{W: 6, H: 5}, Fill: 0.18, Label: "swap", Thumb: 1}
 		},
@@ -116,9 +121,9 @@ func TestSceneSameAs(t *testing.T) {
 // TestSceneSameAsCoversEveryField fails when Scene gains or loses a field:
 // update Scene.SameAs, then this count.
 func TestSceneSameAsCoversEveryField(t *testing.T) {
-	// 28 with Routes and Animating, which SameAs intentionally does not compare: it
+	// 29 with Routes and Animating, which SameAs intentionally does not compare: it
 	// only schedules the next frame, it draws nothing.
-	const fields = 28
+	const fields = 29
 	assert.Equal(t, fields, len(reflect.VisibleFields(reflect.TypeOf(Scene{}))),
 		"Scene fields changed: update Scene.SameAs (and TestSceneSameAs), then this count")
 }

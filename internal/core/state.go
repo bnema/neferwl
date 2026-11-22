@@ -172,7 +172,10 @@ func (c *Core) workspaceInto(ws []domain.WorkspaceState, i int, w *Workspace, ou
 			}
 			tiles = append(tiles, domain.TileState{ID: id, Rect: tr})
 		}
-		*cv = domain.ColumnState{Rect: r, Windows: tiles}
+		*cv = domain.ColumnState{Rect: r, Windows: tiles, Tabbed: col.Tabbed}
+		if col.Tabbed {
+			cv.Active = col.Focus + 1
+		}
 	}
 	v.Columns = cols
 	return ws
@@ -183,7 +186,7 @@ func sameState(a, b domain.State) bool {
 		slices.EqualFunc(a.Workspaces, b.Workspaces, func(x, y domain.WorkspaceState) bool {
 			return x.Focused == y.Focused && x.ID == y.ID && x.Number == y.Number && x.Name == y.Name && x.Output == y.Output && x.Visible == y.Visible && x.Overflow == y.Overflow && x.Cover == y.Cover &&
 				slices.EqualFunc(x.Columns, y.Columns, func(p, q domain.ColumnState) bool {
-					return p.Rect == q.Rect && slices.Equal(p.Windows, q.Windows)
+					return p.Rect == q.Rect && p.Tabbed == q.Tabbed && p.Active == q.Active && slices.Equal(p.Windows, q.Windows)
 				})
 		}) &&
 		(a.Window == nil) == (b.Window == nil) && (a.Window == nil || *a.Window == *b.Window)
@@ -198,7 +201,7 @@ func cloneState(st domain.State) domain.State {
 		out.Workspaces[i] = w
 		out.Workspaces[i].Columns = make([]domain.ColumnState, len(w.Columns))
 		for j, col := range w.Columns {
-			out.Workspaces[i].Columns[j] = domain.ColumnState{Rect: col.Rect, Windows: append([]domain.TileState{}, col.Windows...)}
+			out.Workspaces[i].Columns[j] = domain.ColumnState{Rect: col.Rect, Windows: append([]domain.TileState{}, col.Windows...), Tabbed: col.Tabbed, Active: col.Active}
 		}
 	}
 	if st.Window != nil {

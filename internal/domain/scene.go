@@ -63,6 +63,9 @@ type Scene struct {
 	// the windows of the workspace, under the top layers. Only the output
 	// under the pointer has one, during a drag. Immutable once published.
 	DropPreview *DropPreview
+	// TabBars are the title bars of tabbed columns, drawn over the windows'
+	// separators, under the drop preview. Immutable once published.
+	TabBars []TabBar
 	// Layers are the shown layer surfaces, drawn in slice order: background
 	// and bottom before windows, top and overlay after. Core leaves out
 	// those a fullscreen window hides (all but the background and a surface
@@ -143,6 +146,7 @@ func (s Scene) SameAs(o Scene) bool {
 		}
 	}
 	return slices.Equal(s.Windows, o.Windows) && slices.Equal(s.Separators, o.Separators) &&
+		SameTabBars(s.TabBars, o.TabBars) &&
 		slices.Equal(s.Layers, o.Layers) &&
 		slices.Equal(s.CaptureIndicators, o.CaptureIndicators) &&
 		s.Physical == o.Physical && slices.Equal(s.Overlays, o.Overlays)
@@ -314,4 +318,26 @@ type ContentRoute struct {
 	Output  string
 	Gen     uint64
 	Windows []WindowID
+}
+
+// TabBar is the title bar of a tabbed column: one tab per window, in
+// column order. Rect is the bar, output-local logical.
+type TabBar struct {
+	Rect Rect
+	Tabs []TabTitle
+}
+
+// TabTitle is one tab of a TabBar. Active is the visible tab.
+type TabTitle struct {
+	Rect   Rect
+	Title  string
+	Active bool
+	Window WindowID
+}
+
+// SameTabBars reports whether a and b draw the same bars.
+func SameTabBars(a, b []TabBar) bool {
+	return slices.EqualFunc(a, b, func(x, y TabBar) bool {
+		return x.Rect == y.Rect && slices.Equal(x.Tabs, y.Tabs)
+	})
 }

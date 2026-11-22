@@ -66,6 +66,9 @@ func (c *Core) sceneFor(ctx context.Context, i int, sc *screen, only *screen, ca
 	} else {
 		// Only the focused output lights the focused window's lines.
 		scene.Separators = separators(layout, c.cfg.Border.Width, sc.mon.Current().Gap(), view, i == c.focusScreen)
+		sc.tabs.bars, sc.tabs.titles = sc.tabs.bars[:0], sc.tabs.titles[:0]
+		c.appendTabBars(&sc.tabs, sc.mon.Current(), layout, view, Rect{})
+		scene.TabBars = publishTabBars(&sc.tabs, sc.last.TabBars)
 	}
 	caps, _ := c.outputHDRCaps(sc.name())
 	config, configured := c.outputConfig(sc.name())

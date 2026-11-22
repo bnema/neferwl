@@ -85,7 +85,7 @@ func TestWorkspaceGeometryFields(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, key := range []string{`"workspaces":[`, `"id":"name:web"`, `"number":2`, `"visible":true`, `"overflow":"fixed"`, `"columns":[{"x":10,"y":20,"width":300,"height":400,"windows":[{"id":5,"x":11,"y":21,"width":298,"height":198}]}]`} {
+	for _, key := range []string{`"workspaces":[`, `"id":"name:web"`, `"number":2`, `"visible":true`, `"overflow":"fixed"`, `"columns":[{"x":10,"y":20,"width":300,"height":400,"windows":[{"id":5,"x":11,"y":21,"width":298,"height":198}],"tabbed":false,"active":0}]`} {
 		if !strings.Contains(string(data), key) {
 			t.Fatalf("%s missing %s", data, key)
 		}
@@ -175,5 +175,16 @@ func TestModeJSON(t *testing.T) {
 		if want := `"mode":"` + mode + `"`; !strings.Contains(string(data), want) {
 			t.Fatalf("missing %s: %s", want, data)
 		}
+	}
+}
+
+// A tabbed column reports its visible tab, 1-based.
+func TestColumnTabbedJSON(t *testing.T) {
+	st := FromDomain(domain.State{Workspaces: []domain.WorkspaceState{{ID: 1, Columns: []domain.ColumnState{
+		{Windows: []domain.TileState{{ID: 1}, {ID: 2}}, Tabbed: true, Active: 2},
+	}}}}, workspaceid.WithPrefix("0a1b2c3d"))
+	data, err := json.Marshal(st.Workspaces[0].Columns[0])
+	if err != nil || !strings.Contains(string(data), `"tabbed":true,"active":2`) {
+		t.Fatalf("%s %v", data, err)
 	}
 }
