@@ -23,6 +23,10 @@ var dropActionNames = [...]string{
 	DropStash: "stash", DropFloat: "float", DropTab: "tab",
 }
 
+// DropActionCount is the number of drop actions: DropAction(0) to
+// DropActionCount-1 are all valid.
+const DropActionCount = DropAction(len(dropActionNames))
+
 // ParseDropAction maps a config value to its action.
 func ParseDropAction(s string) (DropAction, bool) {
 	for i, n := range dropActionNames {

@@ -454,14 +454,13 @@ func Drop(src, w *Workspace, id WindowID, a Anchor, px, py int) {
 }
 
 // applyTab inserts id below target in target's column, which becomes
-// tabbed with id the visible tab.
+// tabbed with id the visible tab (applyStack activates it).
 func (w *Workspace) applyTab(src *Workspace, id, target WindowID) {
 	w.applyStack(src, id, target, true)
 	if ci := w.ColumnOf(id); ci >= 0 && w.ColumnOf(target) == ci {
 		w.Columns[ci].Tabbed = true
 		w.Columns[ci].Shares = nil
 	}
-	w.FocusID(id)
 }
 
 // DropBelow stacks tile id from src below anchor in w, as a mark move

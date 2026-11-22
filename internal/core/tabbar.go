@@ -85,7 +85,6 @@ func placementIndex(layout []Placement, id WindowID) int {
 	return -1
 }
 
-
 // tabAt is the tab of sc's published bars at lx, ly (output-local
 // logical); over is set on a bar even between tabs.
 func tabAt(sc *screen, lx, ly float64) (id WindowID, over bool) {
