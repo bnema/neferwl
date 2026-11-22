@@ -180,3 +180,41 @@ func TestSwapWindowsKeyedState(t *testing.T) {
 		t.Fatalf("same workspace %v left %d", w.recent, w.left)
 	}
 }
+
+func TestSwapWindowsRefusesHeld(t *testing.T) {
+	w := groupWorkspace()
+	before := snap(w)
+	if SwapWindows(w, 2, w, 4) || SwapWindows(w, 4, w, 2) || !sameSnap(before, snap(w)) {
+		t.Fatal("held window swapped")
+	}
+}
+
+func TestMoveTileBelowRefused(t *testing.T) {
+	build := func() *Workspace {
+		w := cols(OverflowScroll, 4, 0, []WindowID{1}, []WindowID{2}, []WindowID{3})
+		w.Stash = []Float{{ID: 7}}
+		w.Floats = []Float{{ID: 8, W: 10, H: 10}}
+		return w
+	}
+	for _, tc := range []struct {
+		name       string
+		edit       func(*Workspace)
+		id, target WindowID
+	}{
+		{"target fullscreen", func(w *Workspace) { w.Fullscreen = 2 }, 1, 2},
+		{"target held", func(w *Workspace) { w.Fullscreen = 3; w.hold(2) }, 1, 2},
+		{"target stashed", nil, 1, 7},
+		{"focused is a float", func(w *Workspace) { w.FocusID(8) }, 8, 2},
+		{"focused is not id", nil, 2, 3},
+		{"same window", nil, 1, 1},
+	} {
+		w := build()
+		if tc.edit != nil {
+			tc.edit(w)
+		}
+		before := snap(w)
+		if MoveTileBelow(w, tc.id, w, tc.target) || !sameSnap(before, snap(w)) {
+			t.Errorf("%s: moved", tc.name)
+		}
+	}
+}

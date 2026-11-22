@@ -151,3 +151,19 @@ func TestStashMarkMarksOnce(t *testing.T) {
 		}
 	})
 }
+
+// Run-or-raise spawns again once its claim expired unanswered.
+func TestFocusMarkSpawnsAfterExpiry(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := stashSpawnRig(t, func(c *domain.Config) { c.Binds["Alt+Ctrl+Shift+o"] = "focus-mark mail thunderbird" })
+		r.mapWindow(t, 1)
+		r.key(t, "o", markMods)
+		receive(t, r.spawn)
+		time.Sleep(61 * time.Second)
+		r.input <- ports.KeyEvent{Keysym: "o", Mods: markMods, Pressed: true}
+		synctest.Wait()
+		if len(r.spawn) != 1 {
+			t.Fatalf("spawns after expiry: %d", len(r.spawn))
+		}
+	})
+}
