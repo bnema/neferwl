@@ -578,6 +578,13 @@ func (c *Core) runAction(ctx context.Context, action Action) error {
 	if dir := switchDir(action); dir != 0 {
 		return c.switchBind(ctx, dir)
 	}
+	return c.layoutAction(ctx, func() Effect { return c.applyAction(action) })
+}
+
+// layoutAction runs apply as a bind action on the layout: it closes the
+// switcher, takes the keyboard back, then animates, spawns, closes and
+// publishes what apply changed.
+func (c *Core) layoutAction(ctx context.Context, apply func() Effect) error {
 	before := c.cur().mon.Current()
 	swiped := c.swipedWorkspace()
 	now := c.now()
@@ -587,7 +594,7 @@ func (c *Core) runAction(ctx context.Context, action Action) error {
 		c.cancelSwitcher()
 	}
 	c.keyboard.takeBack() // a bind acts on the windows
-	effect := c.applyAction(action)
+	effect := apply()
 	if effect.Quit {
 		return ErrQuit
 	}
