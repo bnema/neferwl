@@ -165,6 +165,9 @@ func TestTargetErrors(t *testing.T) {
 		if rep := r.doTarget(t, "a", "close-window"); rep.Err != ports.ControlErrLocked {
 			t.Fatalf("locked: %+v", rep)
 		}
+		if rep := r.doTarget(t, "zz", "close-window"); rep.Err != ports.ControlErrLocked {
+			t.Fatalf("locked, missing mark: %+v", rep)
+		}
 	})
 }
 

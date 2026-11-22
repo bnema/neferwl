@@ -71,13 +71,6 @@ func (c *Core) controlDo(ctx context.Context, r ports.ControlDo) error {
 		controlReply(r.Reply, ports.ControlReply{Err: ports.ControlErrBadRequest})
 		return nil
 	}
-	var target WindowID
-	if r.Target != "" {
-		if target = c.markHolder(r.Target); target == 0 {
-			controlReply(r.Reply, ports.ControlReply{Err: ports.ControlErrNoTarget})
-			return nil
-		}
-	}
 	// Only a lone quit runs on a locked session: session rm needs it.
 	// Protected input runs no binds (protectedInput); control mirrors it.
 	quit := slices.Contains(segments, string(ActionQuit))
@@ -85,6 +78,14 @@ func (c *Core) controlDo(ctx context.Context, r ports.ControlDo) error {
 	if !loneQuit && c.protectionRequested() {
 		controlReply(r.Reply, ports.ControlReply{Err: ports.ControlErrLocked})
 		return nil
+	}
+	// After the lock check: a locked session tells nothing about marks.
+	var target WindowID
+	if r.Target != "" {
+		if target = c.markHolder(r.Target); target == 0 {
+			controlReply(r.Reply, ports.ControlReply{Err: ports.ControlErrNoTarget})
+			return nil
+		}
 	}
 	shots, code := c.controlShots(r.Shots, r.Caps)
 	if code != "" {
