@@ -389,4 +389,18 @@ func TestTabWindowNoOp(t *testing.T) {
 	if got := ids(w); !reflect.DeepEqual(got, [][]WindowID{{1}, {2}}) {
 		t.Fatalf("fullscreen: %v", got)
 	}
+	// Cascade stays in its band: no tab into the band below.
+	w = cols(OverflowCascade, 2, 1, []WindowID{1}, []WindowID{2}, []WindowID{3})
+	wantBands(t, w, []WindowID{1, 2}, []WindowID{3})
+	w.Apply(ActionTabWindowRight)
+	if got := ids(w); !reflect.DeepEqual(got, [][]WindowID{{1}, {2}, {3}}) {
+		t.Fatalf("cascade band edge: %v", got)
+	}
+	// A fullscreen window in the target column is never dropped.
+	w = cols(OverflowScroll, 3, 0, []WindowID{1}, []WindowID{2})
+	w.Fullscreen = 2
+	w.Apply(ActionTabWindowRight)
+	if got := ids(w); !reflect.DeepEqual(got, [][]WindowID{{1}, {2}}) || w.Fullscreen != 2 {
+		t.Fatalf("fullscreen target: %v fullscreen %d", got, w.Fullscreen)
+	}
 }
