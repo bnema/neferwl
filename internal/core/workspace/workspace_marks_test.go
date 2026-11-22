@@ -155,3 +155,28 @@ func TestMoveTileBelow(t *testing.T) {
 		t.Fatal("float target moved")
 	}
 }
+
+// A swap keeps column state keyed by window ID with the column, and the
+// left fullscreen with the window.
+func TestSwapWindowsKeyedState(t *testing.T) {
+	a, b := cols(OverflowScroll, 3, 0, []WindowID{1}, []WindowID{2}), cols(OverflowScroll, 3, 0, []WindowID{3})
+	a.Maximized = []WindowID{1}
+	a.recent = []WindowID{1, 2}
+	a.left = 1
+	if !SwapWindows(a, 1, b, 3) {
+		t.Fatal("refused")
+	}
+	if !slices.Equal(a.Maximized, []WindowID{3}) || !slices.Equal(a.recent, []WindowID{3, 2}) {
+		t.Fatalf("place state %v %v", a.Maximized, a.recent)
+	}
+	if a.left != 0 || b.left != 1 {
+		t.Fatalf("left %d %d", a.left, b.left)
+	}
+	w := cols(OverflowScroll, 3, 0, []WindowID{1}, []WindowID{2})
+	w.recent = []WindowID{2, 1}
+	w.left = 2
+	SwapWindows(w, 1, w, 2)
+	if !slices.Equal(w.recent, []WindowID{1, 2}) || w.left != 2 {
+		t.Fatalf("same workspace %v left %d", w.recent, w.left)
+	}
+}

@@ -100,6 +100,7 @@ func SwapWindows(a *Workspace, ida WindowID, b *Workspace, idb WindowID) bool {
 			return false
 		}
 		a.Columns[ca-1].Windows[ra-1], b.Columns[cb-1].Windows[rb-1] = idb, ida
+		swapKeyed(a, ida, b, idb)
 		return true
 	}
 	fa, fb := a.floatIndex(ida), b.floatIndex(idb)
@@ -107,7 +108,48 @@ func SwapWindows(a *Workspace, ida WindowID, b *Workspace, idb WindowID) bool {
 		return false
 	}
 	a.Floats[fa].ID, b.Floats[fb].ID = idb, ida
+	swapKeyed(a, ida, b, idb)
 	return true
+}
+
+// swapKeyed moves the ID-keyed state of a swap with what it describes.
+// Maximized and recent name a column by one of its windows: they describe
+// the place, so each workspace renames the window that left for the one
+// that came. left describes the window (its refused fullscreen requests):
+// it goes with the window.
+func swapKeyed(a *Workspace, ida WindowID, b *Workspace, idb WindowID) {
+	rename := func(ids []WindowID) {
+		for i, v := range ids {
+			switch v {
+			case ida:
+				ids[i] = idb
+			case idb:
+				ids[i] = ida
+			}
+		}
+	}
+	rename(a.Maximized)
+	rename(a.recent)
+	if b != a {
+		rename(b.Maximized)
+		rename(b.recent)
+	}
+	if b == a {
+		return
+	}
+	la, lb := a.left == ida, b.left == idb
+	if la {
+		a.left = 0
+	}
+	if lb {
+		b.left = 0
+	}
+	if la && b.left == 0 {
+		b.left = ida
+	}
+	if lb && a.left == 0 {
+		a.left = idb
+	}
 }
 
 // MoveTileBelow moves id, the focused plain tile of from, into the column
