@@ -303,3 +303,19 @@ bind.cmd+code:12 = scale-down
 # mode.resize.bind.k = set-window-height -10%
 # mode.resize.bind.j = set-window-height +10%
 # mode.resize.bind.return = mode default
+
+# Marks: names on windows (letters, digits, - and _). A mark is on one window
+# at a time. Vim style: cmd+m then a letter marks, cmd+apostrophe then a
+# letter jumps.
+# bind.cmd+m = mode mark
+# mode.mark.bind.a = toggle-mark a; mode default
+# mode.mark.bind.b = toggle-mark b; mode default
+# bind.cmd+apostrophe = mode goto
+# mode.goto.bind.a = focus-mark a; mode default
+# mode.goto.bind.b = focus-mark b; mode default
+# Run-or-raise: focus the window marked mail, or start it.
+# bind.cmd+e = focus-mark mail thunderbird
+# Mark a program's first window at launch (Wayland apps only, not Xwayland).
+# bind.cmd+shift+e = spawn --mark music spotify
+# Scripts: neferwl do --target mark:music close-window
+#          neferwl state | jq '.windows[] | {id, marks}'
