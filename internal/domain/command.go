@@ -70,6 +70,7 @@ var commandCatalog = []CommandSpec{
 	{Name: "move-column-right", Summary: "Move column right.", Kind: CommandAction, Caps: CapAct},
 	{Name: "cycle-column-width", Summary: "Cycle column width.", Kind: CommandAction, Caps: CapAct},
 	{Name: "maximize-column", Summary: "Maximize column.", Kind: CommandAction, Caps: CapAct},
+	{Name: "toggle-column-tabbed", Summary: "Toggle column tabbed.", Kind: CommandAction, Caps: CapAct},
 	{Name: "toggle-fullscreen", Summary: "Toggle fullscreen.", Kind: CommandAction, Caps: CapAct},
 	{Name: "toggle-window-stash", Summary: "Toggle window stash.", Kind: CommandAction, Caps: CapAct},
 	{Name: "toggle-stash-visible", Summary: "Toggle stash visible.", Kind: CommandAction, Caps: CapAct},

@@ -56,7 +56,7 @@ func (w *Workspace) MoveWindow(dir int) bool {
 // other rows of its column give or take it in proportion to their shares.
 // Every row keeps at least minShare basis points.
 func (w *Workspace) ResizeRow(pct int) {
-	if w.OnFloat() || len(w.Columns) == 0 || w.FullscreenHides() {
+	if w.OnFloat() || len(w.Columns) == 0 || w.FullscreenHides() || w.Columns[w.Focus].Tabbed {
 		return
 	}
 	c := &w.Columns[w.Focus]

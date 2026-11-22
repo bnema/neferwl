@@ -115,7 +115,8 @@ func (w *Workspace) BorderAt(x, y, pad int) (Border, bool) {
 		// A held column is output-sized like the cover: no borders.
 		heldCol := w.HeldColumn(i)
 		rows := layout.RowRects(r, w.Columns[i], gap)
-		for j := 0; !heldCol && j+1 < len(rows); j++ {
+		// Tabs have no row borders.
+		for j := 0; !heldCol && !w.Columns[i].Tabbed && j+1 < len(rows); j++ {
 			lo, size := geom.BorderZone(rows[j].Y+rows[j].H, rows[j+1].Y, pad)
 			b := Border{Kind: BorderRow, Col: i, Row: j, Rect: Rect{X: r.X, Y: lo, W: r.W, H: size}}
 			if contains(b.Rect, x, y) {
@@ -158,7 +159,7 @@ func (w *Workspace) MoveBorder(b Border, pos int) bool {
 	r := rs[b.Col]
 	if b.Kind == BorderRow {
 		c := &w.Columns[b.Col]
-		if b.Row < 0 || b.Row+1 >= len(c.Windows) || len(c.Windows)*minShare > 10000 {
+		if c.Tabbed || b.Row < 0 || b.Row+1 >= len(c.Windows) || len(c.Windows)*minShare > 10000 {
 			return false
 		}
 		rows := layout.RowRects(r, *c, w.Gap())

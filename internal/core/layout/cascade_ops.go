@@ -201,6 +201,7 @@ func (w *Lanes) fullscreenBand(id WindowID) bool {
 		nc = Column{Windows: []WindowID{id}, Cells: col.Cells}
 		col.Windows = slices.Delete(slices.Clone(col.Windows), j, j+1)
 		col.Shares = nil
+		col.Normalize()
 		if j == 0 {
 			col.Slot = 0 // the slot window left
 		}

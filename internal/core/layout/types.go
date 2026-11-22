@@ -32,6 +32,17 @@ type Column struct {
 	// Windows order. They apply only while there is one per window and
 	// they sum to 10000; otherwise the rows share the height equally.
 	Shares []int
+	// Tabbed shows only the Focus window, under a title bar. It implies
+	// at least two windows: removals that leave one clear it.
+	Tabbed bool
+}
+
+// Normalize restores the column invariants after its windows changed: a
+// column of fewer than two windows is not tabbed.
+func (c *Column) Normalize() {
+	if len(c.Windows) < 2 {
+		c.Tabbed = false
+	}
 }
 
 // Selected is the window at the column's Focus index. Like an index

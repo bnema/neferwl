@@ -83,6 +83,9 @@ const ActionCycleColumnWidth = workspacedomain.ActionCycleColumnWidth
 // ActionMaximizeColumn is workspace.ActionMaximizeColumn.
 const ActionMaximizeColumn = workspacedomain.ActionMaximizeColumn
 
+// ActionToggleColumnTabbed is workspace.ActionToggleColumnTabbed.
+const ActionToggleColumnTabbed = workspacedomain.ActionToggleColumnTabbed
+
 // ActionToggleFullscreen is workspace.ActionToggleFullscreen.
 const ActionToggleFullscreen = workspacedomain.ActionToggleFullscreen
 

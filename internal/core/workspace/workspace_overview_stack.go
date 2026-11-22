@@ -259,6 +259,10 @@ func (w *Workspace) previewItem(item StackItem, selected int, axis layout.Axis, 
 	r := Rect{W: max(w.Usable.W-2*g, 0), H: max(w.Usable.H-2*g, 0)}
 	r.X = (w.Usable.W - r.W) / 2
 	r.Y = (w.Usable.H - r.H) / 2
+	if c.Tabbed {
+		id := c.Selected()
+		return w.previewRowTiles(axis, slot, dim, lit, false, []Placement{{ID: id, Rect: r, Focused: true, Fullscreen: id == w.Cover()}}, w.Usable.W, r)
+	}
 	tiles := make([]Placement, 0, len(c.Windows))
 	w.rowBuf = layout.RowRectsInto(w.rowBuf[:0], r, c, g)
 	for j, t := range w.rowBuf {

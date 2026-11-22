@@ -48,6 +48,7 @@ var defaultBinds = []struct{ combo, action string }{
 	{"cmd+bracketright", "consume-or-expel-window-right"},
 	{"cmd+r", "cycle-column-width"},
 	{"cmd+f", "maximize-column"},
+	{"cmd+t", "toggle-column-tabbed"},
 	{"cmd+shift+f", "toggle-fullscreen"},
 	{"cmd+s", "toggle-stash-visible"},
 	{"cmd+shift+s", "toggle-window-stash"},

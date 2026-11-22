@@ -495,6 +495,11 @@ func (m *Monitor) SetOutput(width, height int) {
 }
 func (m *Monitor) SetUsable(r Rect) { m.each(func(w *Workspace) { w.SetUsable(r) }) }
 func (m *Monitor) SetGaps(g int)    { m.each(func(w *Workspace) { w.SetGaps(g) }) }
+// SetTabBar sets the tab bar height of every workspace, logical px.
+func (m *Monitor) SetTabBar(px int) {
+	m.each(func(w *Workspace) { w.TabBar = px })
+}
+
 func (m *Monitor) SetBorder(b int) {
 	m.each(func(w *Workspace) { w.SetBorder(b) })
 }

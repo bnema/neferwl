@@ -29,6 +29,9 @@ type Workspace struct {
 	layout.Lanes
 	// ID stays with the workspace across reorder and monitor moves.
 	ID uint64
+	// TabBar is the height of a tabbed column's title bar, logical px. Core
+	// sets it per output from the hint font size and scale.
+	TabBar int
 	// Name is set for workspaces declared in config; empty for dynamic ones.
 	Name string
 	// OverviewAfter is the numbered workspace from which this named workspace
@@ -560,6 +563,17 @@ func (w *Workspace) AppendLayout(dst []Placement) []Placement {
 			}
 			// A hidden held window keeps its output-sized rect, so its
 			// configure stays fullscreen.
+			// A tabbed column shows its Focus row under the tab bar; the
+			// other tabs are out of the scene. Fullscreen, held and hidden
+			// tiles keep the rects set above.
+			if c.Tabbed && !full && !hidden {
+				if j == c.Focus {
+					bar := min(w.TabBar, col.H)
+					r = Rect{X: col.X, Y: col.Y + bar, W: col.W, H: col.H - bar}
+				} else {
+					hidden = true
+				}
+			}
 			if hidden && !held {
 				r = Rect{}
 			}
