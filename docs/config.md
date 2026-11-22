@@ -612,7 +612,7 @@ The window must appear within 5 seconds, otherwise it opens normally. Apps that 
 
 While a tile is dragged, the anchor under the pointer is filled in `border.active` with an outline and the name of its action. On an output or workspace that does not show the dragged window, a thumbnail of it follows the pointer. With animations on, the zone slides between anchors.
 
-**Anchors.** Each window has five zones: a band along each side and the center. The gap between two columns and the 32 px band along each output edge are anchors too. An anchor set to `none` is removed, and its neighbors take its place. A drop that would change nothing is not offered.
+**Anchors.** Each window has five zones: a band along each side and the center. The gap between two columns and the 32 px band along each output edge are anchors too. An anchor set to `none` is removed, and its neighbors take its place. A drop that would change nothing is not offered: over such a side band, the pointer targets the center, which keeps its size.
 
 | Key | Default | Allowed values |
 |---|---|---|

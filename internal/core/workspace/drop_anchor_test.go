@@ -327,3 +327,25 @@ func TestAnchorOwnSideBands(t *testing.T) {
 		})
 	})
 }
+
+// A side band removed only because its drop changes nothing keeps the
+// centre symmetric, and the pointer over that band targets the centre.
+func TestAnchorInvalidSideKeepsCenterSymmetric(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		w, _ := anchorWorkspace()
+		r := rectOf(t, w, 2)
+		bx, by := bands(r)
+		p := domain.DefaultDropPolicy()
+		center := Rect{X: r.X + bx + 5, Y: r.Y + by + 5, W: r.W - 2*bx - 10, H: r.H - 2*by - 10}
+		a := w.AnchorAt(w, 1, r.X+r.W/2, r.Y+r.H/2, Anchor{}, p)
+		if a.Kind != AnchorWindow || a.Side != domain.DropSideCenter || a.Rect != center {
+			t.Fatalf("center = %+v, want rect %+v", a, center)
+		}
+		for _, prev := range []Anchor{{}, a} {
+			b := w.AnchorAt(w, 1, r.X+20, r.Y+r.H/2, prev, p)
+			if b != a {
+				t.Fatalf("left band from %+v = %+v, want %+v", prev, b, a)
+			}
+		}
+	})
+}

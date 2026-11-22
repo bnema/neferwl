@@ -94,7 +94,7 @@ func (w *Workspace) AnchorAt(src *Workspace, id WindowID, x, y int, prev Anchor,
 		if on&(1<<domain.DropSideCenter) == 0 && side == domain.DropSideCenter {
 			return Anchor{}
 		}
-		return Anchor{Kind: AnchorWindow, Side: side, Window: pl.ID, Action: p.Window[side], Rect: w.windowZone(pl.Rect, side, on)}
+		return Anchor{Kind: AnchorWindow, Side: side, Window: pl.ID, Action: p.Window[side], Rect: w.windowZone(pl.Rect, side, policyOn(p))}
 	}
 	return Anchor{}
 }
@@ -230,6 +230,20 @@ func (w *Workspace) sidesOn(d dropSource, win WindowID, p domain.DropPolicy) uin
 	return on
 }
 
+// policyOn is the zone mask of the sides policy p does not set to none.
+// The centre is drawn from it, so a band removed only because its drop
+// would change nothing leaves the centre symmetric; the pointer over that
+// band still hits the centre.
+func policyOn(p domain.DropPolicy) uint8 {
+	var on uint8
+	for s := domain.DropSideCenter; s <= domain.DropSideBottom; s++ {
+		if p.Window[s] != domain.DropNone {
+			on |= 1 << s
+		}
+	}
+	return on
+}
+
 // noColumns reports whether w shows no column id could land beside.
 func (w *Workspace) noColumns(cols []visibleColumn, id WindowID) bool {
 	return len(w.Columns) == 0 || w.ColumnOf(id) < 0 && len(cols) == 0
@@ -278,7 +292,7 @@ func (w *Workspace) zoneExists(layout []Placement, cols []visibleColumn, d dropS
 					return false
 				}
 				on := w.sidesOn(d, pl.ID, p)
-				return on&(1<<prev.Side) != 0 && w.windowZone(pl.Rect, prev.Side, on) == prev.Rect
+				return on&(1<<prev.Side) != 0 && w.windowZone(pl.Rect, prev.Side, policyOn(p)) == prev.Rect
 			}
 		}
 	case AnchorGap:
