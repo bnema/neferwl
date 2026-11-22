@@ -23,7 +23,6 @@ const (
 	maxEntries = 1024
 )
 
-
 type key struct {
 	text  string
 	typed int

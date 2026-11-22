@@ -185,9 +185,9 @@ func (w *sceneWalk) tabSeparators(id domain.WindowID, r, u domain.Rect) {
 		if sep.Window != id {
 			continue
 		}
-		col, color := w.s.Border.Inactive, w.inactive
+		col, c := w.s.Border.Inactive, w.inactive
 		if sep.Active {
-			col, color = w.s.Border.Active, w.active
+			col, c = w.s.Border.Active, w.active
 		}
 		if col == "" {
 			continue
@@ -200,6 +200,6 @@ func (w *sceneWalk) tabSeparators(id domain.WindowID, r, u domain.Rect) {
 				s.Y, s.H = u.Y, s.H+r.Y-u.Y
 			}
 		}
-		w.fill(w.physRect(s.X, s.Y, s.W, s.H), color)
+		w.fill(w.physRect(s.X, s.Y, s.W, s.H), c)
 	}
 }

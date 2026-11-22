@@ -94,23 +94,31 @@ func mix(ink, bg color.RGBA) color.RGBA {
 // background (WCAG AA for normal text).
 const minTextContrast = 4.5
 
+// The opaque inks of compositor text: InkFor picks inkLight or inkDark,
+// MutedInk their quieter mutedLight or mutedDark.
+var (
+	inkDark    = color.RGBA{17, 17, 17, 255}
+	inkLight   = color.RGBA{245, 245, 245, 255}
+	mutedDark  = color.RGBA{64, 64, 64, 255}
+	mutedLight = color.RGBA{192, 192, 192, 255}
+)
+
 // InkFor is an opaque ink for text drawn on bg: near-white on a dark
 // background, near-black on a light one, whichever contrasts more.
 func InkFor(bg color.RGBA) color.RGBA {
-	dark, light := color.RGBA{17, 17, 17, 255}, color.RGBA{245, 245, 245, 255}
-	if contrast(bg, light) > contrast(bg, dark) {
-		return light
+	if contrast(bg, inkLight) > contrast(bg, inkDark) {
+		return inkLight
 	}
-	return dark
+	return inkDark
 }
 
-// MutedInk is a quieter opaque ink than InkFor for bg (#c0c0c0 on dark,
-// #404040 on light) when it keeps minTextContrast, else InkFor's.
+// MutedInk is a quieter opaque ink than InkFor for bg (mutedLight on
+// dark, mutedDark on light) when it keeps minTextContrast, else InkFor's.
 func MutedInk(bg color.RGBA) color.RGBA {
 	ink := InkFor(bg)
-	muted := color.RGBA{64, 64, 64, 255}
-	if ink.R > 128 {
-		muted = color.RGBA{192, 192, 192, 255}
+	muted := mutedDark
+	if ink == inkLight {
+		muted = mutedLight
 	}
 	if contrast(bg, muted) >= minTextContrast {
 		return muted
