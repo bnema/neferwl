@@ -101,6 +101,8 @@ type WindowState struct {
 	Column, Row int
 	// Hidden is set for a stashed window while its stash is hidden.
 	Hidden bool
+	// Marks are the window's named marks.
+	Marks MarkSet `json:",omitempty"`
 }
 
 // OutputHDRState is the diagnostic projection of output facts and policy.

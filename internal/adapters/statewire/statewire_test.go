@@ -26,6 +26,23 @@ func TestWindowScriptFields(t *testing.T) {
 	}
 }
 
+// Marks encode as a sorted array, [] when the window has none.
+func TestWindowMarksJSON(t *testing.T) {
+	ids := workspaceid.WithPrefix("0a1b2c3d")
+	for _, tc := range []struct {
+		marks domain.MarkSet
+		want  string
+	}{{"a b", `"marks":["a","b"]`}, {"", `"marks":[]`}} {
+		data, err := json.Marshal(window(domain.WindowState{ID: 1, Marks: tc.marks}, ids))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(data), tc.want) {
+			t.Fatalf("%s missing %s", data, tc.want)
+		}
+	}
+}
+
 // A configured workspace is named after its configured name, any other one
 // after the launch prefix and its core ID: the string of ext_workspace_handle_v1.
 func TestWorkspaceIDStrings(t *testing.T) {

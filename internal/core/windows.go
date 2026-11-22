@@ -23,6 +23,8 @@ type windowRecord struct {
 	// idleInhibit keeps the session awake.
 	inhibitShortcuts bool
 	idleInhibit      bool
+	// marks are the window's named marks, dropped with the record.
+	marks domain.MarkSet
 }
 
 type titleRuleHistory struct{ applied map[string]bool }
@@ -103,6 +105,13 @@ func (r *windowRegistry) setIdleInhibit(id WindowID, on bool) {
 	}
 }
 
+// setMarks replaces the marks of a mapped window only.
+func (r *windowRegistry) setMarks(id WindowID, marks domain.MarkSet) {
+	if rec := r.records[id]; rec != nil && rec.client.ID != 0 {
+		rec.marks = marks
+	}
+}
+
 // drop forgets the surface.
 func (r *windowRegistry) drop(id WindowID) { delete(r.records, id) }
 
@@ -114,7 +123,7 @@ func (r *windowRegistry) layerGone(id WindowID) {
 		return
 	}
 	rec.region = nil
-	if rec.client.ID == 0 && rec.expansionRule == (ruleEffect{}) && rec.appliedTitleRules == nil && rec.mappedAt.IsZero() && !rec.sized && !rec.inhibitShortcuts && !rec.idleInhibit {
+	if rec.client.ID == 0 && rec.expansionRule == (ruleEffect{}) && rec.appliedTitleRules == nil && rec.mappedAt.IsZero() && !rec.sized && !rec.inhibitShortcuts && !rec.idleInhibit && rec.marks == "" {
 		delete(r.records, id)
 	}
 }
