@@ -12,8 +12,8 @@ https://github.com/user-attachments/assets/1ff42ce5-47b3-4cf8-a3a7-5fc5abde4af1
 
 <p align="center"><sub>Stash, overview and animations, recorded on the headless backend at 1080p.</sub></p>
 
-> [!WARNING]
-> **Early alpha, but stable enough for daily use.** Developed and tested mostly on AMD CPUs and GPUs. Hybrid and multi-GPU setups are supported but not yet tested on NVIDIA hardware (contribs welcome). Expect bugs and breaking config changes.
+> [!NOTE]
+> **Stable for daily use.** NeferWL now has most of the features I wanted, and it performs well. You may still find bugs, especially in layouts I don't use daily, so please report them. Developed and tested mostly on AMD CPUs and GPUs. Hybrid and multi-GPU setups are supported but not yet tested on NVIDIA hardware (issue reports welcome).
 
 ## Why NeferWL
 
