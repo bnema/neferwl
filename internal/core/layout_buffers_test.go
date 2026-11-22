@@ -207,7 +207,6 @@ func TestLayoutResultsDoNotAlias(t *testing.T) {
 func cloneScene(s domain.Scene) domain.Scene {
 	s.Windows = slices.Clone(s.Windows)
 	s.Separators = slices.Clone(s.Separators)
-	s.DropHints = slices.Clone(s.DropHints)
 	s.Layers = slices.Clone(s.Layers)
 	s.CaptureIndicators = slices.Clone(s.CaptureIndicators)
 	return s

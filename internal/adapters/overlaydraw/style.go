@@ -11,6 +11,12 @@ import (
 type Style struct {
 	FontPx                 float64
 	Background, Foreground color.RGBA
+	// PadX and PadY, above 0, are the padding around the text in physical
+	// pixels; 0 keeps the hint label's.
+	PadX, PadY float64
+	// TextOnly draws the glyphs on a transparent raster, without the box
+	// and its outline: the caller draws the background.
+	TextOnly bool
 }
 
 // FontPixels resolves the shared physical font size.

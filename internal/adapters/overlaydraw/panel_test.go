@@ -57,7 +57,7 @@ func TestPanelLayout(t *testing.T) {
 
 func TestPanelRedrawAllocations(t *testing.T) {
 	bg, fg := Colors("", "", "")
-	style := Style{13, bg, fg}
+	style := Style{FontPx: 13, Background: bg, Foreground: fg}
 	var p Panel
 	texts := [2][4]string{{"0123456789"}, {"9876543210"}}
 	var graph [64]uint16
@@ -73,7 +73,7 @@ func TestPanelRedrawAllocations(t *testing.T) {
 
 func TestPanelWidthLimit(t *testing.T) {
 	bg, fg := Colors("", "", "")
-	style := Style{13, bg, fg}
+	style := Style{FontPx: 13, Background: bg, Foreground: fg}
 	var p Panel
 	line := "client-controlled-应用-abcdefghijklmnopqrstuvwxyz"
 	for _, limit := range []int{0, 1, 10, 64, 100} {

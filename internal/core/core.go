@@ -140,6 +140,10 @@ type Core struct {
 	configures     configures
 	pointer        WindowID
 	hover          pendingHover
+	dragHover      dragHover
+	// dropWarned holds the drop axis warnings sent since the last change
+	// of the drop config (sendDropWarnings).
+	dropWarned map[string]bool
 	hoverLocked    bool     // a non-pointer focus change holds hover focus
 	hoverLock      WindowID // hover target the hold ignores: the window under the cursor, retargeted when layout changes what lies there
 	focusByPointer bool     // set while focusPointer publishes, so syncFocus does not arm the hold
@@ -427,7 +431,7 @@ func (c *Core) apply(cfg domain.Config) error {
 			return fmt.Errorf("invalid workspace %q", ws.Name)
 		}
 		seen[ws.Name] = true
-		named = append(named, NamedWorkspace{Name: ws.Name, Monitor: ws.Monitor, MaxColumns: ws.MaxColumns, Overflow: o, Size: ws.Size})
+		named = append(named, NamedWorkspace{Name: ws.Name, Monitor: ws.Monitor, MaxColumns: ws.MaxColumns, Overflow: o, Size: ws.Size, Drop: ws.Drop})
 	}
 	specs, err := parseSlots(cfg.Workspaces)
 	if err != nil {
@@ -452,6 +456,9 @@ func (c *Core) apply(cfg domain.Config) error {
 	}
 	if c.cfg.Focus.FollowMouse != cfg.Focus.FollowMouse || c.cfg.Focus.FollowMouseDelay != cfg.Focus.FollowMouseDelay {
 		c.cancelHover()
+	}
+	if !sameDropWarnConfig(c.cfg, cfg) {
+		clear(c.dropWarned)
 	}
 	c.cfg = cfg
 	c.inputBindings = false
@@ -486,6 +493,9 @@ func (c *Core) apply(cfg domain.Config) error {
 			s.mon.ov.dropScroll()
 		}
 	}
+	// The config is in effect: warn, against the layouts now in place,
+	// about the edge actions they cannot do.
+	c.sendDropWarnings()
 	return nil
 }
 
@@ -774,6 +784,10 @@ func (c *Core) publishFrame(ctx context.Context, only *screen) error {
 		return err
 	}
 	c.advanceFlash(only)
+	// Like the flash: a flip of another output leaves the preview as it is.
+	if c.drag != nil && (only == nil || only == c.drag.target.screen) {
+		c.advanceDropPreview(c.now())
+	}
 	scenes := make([]domain.Scene, 0, len(c.screens))
 	// Before the first output (and after the last is unplugged) the
 	// placeholder's scene has no output name: no renderer draws it.
@@ -861,7 +875,7 @@ func (c *Core) step(ctx context.Context, only *screen) error {
 // other than only.
 func (c *Core) animatingOther(only *screen) bool {
 	for _, sc := range c.screens {
-		if sc != only && (sc.springing() || c.flashing(sc) || c.positionHintFading(sc)) {
+		if sc != only && (sc.springing() || c.flashing(sc) || c.positionHintFading(sc) || c.dropAnimating(sc)) {
 			return true
 		}
 	}
@@ -1240,6 +1254,7 @@ func (c *Core) Run(ctx context.Context) error {
 	defer c.stopFlashTimer()
 	defer c.stopPositionHintTimer()
 	defer c.cancelHover()
+	defer c.stopDragHover()
 	defer c.cancelSwitcher()
 	defer c.stopRepeat()
 	// Startup commands run once per session. Full launcher queues retain a
@@ -1334,6 +1349,11 @@ func (c *Core) Run(ctx context.Context) error {
 			}
 			c.frameC = nil
 			if c.step(ctx, nil) != nil {
+				return nil
+			}
+			continue
+		case <-c.dragHover.timerC:
+			if c.securityCheckpoint(ctx) != nil || c.dragHoverTick(ctx) != nil {
 				return nil
 			}
 			continue
@@ -1434,6 +1454,8 @@ func (c *Core) Run(ctx context.Context) error {
 				c.hdrCaps[v.Output] = v.OutputHDRCaps
 			case ports.OutputAdded:
 				c.addScreen(v.Info)
+				// A drop.<output> entry may apply now.
+				c.sendDropWarnings()
 				if c.layerChanged {
 					c.setLayers(c.allLayers())
 				}
@@ -1477,6 +1499,7 @@ func (c *Core) Run(ctx context.Context) error {
 			}
 			// A rotation can shrink the layout under a still pointer.
 			c.cursorX, c.cursorY = c.clampPointer(c.cursorX, c.cursorY, c.cursorX, c.cursorY)
+			c.retargetDrag()
 			if c.workspaceVisible(ctx, false) != nil {
 				return nil
 			}

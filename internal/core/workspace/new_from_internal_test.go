@@ -21,6 +21,7 @@ var workspaceFields = map[string]bool{ // true: setting
 	"stashFocus": false, "stashHidden": false, "stashWidth": true, "stashGap": true,
 	"hiddenFullscreen": false, "stashOver": false, "Home": false, "HomePos": false, "TermAt": false,
 	"colBuf": false, "rowBuf": false, "tileBuf": false, "zoomBuf": false,
+	"anchorBuf": false, "anchorCols": false, "snapBuf": false,
 }
 
 // lanesFields classifies layout.Lanes: setting (copied), derived (follows
@@ -64,6 +65,7 @@ func dirty(w *Workspace) {
 	w.Name, w.Home, w.HomePos, w.TermAt = "dev", "HDMI-1", 2, time.Unix(1, 0)
 	w.OverviewAfter = &Workspace{}
 	w.colBuf, w.rowBuf, w.tileBuf, w.zoomBuf = make([]Rect, 1), make([]Rect, 1), make([]Placement, 1), make([]Placement, 1)
+	w.anchorBuf, w.anchorCols, w.snapBuf = make([]Placement, 1), make([]visibleColumn, 1), make([]float64, 1)
 }
 
 func TestNewFromCopiesOnlySettings(t *testing.T) {

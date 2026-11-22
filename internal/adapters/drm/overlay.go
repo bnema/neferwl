@@ -83,6 +83,11 @@ func overlayCandidate(s domain.Scene, surfaces map[domain.WindowID]domain.Surfac
 	if s.Transform != 0 {
 		return domain.SceneWindow{}, domain.SurfaceContent{}, colorBypass, "output_transform"
 	}
+	if s.DropPreview != nil {
+		// The drop preview (zone and thumbnail proxy) is drawn over the
+		// windows.
+		return domain.SceneWindow{}, domain.SurfaceContent{}, colorBypass, "drop_preview"
+	}
 	scale := s.Scale
 	if scale <= 0 {
 		scale = 1
@@ -152,10 +157,6 @@ func overlayCandidate(s domain.Scene, surfaces map[domain.WindowID]domain.Surfac
 		// The renderer composes the veil (under the first float, or under
 		// every window with DimBehind): a window on the plane would skip it.
 		return domain.SceneWindow{}, domain.SurfaceContent{}, colorBypass, "dim"
-	}
-	if len(s.DropHints) > 0 {
-		// Drag hints are drawn over the windows.
-		return domain.SceneWindow{}, domain.SurfaceContent{}, colorBypass, "drop_hint"
 	}
 	for _, l := range s.Layers {
 		if l.Layer >= domain.LayerTop && l.Rect.Overlaps(pick.Rect) {

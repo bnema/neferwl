@@ -83,7 +83,7 @@ func TestDropReleasesSlot(t *testing.T) {
 		}
 		c.drag.target = dropTarget{}
 		r, _ := modelPlaced(w, 2)
-		c.cursorX, c.cursorY = float64(r.X+r.W/2), float64(r.Y+5)
+		c.cursorX, c.cursorY = float64(r.X+r.W/2), float64(r.Y+40)
 		if err := c.endDrag(ctx); err != nil {
 			t.Fatal(err)
 		}

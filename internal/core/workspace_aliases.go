@@ -35,11 +35,8 @@ type Action = workspacedomain.Action
 // Effect is what a workspace action asks of the monitor.
 type Effect = workspacedomain.Effect
 
-// DropSpot is an output-local drop target.
-type DropSpot = workspacedomain.DropSpot
-
-// DropKind says how a dragged tile joins its destination.
-type DropKind = workspacedomain.DropKind
+// Anchor is an output-local drop zone of a dragged tile.
+type Anchor = workspacedomain.Anchor
 
 // OverviewRow is the monitor's provisional selection for one overview row.
 type OverviewRow = workspacedomain.OverviewRow
@@ -194,8 +191,14 @@ const MoveColumnToWorkspace = workspacedomain.MoveColumnToWorkspace
 // MoveWindowToWorkspace is workspace.MoveWindowToWorkspace.
 const MoveWindowToWorkspace = workspacedomain.MoveWindowToWorkspace
 
-// DropNone is workspace.DropNone.
-const DropNone = workspacedomain.DropNone
+// AnchorNone is workspace.AnchorNone.
+const AnchorNone = workspacedomain.AnchorNone
+
+// AnchorEdge is workspace.AnchorEdge.
+const AnchorEdge = workspacedomain.AnchorEdge
+
+// AnchorWindow is workspace.AnchorWindow.
+const AnchorWindow = workspacedomain.AnchorWindow
 
 // EdgeAlways is workspace.EdgeAlways.
 const EdgeAlways = workspacedomain.EdgeAlways
@@ -300,7 +303,9 @@ func Merge(dst, src *Workspace) { workspacedomain.Merge(dst, src) }
 func NewFrom(t *Workspace, id uint64) *Workspace { return workspacedomain.NewFrom(t, id) }
 
 // Drop calls workspace.Drop.
-func Drop(src, w *Workspace, id WindowID, t DropSpot) { workspacedomain.Drop(src, w, id, t) }
+func Drop(src, w *Workspace, id WindowID, a Anchor, px, py int) {
+	workspacedomain.Drop(src, w, id, a, px, py)
+}
 
 // NeighborSlot calls workspace.NeighborSlot.
 func NeighborSlot(axis layout.Axis, u, cs Rect, w *Workspace, before bool, spacing int) (slot Rect, gapAt int) {

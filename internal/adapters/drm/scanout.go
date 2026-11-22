@@ -124,9 +124,9 @@ func scanoutCandidate(s domain.Scene, surfaces map[domain.WindowID]domain.Surfac
 	if kept != nil && kept(full.ID) {
 		return domain.SurfaceContent{}, "leaving"
 	}
-	if len(s.DropHints) > 0 {
-		// Drag hints are drawn over the window.
-		return domain.SurfaceContent{}, "drop_hint"
+	if s.DropPreview != nil {
+		// The drop preview is drawn over the window.
+		return domain.SurfaceContent{}, "drop_preview"
 	}
 	if full.Dim > 0 {
 		// Its veil is composed over it: the plane would show it bright.

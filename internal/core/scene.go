@@ -3,7 +3,6 @@ package core
 import (
 	"context"
 	"github.com/bnema/neferwl/internal/ports"
-	"slices"
 
 	"github.com/bnema/neferwl/internal/domain"
 )
@@ -49,8 +48,8 @@ func (c *Core) sceneFor(ctx context.Context, i int, sc *screen, only *screen, ca
 		scene.Dim = c.cfg.Floating.Dim
 		scene.DimBehind = scene.Dim > 0
 	}
-	if d := c.drag; d != nil && d.target.screen == sc && d.target.kind != DropNone {
-		scene.DropHints = slices.Clone(d.target.hints)
+	if d := c.drag; d != nil && d.target.screen == sc && d.target.a.Kind != AnchorNone {
+		scene.DropPreview = d.target.preview
 	}
 	if sc.mon.ov.open {
 		// Frame the selection and separate numbered and named row groups.
@@ -138,6 +137,8 @@ func (c *Core) sceneFor(ctx context.Context, i int, sc *screen, only *screen, ca
 	}
 	scene.Windows = append(scene.Windows, c.scenePopups(sc)...)
 	scene.Windows = c.sceneUnmanaged(scene.Windows, sc)
+	// The dragged window's thumbnail where it is not drawn otherwise.
+	scene.Windows = c.dropProxy(scene.Windows, sc)
 	if icon, ok := c.dataDragIconOn(i, sc); ok {
 		// The drag icon is over everything, popups and layers included.
 		scene.Windows = append(scene.Windows, icon)

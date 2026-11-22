@@ -239,7 +239,13 @@ type Config struct {
 		VRRFlipGap time.Duration
 	}
 	Performance struct{ Realtime bool }
-	Log         struct {
+	// Drop is the tile drag-and-drop policy (drop.* keys): global, then per
+	// output (drop.<output>.* keys, in first-seen order).
+	Drop struct {
+		DropPolicy
+		Outputs []OutputDrop
+	}
+	Log struct {
 		Level string
 		Debug []string
 	}
@@ -292,6 +298,14 @@ type WorkspaceConfig struct {
 	// Slots are the declared columns (workspace.<name>.column.N), by N.
 	Slots []SlotConfig
 	LayoutRules
+	// Drop overrides the drop policy (workspace.<name>.drop.* keys).
+	Drop DropPolicy
+}
+
+// OutputDrop is the drop policy of outputs matching Output.
+type OutputDrop struct {
+	Output string
+	DropPolicy
 }
 
 // CommandSeparator separates startup commands and bind action chains:
@@ -375,6 +389,7 @@ func (c Config) Equal(o Config) bool {
 	if !equalSlice(c.LineageShells, o.LineageShells) || !equalSlice(c.Terminal.Command, o.Terminal.Command) ||
 		!equalSliceFunc(c.Startup, o.Startup, equalSlice[[]string]) ||
 		!equalSlice(c.Layout.Outputs, o.Layout.Outputs) ||
+		!equalSlice(c.Drop.Outputs, o.Drop.Outputs) ||
 		!equalSlice(c.Hint.Sources, o.Hint.Sources) ||
 		!equalSliceFunc(c.Workspaces, o.Workspaces, workspaceConfigEqual) ||
 		!equalSliceFunc(c.Rules, o.Rules, windowRuleEqual) ||
@@ -393,7 +408,7 @@ func (c Config) Equal(o Config) bool {
 		c.Layout.LayoutRules == o.Layout.LayoutRules && c.InputDevicesConfig == o.InputDevicesConfig &&
 		c.Cursor == o.Cursor && c.Animations == o.Animations && c.Navigation == o.Navigation && c.Focus == o.Focus && c.OSD == o.OSD &&
 		hintConfigScalars(c) == hintConfigScalars(o) && c.Render == o.Render &&
-		c.Performance == o.Performance && c.Log.Level == o.Log.Level
+		c.Performance == o.Performance && c.Drop.DropPolicy == o.Drop.DropPolicy && c.Log.Level == o.Log.Level
 }
 
 func hintConfigScalars(c Config) struct {
@@ -415,7 +430,7 @@ func hintConfigScalars(c Config) struct {
 
 func workspaceConfigEqual(a, b WorkspaceConfig) bool {
 	return a.Name == b.Name && a.Monitor == b.Monitor && a.Size == b.Size &&
-		a.LayoutRules == b.LayoutRules && equalSliceFunc(a.Slots, b.Slots, func(a, b SlotConfig) bool {
+		a.LayoutRules == b.LayoutRules && a.Drop == b.Drop && equalSliceFunc(a.Slots, b.Slots, func(a, b SlotConfig) bool {
 		return a.Index == b.Index && a.Cells == b.Cells && equalSlice(a.Argv, b.Argv)
 	})
 }
@@ -504,3 +519,12 @@ type XwaylandSettings struct {
 	RootCursor bool
 	Cursor     CursorImage
 }
+
+// ConfigWarning is a non-fatal diagnostic about an applied configuration:
+// the config is in effect, a part of it does nothing. Component names the
+// subsystem that logs it.
+type ConfigWarning struct {
+	Component, Msg string
+}
+
+func (w ConfigWarning) Error() string { return w.Msg }

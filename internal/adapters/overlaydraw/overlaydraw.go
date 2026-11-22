@@ -64,7 +64,7 @@ func (r *Raster) Label(text string, typed int, scale float64, styles ...Style) (
 	}
 	typed = max(0, min(typed, len(text)))
 	bg, fg := Colors("", "", "")
-	style := Style{fontSize * scale, bg, fg}
+	style := Style{FontPx: fontSize * scale, Background: bg, Foreground: fg}
 	if len(styles) > 0 {
 		style = styles[0]
 	}
@@ -121,13 +121,24 @@ func render(face font.Face, text string, typed int, style Style) entry {
 	m := face.Metrics()
 	px := int(math.Round(padX * scale))
 	py := int(math.Round(padY * scale))
+	if style.PadX > 0 {
+		px = int(math.Round(style.PadX))
+	}
+	if style.PadY > 0 {
+		py = int(math.Round(style.PadY))
+	}
 	border := 1
+	if style.TextOnly {
+		border = 0
+	}
 	adv := font.MeasureString(face, text).Ceil()
 	w := adv + 2*px + 2*border
 	h := m.Height.Ceil() + 2*py + 2*border
 	img := image.NewRGBA(image.Rect(0, 0, w, h))
-	draw.Draw(img, img.Bounds(), image.NewUniform(outline), image.Point{}, draw.Src)
-	draw.Draw(img, img.Bounds().Inset(border), image.NewUniform(background), image.Point{}, draw.Src)
+	if !style.TextOnly {
+		draw.Draw(img, img.Bounds(), image.NewUniform(outline), image.Point{}, draw.Src)
+		draw.Draw(img, img.Bounds().Inset(border), image.NewUniform(background), image.Point{}, draw.Src)
+	}
 	d := font.Drawer{Dst: img, Face: face, Dot: fixed.Point26_6{X: fixed.I(border + px), Y: fixed.I(border+py) + m.Ascent}}
 	d.Src = image.NewUniform(typedInk)
 	d.DrawString(text[:typed])

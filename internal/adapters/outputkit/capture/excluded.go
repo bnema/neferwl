@@ -58,6 +58,7 @@ type excluder struct {
 	windows  []domain.SceneWindow
 	layers   []domain.SceneLayer
 	overlays []domain.Overlay
+	plain    []domain.SceneWindow // plainInto's window scratch
 }
 
 // Shows reports whether a content change of id needs a new frame: the
@@ -113,20 +114,37 @@ func hidesOverlays(s domain.Scene) bool {
 func internal(q domain.CaptureRequest) bool { return q.ID&ports.CaptureIDInternal != 0 }
 
 // plain returns s as a capture shows it: without its capture state,
-// indicators and position hint, and with only the overlays kept for clients
+// indicators, position hint, drop preview and Proxy windows, and with only the overlays kept for clients
 // (Overlay.Capture) in a new slice, never the caller's backing array. Seq is 0
 // so the renderer redraws the whole target instead of reusing a displayed
 // frame.
-func plain(s domain.Scene) domain.Scene { return plainInto(s, nil) }
+func plain(s domain.Scene) domain.Scene {
+	var wins []domain.SceneWindow
+	return plainInto(s, nil, &wins)
+}
 
 // plainInto is plain with the kept overlays appended to buf[:0], which must
-// not alias s.Overlays.
-func plainInto(s domain.Scene, buf []domain.Overlay) domain.Scene {
+// not alias s.Overlays. Only when s has Proxy windows, the others are
+// appended to (*wins)[:0], which must not alias s.Windows, and *wins keeps
+// the grown storage.
+func plainInto(s domain.Scene, buf []domain.Overlay, wins *[]domain.SceneWindow) domain.Scene {
 	s.Capture, s.CaptureIndicators, s.Seq = nil, nil, 0
 	s.Overlays = captured(buf, s.Overlays)
 	s.PositionHint = domain.PositionHint{}
+	s.DropPreview = nil
+	if slices.ContainsFunc(s.Windows, isProxy) {
+		kept := (*wins)[:0]
+		for _, w := range s.Windows {
+			if !w.Proxy {
+				kept = append(kept, w)
+			}
+		}
+		*wins, s.Windows = kept, kept
+	}
 	return s
 }
+
+func isProxy(w domain.SceneWindow) bool { return w.Proxy }
 
 // captured returns the overlays with Capture, appended to buf[:0]; nil when
 // none.
@@ -149,7 +167,7 @@ func captured(buf, overlays []domain.Overlay) []domain.Overlay {
 // without it, first (same renderer, queue order, like ExcludedScene), and
 // copied before the displayed one is drawn. It reports whether it took the
 // requests (and zeroed them); false when the displayed frame already shows
-// what they may (no indicator, no position hint, and no overlays or overlays
+// what they may (no indicator, no position hint, no drop preview, and no overlays or overlays
 // all kept for clients) or there is nothing to serve, then the caller submits
 // them after the displayed frame as usual. On a render error the caller still
 // owns the requests. Internal requests never reach it on a frame that keeps
@@ -161,7 +179,7 @@ func captured(buf, overlays []domain.Overlay) []domain.Overlay {
 // the plain render reads client buffers even when the requests are rejected,
 // so the caller owns it (hold or wait it) whatever happened, error included.
 func (p *Pipeline) SubmitPlain(r ports.Renderer, s domain.Scene, surfaces map[domain.WindowID]domain.SurfaceContent, normal []domain.CaptureRequest) (took bool, done *os.File, err error) {
-	if len(normal) == 0 || len(s.CaptureIndicators) == 0 && !hidesOverlays(s) && !s.PositionHint.Shown() {
+	if len(normal) == 0 || len(s.CaptureIndicators) == 0 && !hidesOverlays(s) && !s.PositionHint.Shown() && s.DropPreview == nil {
 		return false, nil, nil
 	}
 	done, err = r.Render(p.plainScene(s), surfaces)
@@ -176,7 +194,7 @@ func (p *Pipeline) SubmitPlain(r ports.Renderer, s domain.Scene, surfaces map[do
 // plainScene derives a plain frame using owner-only scratch, separate from
 // the excluded scene's storage and never aliased with the input scene.
 func (p *Pipeline) plainScene(s domain.Scene) domain.Scene {
-	s = plainInto(s, p.plainOverlays)
+	s = plainInto(s, p.plainOverlays, &p.plainWindows)
 	if s.Overlays != nil {
 		p.plainOverlays = s.Overlays[:0]
 	}
@@ -190,7 +208,7 @@ func (c *excluder) scene(s domain.Scene) domain.Scene {
 	if s.Capture != nil {
 		ex = s.Capture.Excluded
 	}
-	s = plainInto(s, c.overlays)
+	s = plainInto(s, c.overlays, &c.plain)
 	if s.Overlays != nil {
 		c.overlays = s.Overlays[:0]
 	}

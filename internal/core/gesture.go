@@ -583,17 +583,17 @@ func (c *Core) animate(now time.Time, only *screen) {
 	}
 }
 
-// sliding reports whether a spring, focus flash or position hint fade runs
-// on the named output.
+// sliding reports whether a spring, focus flash, position hint fade or
+// drop preview slide or ramp runs on the named output.
 func (c *Core) sliding(output string) bool {
 	i := c.screenIndex(output)
-	return i >= 0 && (c.screens[i].springing() || c.flashing(c.screens[i]) || c.positionHintFading(c.screens[i]))
+	return i >= 0 && (c.screens[i].springing() || c.flashing(c.screens[i]) || c.positionHintFading(c.screens[i]) || c.dropAnimating(c.screens[i]))
 }
 
-// animating reports whether a spring, focus flash or position hint fade
-// runs on any output.
+// animating reports whether a spring, focus flash, position hint fade or
+// drop preview slide or ramp runs on any output.
 func (c *Core) animating() bool {
-	if c.flash.running != nil {
+	if c.flash.running != nil || c.dropAnimating(nil) {
 		return true
 	}
 	for _, sc := range c.screens {
@@ -621,7 +621,7 @@ func (m *Monitor) springing() bool {
 func (c *Core) frameFallback() time.Duration {
 	refresh := 60000
 	for _, sc := range c.screens {
-		if r := sc.info.RefreshMilli; r > 0 && (sc.springing() || c.flashing(sc) || c.positionHintFading(sc)) {
+		if r := sc.info.RefreshMilli; r > 0 && (sc.springing() || c.flashing(sc) || c.positionHintFading(sc) || c.dropAnimating(sc)) {
 			refresh = min(refresh, r)
 		}
 	}

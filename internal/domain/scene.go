@@ -59,10 +59,10 @@ type Scene struct {
 	// the Border colors: tile lines over the tiles, under the floats; a
 	// float's border right after the float.
 	Separators []Separator
-	// DropHints show where a dragged tile lands, filled with Border.Active
-	// over the windows of the workspace, under the top layers. Only the
-	// output under the pointer has them, during a drag.
-	DropHints []Rect
+	// DropPreview shows where a dragged tile lands, in Border.Active over
+	// the windows of the workspace, under the top layers. Only the output
+	// under the pointer has one, during a drag. Immutable once published.
+	DropPreview *DropPreview
 	// Layers are the shown layer surfaces, drawn in slice order: background
 	// and bottom before windows, top and overlay after. Core leaves out
 	// those a fullscreen window hides (all but the background and a surface
@@ -126,6 +126,9 @@ func (s Scene) SameAs(o Scene) bool {
 	if (s.Outline == nil) != (o.Outline == nil) || (s.Outline != nil && *s.Outline != *o.Outline) {
 		return false
 	}
+	if (s.DropPreview == nil) != (o.DropPreview == nil) || (s.DropPreview != nil && *s.DropPreview != *o.DropPreview) {
+		return false
+	}
 	if s.CaptureScene != nil || o.CaptureScene != nil {
 		return false
 	}
@@ -140,7 +143,7 @@ func (s Scene) SameAs(o Scene) bool {
 		}
 	}
 	return slices.Equal(s.Windows, o.Windows) && slices.Equal(s.Separators, o.Separators) &&
-		slices.Equal(s.DropHints, o.DropHints) && slices.Equal(s.Layers, o.Layers) &&
+		slices.Equal(s.Layers, o.Layers) &&
 		slices.Equal(s.CaptureIndicators, o.CaptureIndicators) &&
 		s.Physical == o.Physical && slices.Equal(s.Overlays, o.Overlays)
 }
@@ -271,13 +274,38 @@ type SceneWindow struct {
 	// renderer composes such windows, never scans them out. A value, not a
 	// pointer, so SameAs compares it; the zero value is no expansion.
 	SDRExpansion SDRExpansionCurve
+	// Proxy marks the dragged window's thumbnail on an output that does
+	// not otherwise show it (DropPreview.Thumb): drawn with the preview,
+	// never hit-tested nor focused.
+	Proxy bool
+}
+
+// DropPreview is where a dragged tile lands (Scene.DropPreview).
+type DropPreview struct {
+	// Rect is the zone, output-local logical.
+	Rect Rect
+	// Radius is the window corner radius for window anchors, 0 otherwise.
+	Radius int
+	// Fill is the fill alpha, 0 to 1.
+	Fill float64
+	// Label names the action (DropAction.Label).
+	Label string
+	// LabelPx is the label font size, physical px.
+	LabelPx float64
+	// Edge is the output edge of an edge anchor, DropSideCenter for any
+	// other: its label goes beyond the band, inside the output.
+	Edge DropSide
+	// Thumb is the dragged window drawn as a thumbnail at ThumbRect, 0
+	// for none.
+	Thumb     WindowID
+	ThumbRect Rect
 }
 
 // Tile reports whether w is a tile: laid out in the usable area and
 // clipped to Scene.TileArea. Floats, fullscreen windows, overview previews
-// and popups are placed against the whole viewport.
+// popups and drag thumbnails (Proxy) are placed against the whole viewport.
 func (w SceneWindow) Tile() bool {
-	return !w.Floating && !w.Fullscreen && !w.Popup && w.Preview == 0
+	return !w.Floating && !w.Fullscreen && !w.Popup && !w.Proxy && w.Preview == 0
 }
 
 // ContentRoute lists the window contents needed by one output. Gen advances

@@ -131,14 +131,18 @@ func injectRequest(name string, args []string) (map[string]any, error) {
 			return nil, usagef("expected one text argument")
 		}
 		req["text"] = args[0]
-	case "click":
+	case "click", "down", "up":
 		if len(args) > 1 {
 			return nil, usagef("expected at most one button")
 		}
 		if len(args) == 1 && args[0] != "left" && args[0] != "right" && args[0] != "middle" {
 			return nil, usagef("unknown button")
 		}
-		req["kind"], req["cmd"], req["args"] = "pointer", "click", args
+		if name != "click" && len(args) == 0 {
+			// The adapter requires the button of a press or release.
+			args = []string{"left"}
+		}
+		req["kind"], req["cmd"], req["args"] = "pointer", name, args
 	case "move":
 		if len(args) != 2 {
 			return nil, usagef("expected x y")
@@ -171,6 +175,8 @@ var (
 	pressCmd   = injectCommand("press", "<combo>", "Press keys without releasing them.")
 	releaseCmd = injectCommand("release", "<combo>", "Release keys in reverse order.")
 	clickCmd   = injectCommand("click", "[left|right|middle]", "Click a pointer button over the control socket.")
+	downCmd    = injectCommand("down", "[left|right|middle]", "Press a pointer button without releasing it.")
+	upCmd      = injectCommand("up", "[left|right|middle]", "Release a pointer button.")
 	moveCmd    = injectCommand("move", "<x> <y>", "Move the pointer to global logical coordinates.")
 	swipeCmd   = injectCommand("swipe", "<3|4> <up|down|left|right>", "Inject a touchpad swipe over the control socket.")
 )

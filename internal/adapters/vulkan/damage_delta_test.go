@@ -28,7 +28,7 @@ func TestSceneFieldCount(t *testing.T) {
 // sceneDelta compares windows by struct equality, so a new field is covered
 // as long as it only changes where or how that window draws (inside Rect).
 func TestSceneWindowFieldCount(t *testing.T) {
-	const fields = 16
+	const fields = 17
 	assert.Equal(t, fields, len(reflect.VisibleFields(reflect.TypeOf(domain.SceneWindow{}))),
 		"SceneWindow fields changed: check sceneDelta (a field that draws outside Rect needs its own rule), then this count")
 }
@@ -103,7 +103,6 @@ func TestDamageDeltaFullRedraws(t *testing.T) {
 		"tile inset":     func(s *domain.Scene) { s.TileInset = domain.Insets{Bottom: 10} },
 		"dim":            func(s *domain.Scene) { s.Dim = 0.5 },
 		"dim behind":     func(s *domain.Scene) { s.DimBehind = true },
-		"drop hints":     func(s *domain.Scene) { s.DropHints = []domain.Rect{{W: 5, H: 5}} },
 		"indicators": func(s *domain.Scene) {
 			s.CaptureIndicators = []domain.CaptureIndicator{{Rect: domain.Rect{W: 5, H: 5}}}
 		},
@@ -243,22 +242,21 @@ func TestTargetHoldCopiesSlices(t *testing.T) {
 	ws := []domain.SceneWindow{win(1, 0, 0, 100, 100), win(2, 100, 0, 100, 100)}
 	seps := []domain.Separator{{Rect: domain.Rect{X: 100, W: 2, H: 100}}}
 	layers := []domain.SceneLayer{{ID: 9, Rect: domain.Rect{W: 10, H: 10}}}
-	hints := []domain.Rect{{W: 5, H: 5}}
 	marks := []domain.CaptureIndicator{{Rect: domain.Rect{W: 5, H: 5}}}
 	s := deltaScene(1)
-	s.Windows, s.Separators, s.Layers, s.DropHints, s.CaptureIndicators = ws, seps, layers, hints, marks
+	s.Windows, s.Separators, s.Layers, s.CaptureIndicators = ws, seps, layers, marks
 	tg := &target{}
 	d := &damageRegion{drawn: map[domain.WindowID]heldWindow{}}
 	tg.hold(s, d)
-	ws[1].Rect.X, seps[0].Rect.X, layers[0].ID, hints[0].W, marks[0].Rect.W = 150, 150, 8, 6, 6
+	ws[1].Rect.X, seps[0].Rect.X, layers[0].ID, marks[0].Rect.W = 150, 150, 8, 6
 	phys := func(r domain.Rect) image.Rectangle { return image.Rect(r.X, r.Y, r.X+r.W, r.Y+r.H) }
 	// Compared with the mutated slices as the new scene, the held copy
 	// differs in each; with a held reference nothing would differ.
 	cur := s
 	cur.Seq = 2
 	_, ok := sceneDelta(tg.scene, cur, phys, 1<<30)
-	assert.False(t, ok, "layers, hints and indicators changed: full redraw")
-	cur.Layers, cur.DropHints, cur.CaptureIndicators = tg.heldLayers, tg.heldHints, tg.heldIndicators
+	assert.False(t, ok, "layers and indicators changed: full redraw")
+	cur.Layers, cur.CaptureIndicators = tg.heldLayers, tg.heldIndicators
 	area, ok := sceneDelta(tg.scene, cur, phys, 1<<30)
 	require.True(t, ok)
 	assert.Equal(t, image.Rect(100, 0, 250, 100), area, "window 2, old and new")
@@ -604,4 +602,62 @@ func TestDisjointWindowDamageMatchesFullRedraw(t *testing.T) {
 			}
 		}
 	}
+}
+
+// A change limited to the drop preview damages its old and new zone and
+// thumbnail, outlines included, not the whole output.
+func TestDamageDeltaDropPreview(t *testing.T) {
+	bounds := image.Rect(0, 0, 1000, 500)
+	old := deltaScene(1, win(1, 0, 0, 500, 500), win(2, 500, 0, 500, 500))
+	old.DropPreview = &domain.DropPreview{Rect: domain.Rect{X: 100, Y: 100, W: 50, H: 50}}
+	cur := deltaScene(2, win(1, 0, 0, 500, 500), win(2, 500, 0, 500, 500))
+	cur.DropPreview = &domain.DropPreview{Rect: domain.Rect{X: 200, Y: 100, W: 50, H: 50}, Thumb: 1, ThumbRect: domain.Rect{X: 300, Y: 300, W: 100, H: 60}}
+	d := newDamage(held(old), cur, bounds)
+	require.False(t, d.all())
+	assert.Equal(t, image.Rect(98, 98, 402, 362), d.area)
+
+	// Appearing and leaving damage only the preview.
+	none := deltaScene(3, win(1, 0, 0, 500, 500), win(2, 500, 0, 500, 500))
+	d = newDamage(held(none), old, bounds)
+	require.False(t, d.all())
+	assert.Equal(t, image.Rect(98, 98, 152, 152), d.area)
+	d = newDamage(held(old), none, bounds)
+	require.False(t, d.all())
+	assert.Equal(t, image.Rect(98, 98, 152, 152), d.area)
+
+	// An equal preview behind another pointer damages nothing.
+	same := old
+	same.Seq = 2
+	same.DropPreview = &domain.DropPreview{Rect: old.DropPreview.Rect}
+	d = newDamage(held(old), same, bounds)
+	require.False(t, d.all())
+	assert.True(t, d.area.Empty())
+}
+
+// The target holds its own copy of the preview: a later write to the
+// scene's preview does not change what the target holds.
+func TestHoldCopiesDropPreview(t *testing.T) {
+	s := deltaScene(1, win(1, 0, 0, 10, 10))
+	s.DropPreview = &domain.DropPreview{Rect: domain.Rect{W: 5, H: 5}}
+	tg := held(s)
+	require.NotSame(t, s.DropPreview, tg.scene.DropPreview)
+	s.DropPreview.Rect.W = 9
+	assert.Equal(t, 5, tg.scene.DropPreview.Rect.W)
+	d := &damageRegion{drawn: map[domain.WindowID]heldWindow{}}
+	if n := testing.AllocsPerRun(100, func() { tg.hold(s, d) }); n != 0 {
+		t.Fatalf("hold allocated %v times", n)
+	}
+}
+
+// A moved edge label damages the strips beyond both bands, and only them
+// plus the bands.
+func TestDamageDeltaEdgeLabel(t *testing.T) {
+	bounds := image.Rect(0, 0, 1000, 500)
+	old := deltaScene(1, win(1, 0, 0, 500, 500), win(2, 500, 0, 500, 500))
+	old.DropPreview = &domain.DropPreview{Rect: domain.Rect{Y: 468, W: 1000, H: 32}, Label: "workspace", LabelPx: 13, Edge: domain.DropSideBottom}
+	cur := deltaScene(2, win(1, 0, 0, 500, 500), win(2, 500, 0, 500, 500))
+	d := newDamage(held(old), cur, bounds)
+	require.False(t, d.all())
+	_, h := dropPillBound(old.DropPreview, 1)
+	assert.Equal(t, image.Rect(0, 468-dropLabelMargin-h-2, 1000, 500), d.area)
 }

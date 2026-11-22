@@ -92,6 +92,12 @@ type Workspace struct {
 	tileBuf        []Placement
 	// zoomBuf is overviewZoom's scratch for the tiles it measures.
 	zoomBuf []Placement
+	// anchorBuf and anchorCols are AnchorAt's scratch (placements, visible
+	// columns), reused per pointer motion.
+	anchorBuf  []Placement
+	anchorCols []visibleColumn
+	// snapBuf is ScrollStep's scratch for the snap points.
+	snapBuf []float64
 }
 
 // origPlace remembers where a stashed window was: its column, its row in a

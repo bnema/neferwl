@@ -62,7 +62,7 @@ func TestOverridesAndTyped(t *testing.T) {
 func TestStyledRasterSizeAndCache(t *testing.T) {
 	var r Raster
 	bg, fg := Colors("#f9e2af", "", "")
-	style := Style{13, bg, fg}
+	style := Style{FontPx: 13, Background: bg, Foreground: fg}
 	a, _, small := r.Label("fj", 0, 1, style)
 	style.FontPx = 26
 	b, _, large := r.Label("fj", 0, 1, style)

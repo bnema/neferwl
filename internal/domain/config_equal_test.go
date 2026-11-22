@@ -14,6 +14,9 @@ func TestConfigEqualCoversFields(t *testing.T) {
 	walk = func(typ reflect.Type, path []int, name string) {
 		if typ.Kind() == reflect.Struct {
 			for i := 0; i < typ.NumField(); i++ {
+				if !typ.Field(i).IsExported() {
+					continue // internal bookkeeping such as DropPolicy.set
+				}
 				walk(typ.Field(i).Type, append(append([]int(nil), path...), i), name+"."+typ.Field(i).Name)
 			}
 			return
@@ -59,6 +62,9 @@ func populateConfigField(t *testing.T, v reflect.Value) {
 		v.SetMapIndex(key, value)
 	case reflect.Struct:
 		for i := 0; i < v.NumField(); i++ {
+			if !v.Type().Field(i).IsExported() {
+				continue
+			}
 			populateConfigField(t, v.Field(i))
 		}
 	case reflect.Pointer:

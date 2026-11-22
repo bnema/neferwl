@@ -3,6 +3,8 @@ package workspace
 import (
 	"testing"
 	"testing/synctest"
+
+	"github.com/bnema/neferwl/internal/domain"
 )
 
 func TestScrollBy(t *testing.T) {
@@ -47,7 +49,7 @@ func TestScrollBy(t *testing.T) {
 	})
 }
 
-func TestDropInHiddenColumns(t *testing.T) {
+func TestAnchorHiddenColumns(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		w := workspace()
 		w.SetOutput(1000, 800)
@@ -59,15 +61,15 @@ func TestDropInHiddenColumns(t *testing.T) {
 		}
 		w.FocusID(2)
 		w.ToggleFullWidth()
+		p := domain.DefaultDropPolicy()
 		// Columns 1 and 3 are hidden by the maximized one: the point where
-		// column 3 was hits 2 now, a swap with itself: nothing.
-		if tgt := w.DropIn(2, 900, 400, 4); tgt.Kind != DropNone {
-			t.Fatalf("%+v", tgt)
+		// column 3 was hits 2 now, a drop on itself: nothing.
+		if a := w.AnchorAt(w, 2, 900, 400, Anchor{}, p); a.Kind != AnchorNone {
+			t.Fatalf("%+v", a)
 		}
-		// Dragging 1 (hidden) over 2: top band stacks above 2.
-		if tgt := w.DropIn(1, 500, 30, 4); tgt.Kind != DropAbove || tgt.Anchor != 2 {
-			t.Fatalf("%+v", tgt)
+		// Dragging 1 (hidden) over 2: the top band, below the edge zone, stacks above 2.
+		if a := w.AnchorAt(w, 1, 500, 50, Anchor{}, p); a.Action != domain.DropStack || a.Side != domain.DropSideTop || a.Window != 2 {
+			t.Fatalf("%+v", a)
 		}
-
 	})
 }

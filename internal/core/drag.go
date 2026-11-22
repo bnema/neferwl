@@ -2,7 +2,6 @@ package core
 
 import (
 	"context"
-	"slices"
 	"time"
 
 	"github.com/bnema/neferwl/internal/domain"
@@ -12,37 +11,41 @@ import (
 // Pointer drag: cmd + left button moves the window under the pointer,
 // cmd + right button resizes a float; xdg_toplevel.move/resize start the
 // same drag with the held button. A float follows the pointer. A tile
-// stays in place until the button is released, and NeferWL draws where
-// it lands (Scene.DropHints):
+// stays in place until the button is released, and NeferWL draws the
+// zone it would land in (Scene.DropPreview), resolved by the drop policy
+// (workspace.AnchorAt):
 //
-//   - top or bottom quarter of a window: stack above or below it;
-//   - middle of a window: swap the columns (a stacked window becomes a
-//     new column there);
-//   - scroll overflow, the gap between two columns: a new column there.
+//   - output edges: a release action (column, stash, float) or a hover
+//     action (scroll, workspace) that runs while the pointer rests there;
+//   - scroll overflow, the gap between two columns: a new column there;
+//   - side bands of a window: by default a new column beside it (left,
+//     right) or a stack above or below it (top, bottom);
+//   - center of a window: by default a swap.
 //
-// The client gets no pointer events during the drag; Escape cancels it.
+// A zone is kept while the pointer stays near it (hysteresis). The client
+// gets no pointer events during the drag; Escape cancels it.
 
 const (
 	btnLeft  = 0x110
 	btnRight = 0x111
-	// gapPad is the least half-width of a gap's insert zone, logical px.
+	// gapPad is the least half-width of a border's resize hit zone
+	// (BorderAt), logical px.
 	gapPad = 12
-	// edgeScroll is the distance from the usable edge, logical px, that
-	// scrolls a scroll-overflow workspace during a tile drag, at most
-	// once per edgeScrollInterval.
-	edgeScroll         = 32
-	edgeScrollInterval = 250 * time.Millisecond
+	// dragHoverFirst is how long the pointer rests on a hover edge
+	// (scroll, workspace) before it acts; it then repeats every
+	// dragHoverRepeat while the zone stays the same.
+	dragHoverFirst  = 400 * time.Millisecond
+	dragHoverRepeat = 250 * time.Millisecond
 )
 
-// dropTarget is where a dragged tile lands. anchor is the hovered window
-// (above, below, swap) or a window of the column the new one goes before
-// (insert; 0 is the end).
+// dropTarget is where a dragged tile lands: anchor a of workspace ws on
+// screen. preview is its published preview (advanceDropPreview); immutable,
+// replaced only when its content changes so equal frames share it.
 type dropTarget struct {
-	kind   DropKind
-	screen *screen
-	ws     *Workspace
-	anchor WindowID
-	hints  []Rect
+	a       Anchor
+	screen  *screen
+	ws      *Workspace
+	preview *domain.DropPreview
 }
 
 type dragState struct {
@@ -57,8 +60,14 @@ type dragState struct {
 	rect   Rect
 	float  bool
 	target dropTarget
-	// scrolled is the time of the last edge scroll.
-	scrolled time.Duration
+	anim   dropAnim
+}
+
+// dragHover is the pending hover action of a tile drag on a hover edge,
+// owned by the core event loop; a nil channel disables it.
+type dragHover struct {
+	timerC <-chan time.Time
+	stop   func() bool
 }
 
 // draggable returns the screen and workspace of a window a drag may
@@ -169,27 +178,139 @@ func (c *Core) beginDrag(ctx context.Context, id WindowID, button uint32, resize
 
 // dragMotion follows the cursor: a float moves or resizes, a tile shows
 // where it would land.
-func (c *Core) dragMotion(ctx context.Context, at time.Duration) error {
+func (c *Core) dragMotion(ctx context.Context) error {
 	d := c.drag
-	_, w, ok := c.draggable(d.id)
-	if !ok {
-		c.abortDrag()
-		return c.publish(ctx)
-	}
-	dx, dy := int(c.cursorX-d.start[0]), int(c.cursorY-d.start[1])
 	if d.float {
-		if !w.DragFloat(d.id, d.rect, d.edges, dx, dy, d.resize) {
+		_, w, ok := c.draggable(d.id)
+		dx, dy := int(c.cursorX-d.start[0]), int(c.cursorY-d.start[1])
+		if !ok || !w.DragFloat(d.id, d.rect, d.edges, dx, dy, d.resize) {
 			c.abortDrag()
 			return c.publish(ctx)
 		}
 		return c.publish(ctx)
 	}
-	scrolled := c.edgeScroll(at)
-	t := c.dropAt(d.id, c.cursorX, c.cursorY)
-	if !scrolled && t.kind == d.target.kind && t.anchor == d.target.anchor && t.ws == d.target.ws && slices.Equal(t.hints, d.target.hints) {
+	src, ok := c.dragAlive(d.id)
+	if !ok {
+		c.abortDrag()
+		return c.publish(ctx)
+	}
+	// A thumbnail follows the pointer; a zone only moves on a new target.
+	thumb := d.target.preview != nil && d.target.preview.Thumb != 0
+	if !c.retarget(src) && !thumb {
 		return nil
 	}
+	return c.publish(ctx)
+}
+
+// retarget recomputes the drop target under the pointer. It reports
+// whether the target changed; a new hover edge arms the hover timer.
+// src is the workspace of the dragged tile.
+func (c *Core) retarget(src *Workspace) bool {
+	d := c.drag
+	t := c.dropAt(src, d.id, c.cursorX, c.cursorY)
+	if t.a == d.target.a && t.ws == d.target.ws && t.screen == d.target.screen {
+		return false
+	}
+	t.preview = d.target.preview
+	old := d.target
+	same := t.a == old.a
 	d.target = t
+	c.aimDropPreview(old)
+	if !same {
+		c.stopDragHover()
+		if hoverEdge(t.a) {
+			c.dragHover.timerC, c.dragHover.stop = newTimer(c.opts.Clock, dragHoverFirst)
+		}
+	}
+	return true
+}
+
+// dragAlive reports whether the tile drag of id goes on: the window is
+// still a tile, not fullscreen nor covered on its own workspace, nothing
+// is locked and the pointer's monitor is not previewing. Its workspace
+// need not be on screen: a hover edge may have switched it away. It
+// returns that workspace.
+func (c *Core) dragAlive(id WindowID) (*Workspace, bool) {
+	s, w := c.screenOf(id)
+	if s == nil || w.ColumnOf(id) < 0 || w.IsFullscreenMember(id) || w.Cover() != 0 || c.security.Protected {
+		return nil, false
+	}
+	if i := c.screenAt(c.cursorX, c.cursorY); i >= 0 && c.screens[i].mon.previewing() {
+		return nil, false
+	}
+	return w, true
+}
+
+// hoverEdge reports whether a is an edge acting while the pointer rests.
+func hoverEdge(a Anchor) bool { return a.Kind == AnchorEdge && a.Action.Hover() }
+
+// retargetDrag follows a config change under a still pointer: the tile
+// drag's preview never shows a zone the new policy removed.
+func (c *Core) retargetDrag() {
+	d := c.drag
+	if d == nil || d.float {
+		return
+	}
+	src, ok := c.dragAlive(d.id)
+	if !ok {
+		c.abortDrag()
+		return
+	}
+	c.retarget(src)
+}
+
+func (c *Core) stopDragHover() {
+	if c.dragHover.stop != nil {
+		c.dragHover.stop()
+	}
+	c.dragHover = dragHover{}
+}
+
+// dragHoverTick runs the hover action of the edge under the pointer, then
+// re-arms while the zone stays the same. The target is checked first: a
+// reload or a layout change since the last motion may have moved it.
+func (c *Core) dragHoverTick(ctx context.Context) error {
+	c.dragHover = dragHover{}
+	d := c.drag
+	if d == nil || d.float || !hoverEdge(d.target.a) {
+		return nil
+	}
+	src, ok := c.dragAlive(d.id)
+	if !ok {
+		c.abortDrag()
+		return c.publish(ctx)
+	}
+	if t := c.dropAt(src, d.id, c.cursorX, c.cursorY); t.a != d.target.a || t.ws != d.target.ws {
+		c.retarget(src)
+		if c.dragHover.timerC == nil && hoverEdge(d.target.a) {
+			c.dragHover.timerC, c.dragHover.stop = newTimer(c.opts.Clock, dragHoverFirst)
+		}
+		return c.publish(ctx)
+	}
+	a := d.target.a
+	switch a.Action {
+	case domain.DropScroll:
+		// At the end of the range the timer stays stopped.
+		if !d.target.ws.ScrollStep(a.Dir) {
+			return nil
+		}
+	case domain.DropWorkspace:
+		// dropAt offers no workspace edge without a workspace past it.
+		m := d.target.screen.mon
+		now := c.now()
+		shots := c.snapshot(now)
+		m.Focus(m.Active + a.Dir)
+		c.transition(shots, now)
+		if err := c.workspaceVisible(ctx, false); err != nil {
+			return err
+		}
+	}
+	// The view moved: the zone may have too.
+	d.target = dropTarget{a: d.target.a, screen: d.target.screen, preview: d.target.preview}
+	c.retarget(src)
+	if c.dragHover.timerC == nil && d.target.a == a {
+		c.dragHover.timerC, c.dragHover.stop = newTimer(c.opts.Clock, dragHoverRepeat)
+	}
 	return c.publish(ctx)
 }
 
@@ -198,14 +319,24 @@ func (c *Core) dragMotion(ctx context.Context, at time.Duration) error {
 // The drop is a transition like a bind's: the snapshot before it is what
 // the screens draw, the transition after it slides the dropped tile and
 // re-flows its neighbours. A tile does not follow the pointer during the
-// drag (dragMotion): the scene draws it in its slot with the drop hints, so
+// drag (dragMotion): the scene draws it in its slot with the drop preview, so
 // the slot is where the user last saw it and where it slides from. A float
 // follows the pointer and is already where it lands: no transition.
+//
+// The tile lands on what the preview shows: the target is resolved with
+// the drag's hysteresis before the drag ends. A hover edge or an invalid
+// zone drops nothing.
 func (c *Core) endDrag(ctx context.Context) error {
 	d := c.drag
+	var t dropTarget
+	_, src := c.screenOf(d.id)
+	if !d.float && src != nil {
+		t = c.dropAt(src, d.id, c.cursorX, c.cursorY)
+	}
 	c.drag = nil
+	c.stopDragHover()
 	if !d.float {
-		if t := c.dropAt(d.id, c.cursorX, c.cursorY); t.kind != DropNone {
+		if t.a.Kind != AnchorNone && !hoverEdge(t.a) && t.ws.DropValid(src, d.id, t.a) {
 			now := c.now()
 			shots := c.snapshot(now)
 			c.drop(d.id, t)
@@ -241,10 +372,12 @@ func (c *Core) abortDrag() {
 		c.swallow[c.drag.button] = true
 		c.drag = nil
 	}
+	c.stopDragHover()
 }
 
-// dropAt is the drop target under the global point x, y.
-func (c *Core) dropAt(id WindowID, x, y float64) dropTarget {
+// dropAt is the drop target under the global point x, y of tile id,
+// dragged from workspace src.
+func (c *Core) dropAt(src *Workspace, id WindowID, x, y float64) dropTarget {
 	i := c.screenAt(x, y)
 	if i < 0 {
 		return dropTarget{}
@@ -256,8 +389,24 @@ func (c *Core) dropAt(id WindowID, x, y float64) dropTarget {
 	if m.previewing() || w.Pinned() || !m.frameHas(float64(lx), float64(ly)) {
 		return dropTarget{}
 	}
-	t := w.DropIn(id, lx, ly, max(4*c.cfg.Border.Width, 4))
-	return dropTarget{kind: t.Kind, anchor: t.Anchor, hints: t.Hints, screen: sc, ws: w}
+	var prev Anchor
+	if d := c.drag; d != nil && d.target.ws == w {
+		prev = d.target.a
+	}
+	p := c.dropPolicy(m, w)
+	// A workspace edge with no workspace past it (a named workspace has
+	// none, the first has none before it, the last none after it) would
+	// do nothing: it offers no zone.
+	for side := domain.DropSideLeft; side <= domain.DropSideBottom; side++ {
+		if w.EdgeAction(side, p.Edge[side]) != domain.DropWorkspace {
+			continue
+		}
+		back := side == domain.DropSideLeft || side == domain.DropSideTop
+		if m.shown != nil || back && m.Active == 0 || !back && m.Active >= len(m.Workspaces)-1 {
+			p.SetEdge(side, domain.DropNone)
+		}
+	}
+	return dropTarget{a: w.AnchorAt(src, id, lx, ly, prev, p), screen: sc, ws: w}
 }
 
 // drop moves tile id to target t, possibly on another workspace or
@@ -267,26 +416,8 @@ func (c *Core) drop(id WindowID, t dropTarget) {
 	if from == nil || t.ws == nil || src.ColumnOf(id) < 0 {
 		return
 	}
-	Drop(src, t.ws, id, DropSpot{Kind: t.kind, Anchor: t.anchor, Hints: t.hints})
+	Drop(src, t.ws, id, t.a, int(c.cursorX)-t.screen.x, int(c.cursorY)-t.screen.y)
 	from.mon.normalize()
 	t.screen.mon.normalize()
 	c.focusScreen = c.screenIndex(t.screen.name())
-}
-
-// edgeScroll scrolls a scroll-overflow workspace by one column when a
-// tile drag moves the pointer against its usable edge. It reports whether
-// the view moved.
-func (c *Core) edgeScroll(t time.Duration) bool {
-	i := c.screenAt(c.cursorX, c.cursorY)
-	if i < 0 || t-c.drag.scrolled < edgeScrollInterval && c.drag.scrolled != 0 {
-		return false
-	}
-	sc := c.screens[i]
-	w := sc.mon.Current()
-	lx := int(c.cursorX) - sc.x
-	if !w.EdgeScroll(lx) {
-		return false
-	}
-	c.drag.scrolled = max(t, 1)
-	return true
 }

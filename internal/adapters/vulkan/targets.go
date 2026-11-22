@@ -50,7 +50,7 @@ type target struct {
 	heldWindows    []domain.SceneWindow
 	heldSeparators []domain.Separator
 	heldLayers     []domain.SceneLayer
-	heldHints      []domain.Rect
+	heldPreview    domain.DropPreview
 	heldIndicators []domain.CaptureIndicator
 	heldOverlays   []domain.Overlay
 	windows        map[domain.WindowID]heldWindow
