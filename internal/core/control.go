@@ -63,6 +63,8 @@ func (c *Core) controlDo(ctx context.Context, r ports.ControlDo) error {
 		if strings.HasPrefix(seg, "mode ") {
 			name, ok := ModeArg(Action(seg))
 			bad = bad || !ok || !c.hasMode(name)
+		} else {
+			bad = bad || validAction(Action(seg), nil) != nil
 		}
 	}
 	if bad {

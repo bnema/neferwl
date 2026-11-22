@@ -1692,6 +1692,35 @@ func checkAction(v string) (string, error) {
 	return strings.Join(parts, domain.CommandSeparator+" "), nil
 }
 
+// checkMarkAction validates a mark action; handled is false for any other
+// action. A bare unmark clears the focused window's marks.
+func checkMarkAction(v string) (handled bool, err error) {
+	if v == "unmark" {
+		return true, nil
+	}
+	for _, op := range []string{"mark", "toggle-mark", "unmark", "focus-mark", "swap-mark", "move-to-mark"} {
+		rest, ok := strings.CutPrefix(v, op+" ")
+		if !ok && v != op {
+			continue
+		}
+		var fields []string
+		if ok {
+			fields = strings.Fields(rest)
+		}
+		if len(fields) == 0 || !domain.ValidMarkName(fields[0]) {
+			return true, fmt.Errorf("%s needs a name (letters, digits, - or _; at most 64)", op)
+		}
+		if len(fields) > 1 && op == "unmark" {
+			return true, fmt.Errorf("unmark takes at most a name")
+		}
+		if len(fields) > 1 && op != "focus-mark" {
+			return true, fmt.Errorf("%s takes only a name", op)
+		}
+		return true, nil
+	}
+	return false, nil
+}
+
 func checkOneAction(v string) error {
 	if v == "spawn" || v == "stash" {
 		return fmt.Errorf("%s needs a command", v)
@@ -1707,6 +1736,9 @@ func checkOneAction(v string) error {
 			return fmt.Errorf("stash needs a command")
 		}
 		return nil
+	}
+	if handled, err := checkMarkAction(v); handled {
+		return err
 	}
 	if rest, ok := strings.CutPrefix(v, "mode "); ok {
 		if !workspaceName.MatchString(strings.TrimSpace(rest)) {

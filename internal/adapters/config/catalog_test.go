@@ -17,7 +17,15 @@ func TestCatalogBindActions(t *testing.T) {
 		"stash":                    "foot",
 		"set-column-width":         "+1",
 		"set-window-height":        "-10%",
+		"mark":                     "term",
+		"toggle-mark":              "term",
+		"unmark":                   "term",
+		"focus-mark":               "term foot",
+		"swap-mark":                "term",
+		"move-to-mark":             "term",
 	}
+	// A bare unmark clears the focused window's marks.
+	bareOK := map[string]bool{"unmark": true}
 	for _, spec := range domain.Commands() {
 		t.Run(spec.Name, func(t *testing.T) {
 			text := spec.Name
@@ -28,7 +36,7 @@ func TestCatalogBindActions(t *testing.T) {
 					t.Fatalf("add a valid argument fixture for %s", spec.Name)
 				}
 				text += " " + arg
-				if err := checkOneAction(spec.Name); err == nil {
+				if err := checkOneAction(spec.Name); err == nil && !bareOK[spec.Name] {
 					t.Error("bare argument action accepted")
 				}
 			}

@@ -29,5 +29,13 @@ func TestControlDoChain(t *testing.T) {
 		if got := r.do(t, "none"); got.Err != "" {
 			t.Fatalf("none: %+v", got)
 		}
+		for _, action := range []string{"mark", "mark a b", "focus-workspace x"} {
+			if got := r.do(t, action); got.Err != ports.ControlErrBadRequest {
+				t.Fatalf("%q: %+v, want bad-request", action, got)
+			}
+		}
+		if got := r.do(t, "mark a; mark b"); got.Err != "" {
+			t.Fatalf("mark chain: %+v", got)
+		}
 	})
 }

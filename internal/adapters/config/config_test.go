@@ -372,6 +372,11 @@ func TestWarningsKeepDefaults(t *testing.T) {
 		{"bind.cmd+1 = mode ghost", "no mode.ghost.* declared"},
 		{"bind.super+r = mode ghost", "no mode.ghost.* declared"},
 		{"startup = ;", "must not be empty"},
+		{"bind.cmd+m = mark", "mark needs a name (letters, digits, - or _; at most 64)"},
+		{"bind.cmd+m = mark a b", "mark takes only a name"},
+		{"bind.cmd+m = mark a.b", "mark needs a name"},
+		{"bind.cmd+m = swap-mark a b", "swap-mark takes only a name"},
+		{"bind.cmd+m = unmark a b", "unmark takes at most a name"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.line, func(t *testing.T) {
@@ -383,6 +388,20 @@ func TestWarningsKeepDefaults(t *testing.T) {
 				t.Fatalf("config changed: %+v", c)
 			}
 		})
+	}
+}
+
+// Mark actions are accepted as binds, a bare unmark included.
+func TestMarkBinds(t *testing.T) {
+	for line, want := range map[string]string{
+		"bind.cmd+m = mark a":                      "mark a",
+		"bind.cmd+m = unmark":                      "unmark",
+		"bind.cmd+m = focus-mark mail thunderbird": "focus-mark mail thunderbird",
+	} {
+		c, w := parseString(t, line)
+		if len(w) != 0 || c.Binds["Cmd+m"] != want {
+			t.Errorf("%s: %q %v", line, c.Binds["Cmd+m"], w)
+		}
 	}
 }
 
