@@ -164,18 +164,24 @@ func TestSceneDropPreviewProxy(t *testing.T) {
 
 // A window the output draws in place keeps its one slot draw; its
 // thumbnail draws it again at ThumbRect from the same entry, with an
-// outline, also without a zone.
+// outline, also without a zone: a clean proxy, without the window's
+// border inset, lines or veil.
 func TestSceneDropPreviewThumbFromNormalEntry(t *testing.T) {
 	r := &Renderer{width: 80, height: 60}
 	bounds := image.Rect(0, 0, 80, 60)
 	thumb := domain.Rect{X: 50, Y: 30, W: 10, H: 15}
 	for _, zone := range []domain.Rect{{X: 42, Y: 2, W: 30, H: 20}, {}} {
 		s := dropScene(&domain.DropPreview{Rect: zone, Fill: 0.18, Thumb: 1, ThumbRect: thumb, ThumbZoom: 0.25})
+		s.Border.Width = 2
+		s.Windows[0].Inset, s.Windows[0].Dim = domain.SideAll, 0.5
+		s.Separators = []domain.Separator{{Window: 1, Active: true, Rect: domain.Rect{W: 2, H: 60}}}
 		got := r.draws(s, nil, newDamage(&target{}, s, bounds))
-		slot, at := 0, -1
+		slot, at, lines := 0, -1, 0
 		for i, d := range got {
 			switch {
-			case d.pc.rect == [4]int32{0, 0, 40, 60}:
+			case d.pc.rect == [4]int32{0, 0, 2, 60}:
+				lines++
+			case d.pc.rect == [4]int32{2, 2, 38, 58}:
 				slot++
 			case d.pc.rect == [4]int32{50, 30, 60, 45} && !isRed(d):
 				require.Equal(t, -1, at, "thumbnail drawn twice")
@@ -183,11 +189,13 @@ func TestSceneDropPreviewThumbFromNormalEntry(t *testing.T) {
 			}
 		}
 		require.Equal(t, 1, slot, "zone %v: window drawn once in its slot: %+v", zone, got)
+		require.Equal(t, 1, lines, "zone %v: the window's line drawn once: %+v", zone, got)
 		require.NotEqual(t, -1, at, "zone %v: no thumbnail: %+v", zone, got)
 		// Its 4 outline strips follow.
 		for _, d := range got[at+1 : at+5] {
 			require.True(t, isRed(d))
 		}
+		require.Len(t, got, at+5, "zone %v: no veil over the thumbnail", zone)
 	}
 }
 

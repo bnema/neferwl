@@ -199,7 +199,9 @@ func (w *sceneWalk) dropPreview() {
 	}
 	win := w.s.Windows[found]
 	if !win.Proxy {
-		win.Rect, win.Zoom = p.ThumbRect, p.ThumbZoom
+		// A clean proxy of it: no border inset, ring, lines, fade,
+		// veil or overlays.
+		win = domain.SceneWindow{ID: win.ID, Proxy: true, Rect: p.ThumbRect, Zoom: p.ThumbZoom}
 	}
 	win.Radius = thumbRadius(w.s.Border.Radius, win.Zoom)
 	w.window(win)
@@ -480,6 +482,7 @@ func (w *sceneWalk) window(win domain.SceneWindow) {
 	// A visible tab: its ring encloses its bar, its top corners sit
 	// under it, square.
 	u, tab := tabRing(w.s.TabBars, win.ID, win.Rect)
+	tab = tab && !win.Proxy
 	w.square = 0
 	if tab {
 		w.square = cornersTop
@@ -565,13 +568,13 @@ func (w *sceneWalk) window(win domain.SceneWindow) {
 		}
 	} else if tab {
 		w.tabSeparators(win.ID, win.Rect, u)
-	} else {
+	} else if !win.Proxy {
 		w.separators(win.ID)
 	}
 	// Above this client's entire surface tree and border, below later
 	// windows and the separate popup pass. Overview cards and windows
 	// zooming in or out omit panels; rounded windows round them too.
-	if win.Preview == 0 && win.Zoom == 0 {
+	if win.Preview == 0 && win.Zoom == 0 && !win.Proxy {
 		outputWidth, _ := w.r.sceneSize(w.s.Transform)
 		for _, o := range w.s.Overlays {
 			if o.Window == win.ID {
