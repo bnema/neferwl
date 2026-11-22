@@ -202,6 +202,8 @@ func TestFlashActionTriggers(t *testing.T) {
 		{ActionMoveColumnRight, flashColumn, func(c *Core) { c.cur().mon.Current().FocusID(1) }},
 		{ActionConsumeOrExpelLeft, flashWindow, nil},
 		{ActionConsumeOrExpelRight, flashWindow, func(c *Core) { c.cur().mon.Current().FocusID(1) }},
+		{ActionTabWindowLeft, flashWindow, nil},
+		{ActionTabWindowRight, flashWindow, func(c *Core) { c.cur().mon.Current().FocusID(1) }},
 		{ActionToggleFloating, flashWindow, nil},
 		{ActionFocusWindowUp, flashWindow, func(c *Core) { c.cur().mon.Current().ConsumeOrExpel(-1) }},
 		{ActionFocusWindowDown, flashWindow, func(c *Core) { w := c.cur().mon.Current(); w.ConsumeOrExpel(-1); w.FocusWindow(-1) }},

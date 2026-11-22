@@ -41,7 +41,7 @@ func (c *Core) applyAction(a Action) Effect {
 	}
 	switch a {
 	case ActionFocusWindowUp, ActionFocusWindowDown, ActionMoveWindowUp, ActionMoveWindowDown,
-		ActionConsumeOrExpelLeft, ActionConsumeOrExpelRight, ActionToggleFloating,
+		ActionConsumeOrExpelLeft, ActionConsumeOrExpelRight, ActionTabWindowLeft, ActionTabWindowRight, ActionToggleFloating,
 		ActionToggleWindowStash, ActionToggleStashVisible, ActionToggleOverview,
 		ActionFocusColumnLeft, ActionFocusColumnRight, ActionMoveColumnLeft, ActionMoveColumnRight,
 		ActionFocusMonitorLeft, ActionFocusMonitorRight, ActionFocusMonitorUp, ActionFocusMonitorDown,
