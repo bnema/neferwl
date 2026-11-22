@@ -164,13 +164,14 @@ func (d *damageRegion) pixels() int {
 }
 
 // window records a window drawn in rect (physical): if its content changed
-// and no finer damage comes (content), the whole rect is redrawn.
+// and no finer damage comes (content), the whole rect is redrawn. The
+// target holds the first rect of a window drawn twice (its slot, then its
+// drag thumbnail), but each rect is damaged.
 func (d *damageRegion) window(id domain.WindowID, c domain.SurfaceContent, rect image.Rectangle) {
-	if d.seen[id] {
-		return
+	if !d.seen[id] {
+		d.seen[id] = true
+		d.drawn[id] = heldWindow{seq: c.Seq, rect: rect}
 	}
-	d.seen[id] = true
-	d.drawn[id] = heldWindow{seq: c.Seq, rect: rect}
 	if d.held == nil {
 		return
 	}

@@ -680,3 +680,31 @@ func TestSceneDeltaTabBar(t *testing.T) {
 		t.Fatalf("unchanged: area %v ok %v", area, ok)
 	}
 }
+
+// A window drawn twice (its slot, then its drag thumbnail) whose content
+// needs a full-rect redraw damages both rects; the target still holds
+// the slot.
+func TestDamageWindowDrawnTwiceCoversBoth(t *testing.T) {
+	bounds := image.Rect(0, 0, 1000, 500)
+	slot, thumb := image.Rect(0, 0, 300, 500), image.Rect(600, 300, 700, 400)
+	old := deltaScene(1, win(1, 0, 0, 300, 500))
+	tg := held(old)
+	tg.windows = map[domain.WindowID]heldWindow{1: {seq: 1, rect: slot}}
+	for name, c := range map[string]domain.SurfaceContent{
+		"children": {Seq: 2, Width: 10, Height: 10, Children: []domain.Subsurface{{}}},
+		"history":  {Seq: 2, Width: 10, Height: 10},
+	} {
+		cur := old
+		cur.Seq = 2
+		d := newDamage(tg, cur, bounds)
+		require.False(t, d.all(), name)
+		d.window(1, c, slot)
+		d.window(1, c, thumb)
+		assert.Equal(t, slot.Union(thumb), d.area, name)
+		assert.Equal(t, slot, d.drawn[1].rect, name)
+	}
+	d := newDamage(tg, deltaScene(2, win(1, 0, 0, 300, 500)), bounds)
+	d.window(2, domain.SurfaceContent{Seq: 1}, slot)
+	d.window(2, domain.SurfaceContent{Seq: 1}, thumb)
+	assert.Equal(t, slot.Union(thumb), d.area, "new window")
+}
