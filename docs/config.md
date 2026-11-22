@@ -32,6 +32,7 @@ See [examples/config](../examples/config) for every key with its default.
 | `xwayland` | `builtin` | `off`, `satellite`, `builtin` or a satellite binary path |
 | `xwayland.xsettings` | `on` | With `xwayland = builtin`, publish `Gtk/CursorThemeName`, `Gtk/CursorThemeSize`, `Xft/DPI`, `Gdk/WindowScalingFactor` and `Gdk/UnscaledDPI` to X11 apps through XSETTINGS (restart required); the scale is always announced as 1 (96 dpi) because X11 apps see logical sizes and neferwl upscales their windows; `off` leaves them to the apps |
 | `background` | `#111111` | Background color |
+| `font` | built-in Go Mono | Path of a `.ttf` or `.otf` font for all text the compositor draws (tab titles, drop and hint labels, window info); a file that does not load logs a warning and keeps the built-in font |
 | `border.radius` | `0` | Corner radius in logical pixels, `0` to `64`; floats always, tiles only with gaps |
 | `border.width` | `2` | Border width in pixels; `0` hides borders |
 | `border.active` / `.inactive` | `#808080` / `#111111` | Border colors of the focused / other windows |
@@ -569,7 +570,8 @@ A tabbed column shows one of its windows at a time, under a title bar with one t
 
 - `toggle-column-tabbed` (`cmd+t`) turns the focused column into tabs, or back into a stack with equal row heights. It does nothing on a float, a stash window or a column with one window.
 - `focus-window-up/down` switches tabs. At the first or last tab it leaves the column like in a stack. `move-window-up/down` reorders the tabs.
-- The bar shows each window's title, cut with `…` when too long. The visible tab is filled with `border.active`, the rest of the bar with `border.inactive`. Its height follows the [hint](#hint-mode) font size. With `layout.gaps`, a gap separates the bar from the window, and the bar and the active tab are rounded with `border.radius`.
+- The bar shows each window's title in `font`, cut with `…` when too long, in an ink that contrasts with the bar. The visible tab is filled with `border.active`, the rest of the bar with `border.inactive`. Its height follows the [hint](#hint-mode) font size.
+- With `layout.gaps`, the bar is the visible window's attached title bar: it sits 2 pixels above the window, its top corners are rounded with `border.radius` and its bottom corners are square, and the window below loses its top rounding. The active tab is rounded only where it meets the bar's top corners. Without gaps, the bar and the window are square and flush.
 - A click on a tab shows it; the window under it gets no click. `cmd` + drag on a tab drags that window, even a hidden one.
 - Dropping a window on another window's center (`drop.window.center = tab`, the default) adds it to that window's column as a new tab and makes the whole column tabbed.
 - A tabbed column has no row borders and ignores `set-window-height`.
@@ -666,6 +668,7 @@ The overlay shows `scanout on` for zero-copy presentation, `scanout on (OSD hidd
 With AT-SPI compatible apps such as Firefox, hint mode covers every clickable element. OCR is a best-effort fallback that detects URL-like text and underlined links, and still produces false positives.
 
 Hint mode is off by default: set `hint.enable = on` and restart NeferWL.
+Labels use the `font` key.
 While it is off, nothing of hint mode runs or uses memory, and the `hint` bind
 logs a notice once and does nothing. A reload does not change it.
 
