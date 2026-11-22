@@ -31,6 +31,12 @@ type chainRig struct {
 
 func runChainRig(t *testing.T, chain string) chainRig {
 	t.Helper()
+	return runChainRigWith(t, chain, nil)
+}
+
+// runChainRigWith is runChainRig with edit applied to its config.
+func runChainRigWith(t *testing.T, chain string, edit func(*domain.Config)) chainRig {
+	t.Helper()
 	var epoch atomic.Value
 	epoch.Store(domain.SecurityState{})
 	gate := portsmocks.NewMockSessionSecurity(t)
@@ -56,6 +62,9 @@ func runChainRig(t *testing.T, chain string) chainRig {
 	cfg.Modes = map[string]map[string]string{
 		"resize": {"h": "set-column-width +1", "q": "mode default"}, // columns are one cell: -1 is a no-op
 		"esc":    {"Escape": "focus-column-left"},
+	}
+	if edit != nil {
+		edit(&cfg)
 	}
 	r.cfg = cfg
 	c, err := core.New(cfg, core.Channels{Input: r.input, Client: client, Output: output, Control: r.control, Config: r.reload, ConfigErrors: make(chan error, 1), Commands: r.commands, Scenes: make(chan []domain.Scene, 1), State: r.state, Spawn: r.spawn, Binds: r.binds}, testOptions(t, core.Options{Security: gate}))

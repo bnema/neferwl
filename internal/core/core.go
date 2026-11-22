@@ -345,10 +345,13 @@ func validAction(a Action, modes map[string]map[string]string) error {
 		}
 		return nil
 	}
-	if _, ok := SpawnCommands(a); ok {
+	if _, _, _, ok := MarkArg(a); ok {
 		return nil
 	}
-	if _, ok := StashCommands(a); ok {
+	if _, _, ok := SpawnCommands(a); ok {
+		return nil
+	}
+	if _, _, ok := StashCommands(a); ok {
 		return nil
 	}
 	if a == ActionScaleUp || a == ActionScaleDown {
@@ -1550,17 +1553,27 @@ func (c *Core) dispatch(ctx context.Context, reqs []domain.SpawnRequest) (issued
 // a notification), so unlike other client requests it may move the user
 // (the exception to the ADR 011 golden rule).
 func (c *Core) activate(ctx context.Context, id WindowID) error {
-	s, w := c.screenOf(id)
-	if s == nil || c.popups[id] != nil {
+	before := c.cur().mon.Current()
+	if !c.raise(id) {
 		return nil
 	}
-	before := c.cur().mon.Current()
+	return c.workspaceVisible(ctx, c.cur().mon.Current() != before)
+}
+
+// raise shows the workspace of id on its screen, focuses id there and
+// focuses that screen; the caller reports the workspace change. It
+// reports false, doing nothing, for a popup or a window on no screen.
+func (c *Core) raise(id WindowID) bool {
+	s, w := c.screenOf(id)
+	if s == nil || c.popups[id] != nil {
+		return false
+	}
 	if w != s.mon.Current() {
 		s.mon.show(w)
 	}
 	w.Activate(id)
 	c.focusScreen = c.screenIndex(s.name())
-	return c.workspaceVisible(ctx, c.cur().mon.Current() != before)
+	return true
 }
 
 // heldKey names a key for press tracking: by physical key, since Shift

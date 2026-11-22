@@ -99,7 +99,8 @@ the arguments:
 | Flag | Default | Meaning |
 |---|---|---|
 | `--wait LEVEL` | `settled` | `committed`: the action is applied. `settled`: animations are done and windows have committed their new sizes. `presented`: the result is on screen. |
-| `--until PREDICATE` | none | Also wait for `window-mapped app_id=APP`, `focused app_id=APP` or `unmapped id=N` |
+| `--until PREDICATE` | none | Also wait for `window-mapped app_id=APP`, `focused app_id=APP` or `unmapped id=N`. `window-mapped mark=NAME` holds once a window gains the mark, `focused mark=NAME` while the focused window holds it |
+| `--target mark:NAME` | none | `do` only: run the action on the window holding the mark (see [below](#act-on-a-marked-window)) |
 | `--timeout DURATION` | `10s` | Wait at most this long, up to `5m` |
 | `--shot` | off | Capture every output once the result is presented |
 
@@ -108,10 +109,29 @@ now shown on each changed output (`HEADLESS-1:2`). On timeout the command
 prints `timeout` and exits with status 1. The reply still carries the partial
 diff; the action may have run, so check the state before retrying.
 
+Quote an action whose arguments start with `--`: `do 'spawn --mark music foot'`.
+
 `--` ends flag parsing for arguments that start with a dash:
 `neferwl -s demo move -- -640 0`, `neferwl -s demo type -- -x`.
 
 There is no sleep or hold command: use the shell between `press` and `release`.
+
+### Act on a marked window
+
+`do --target mark:NAME ACTION` runs one action on the window holding a [mark](config.md#marks), on its own workspace, without moving the keyboard focus or the shown workspaces:
+
+```sh
+neferwl -s demo do 'spawn --mark music foot' --until 'window-mapped mark=music'
+neferwl -s demo do --target mark:music close-window
+neferwl -s demo state | jq '.windows[] | select(.marks | index("music")) | .id'
+```
+
+- Allowed actions: `close-window`, `toggle-floating`, `toggle-fullscreen`, `toggle-window-stash`, `move-window-to-workspace N`. N is a workspace of the window's own output, clamped as for the bind; the focus does not follow.
+- Checks run in order: any other action, a chain or a malformed target returns `bad-request`; a locked session returns `locked`; no window holding the mark returns `no-target`.
+- `close-window` always closes the target, even in a hidden stash or under another window's fullscreen. The other actions do nothing, and reply ok, when the target cannot take its workspace's focus: it is in a hidden stash, under another window's fullscreen, or a held fullscreen member. A floating target is raised.
+- `move-window-to-workspace N` does nothing when workspace N has a fullscreen window or the target is fullscreen. It moves the window without changing the focus or scrolling either workspace; in a fixed layout, a maximized column on workspace N is restored, as for any new window there.
+- Targeted actions do not close the window switcher or take the keyboard from a launcher.
+- While the overview is open on the window's output, nothing happens.
 
 ## Observe state
 

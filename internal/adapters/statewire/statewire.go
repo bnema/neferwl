@@ -108,6 +108,8 @@ type Window struct {
 	Row    int `json:"row"`
 	// Hidden is set for a stashed window while the stash is hidden.
 	Hidden bool `json:"hidden"`
+	// Marks are the window's named marks, sorted; [] when none.
+	Marks []string `json:"marks"`
 }
 
 // FromDomain converts a domain snapshot to the script-facing JSON format.
@@ -138,7 +140,7 @@ func FromDomain(st domain.State, ids *workspaceid.IDs) State {
 }
 
 func window(w domain.WindowState, ids *workspaceid.IDs) Window {
-	return Window{SDRExpansion: expansion(w.SDRExpansion), ID: uint64(w.ID), AppID: w.AppID, PID: w.PID, Sandbox: w.Sandbox, ContentType: w.ContentType, Xwayland: w.Xwayland, Output: w.Output, Workspace: w.Workspace, WorkspaceID: ids.ID(w.WorkspaceID, w.WorkspaceName), Visible: w.Visible, IdleInhibit: w.IdleInhibit, ShortcutsInhibited: w.ShortcutsInhibited, PointerConstraint: w.PointerConstraint, Floating: w.Floating, Fullscreen: w.Fullscreen, StashIndex: w.StashIndex, StashCount: w.StashCount, Column: w.Column, Row: w.Row, Hidden: w.Hidden}
+	return Window{SDRExpansion: expansion(w.SDRExpansion), ID: uint64(w.ID), AppID: w.AppID, PID: w.PID, Sandbox: w.Sandbox, ContentType: w.ContentType, Xwayland: w.Xwayland, Output: w.Output, Workspace: w.Workspace, WorkspaceID: ids.ID(w.WorkspaceID, w.WorkspaceName), Visible: w.Visible, IdleInhibit: w.IdleInhibit, ShortcutsInhibited: w.ShortcutsInhibited, PointerConstraint: w.PointerConstraint, Floating: w.Floating, Fullscreen: w.Fullscreen, StashIndex: w.StashIndex, StashCount: w.StashCount, Column: w.Column, Row: w.Row, Hidden: w.Hidden, Marks: w.Marks.Names()}
 }
 
 // SDRExpansion keeps active parameters absent when the decision is off.

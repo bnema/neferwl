@@ -10,6 +10,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -234,6 +235,7 @@ type request struct {
 	What       string          `json:"what"`
 	Wait       *string         `json:"wait"`
 	Until      *string         `json:"until"`
+	Target     *string         `json:"target"`
 	Timeout    *string         `json:"timeout"`
 	Kind       string          `json:"kind"`
 	Combo      string          `json:"combo"`
@@ -434,7 +436,16 @@ func (s *Server) dispatch(ctx context.Context, req request, out chan<- ports.Con
 			if req.Action == "" {
 				return response
 			}
-			message = ports.ControlDo{Shots: shots, Action: req.Action, Wait: wait, Until: until, Timeout: timeout, Caps: domain.CapsAll, Reply: ch}
+			var target string
+			if req.Target != nil {
+				name, ok := strings.CutPrefix(*req.Target, "mark:")
+				if !ok || !domain.ValidMarkName(name) {
+					response.Detail = "target must be mark:NAME"
+					return response
+				}
+				target = name
+			}
+			message = ports.ControlDo{Target: target, Shots: shots, Action: req.Action, Wait: wait, Until: until, Timeout: timeout, Caps: domain.CapsAll, Reply: ch}
 		}
 	case "query":
 		if req.What == "" {

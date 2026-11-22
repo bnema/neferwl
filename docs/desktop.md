@@ -160,6 +160,7 @@ Each window also carries metadata keys:
 - `sandbox`: the app ID the sandbox engine declared through `wp_security_context_v1`, else the engine name; empty when the window is not sandboxed. The sandbox declares it; NeferWL does not verify it.
 - `content_type`: `game`, `video`, `photo` or empty, from `wp_content_type_v1`.
 - `xwayland`: the window is an X11 window on either backend.
+- `marks`: the window's [marks](config.md#marks), sorted; `[]` when it has none.
 
 The top-level `mode` key is the active [bind mode](config.md#modes), empty in default.
 

@@ -402,6 +402,7 @@ bind.XF86MonBrightnessDown = spawn brightnessctl set 5%-
 | `spawn <command>` | Run a program |
 | `spawn-terminal` | Run `terminal` |
 | `stash <command>` | Run a program and open its window in the [stash](#stash) |
+| `spawn --mark <name> <command>` / `stash --mark <name> <command>` | Run a program and [mark](#marks) its first window |
 | `close-window` | Close the focused window |
 | `toggle-fullscreen` | Fullscreen the focused window. Its dialogs and same-app arrivals in fixed layout can show above it |
 | `toggle-floating` | Make the focused window [float](#free-floating-windows), or put it back in its column |
@@ -429,6 +430,12 @@ bind.XF86MonBrightnessDown = spawn brightnessctl set 5%-
 | `move-workspace-to-monitor-left/right/up/down` | Move the workspace to the neighbor monitor |
 | `scale-up` / `scale-down` | Zoom the display; the scale is saved to the config |
 | `mode <name>` | Switch to a [bind mode](#modes); `mode default` leaves it |
+| `mark <name>` | [Mark](#marks) the focused window |
+| `toggle-mark <name>` | Add the mark to the focused window, or remove it if the window holds it |
+| `unmark [<name>]` | Remove the mark from its window; bare, clear every mark of the focused window |
+| `focus-mark <name> [<command>]` | Focus the marked window on any workspace or output. With a command and no marked window, run it and mark its first window |
+| `swap-mark <name>` | Swap the focused window and the marked window (tile with tile, float with float); the focus stays in place |
+| `move-to-mark <name>` | Move the focused tile into the marked tile's column, right below it; the focus follows |
 | `quit` | Exit NeferWL |
 
 Note on `toggle-fullscreen`: a parentless window whose first committed size is exactly the logical size of the output it is on, without asking for fullscreen (a game in borderless-windowed mode), is put fullscreen as if by `toggle-fullscreen`, without being resized, when it is the focused window of the shown workspace. Later resizes do not.
@@ -494,6 +501,37 @@ bind.cmd+shift+r = mode resize; spawn notify-send resize
 
 ```json
 "custom/mode": {"exec": "neferwl state | jq -r .mode", "interval": 1}
+```
+
+## Marks
+
+A mark is a name on a window, used to find that window again from a bind or a script. Names use letters, digits, `-` and `_`, up to 64 bytes.
+
+- A mark is on at most one window; marking another window moves it. A window can hold several marks.
+- Marks last until the window closes, and survive config reloads.
+- Mark actions use the focused window of the focused screen (`unmark <name>`, `focus-mark`, `swap-mark` and `move-to-mark` find the holder anywhere). Without a focused window or a holder they do nothing and do not stop a chain; the same holds while the overview is open.
+- `swap-mark` does nothing with a stashed, fullscreen or dialog window, a window with a dialog, a window held over a fullscreen, or the window of a [column slot](#keys) (`workspace.<name>.column.<N>`). `move-to-mark` needs two plain tiles, none of them held or a slot window.
+- `--mark` comes right after `spawn` or `stash`. The mark waits 60s for the first window of that program. It does not work for X11 (Xwayland) apps, as for `stash`.
+- `focus-mark <name> <command>` (run-or-raise) runs the command only once while its window is pending.
+- The state lists each window's `marks` (see [State for scripts](desktop.md#state-for-scripts)); scripts act on a marked window with [`neferwl do --target`](control.md#act-on-a-marked-window).
+
+Vim-style marks: `cmd+m` then a letter marks the focused window, `cmd+apostrophe` then a letter jumps to it:
+
+```ini
+bind.cmd+m = mode mark
+mode.mark.bind.a = toggle-mark a; mode default
+mode.mark.bind.b = toggle-mark b; mode default
+bind.cmd+apostrophe = mode goto
+mode.goto.bind.a = focus-mark a; mode default
+mode.goto.bind.b = focus-mark b; mode default
+```
+
+Run-or-raise, and a program marked at launch so later binds can reach it:
+
+```ini
+bind.cmd+e = focus-mark mail thunderbird
+bind.cmd+shift+e = spawn --mark music spotify
+bind.cmd+alt+e = swap-mark music
 ```
 
 ## Layout

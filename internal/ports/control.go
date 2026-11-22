@@ -12,7 +12,10 @@ type ControlRequest interface{ controlRequest() }
 
 // ControlDo runs a catalog action and observes its completion.
 type ControlDo struct {
-	Action  string
+	Action string
+	// Target is the mark of the window a targeted action acts on, "" for
+	// the focused window.
+	Target  string
 	Wait    domain.WaitLevel
 	Until   *domain.Until
 	Timeout time.Duration
@@ -89,6 +92,8 @@ const (
 	// ControlErrTimeout: the completion condition was not reached in time;
 	// the reply still carries the partial results.
 	ControlErrTimeout = "timeout"
+	// ControlErrNoTarget: no window holds the mark a request targets.
+	ControlErrNoTarget = "no-target"
 )
 
 // ControlCapture starts or stops continuous frame capture. Empty Outputs

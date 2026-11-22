@@ -552,10 +552,7 @@ func (c *Core) runBind(ctx context.Context, action Action) error {
 // a mode switch is published at once, so the state shows it.
 func (c *Core) runSegment(ctx context.Context, action Action) error {
 	if name, ok := ModeArg(action); ok {
-		if c.ch.Binds != nil {
-			defer c.traceBind(string(action), c.bindCombo, c.bindSource)()
-		}
-		c.bindCombo, c.bindSource = "", ""
+		defer c.traceAction(action)()
 		before := c.mode
 		c.setMode(name)
 		if c.mode != before {
@@ -563,31 +560,47 @@ func (c *Core) runSegment(ctx context.Context, action Action) error {
 		}
 		return nil
 	}
+	if op, name, cmd, ok := MarkArg(action); ok {
+		defer c.traceAction(action)()
+		return c.runMark(ctx, op, name, cmd)
+	}
 	return c.runAction(ctx, action)
 }
 
 // runAction runs one bind action.
 func (c *Core) runAction(ctx context.Context, action Action) error {
-	if c.ch.Binds != nil {
-		defer c.traceBind(string(action), c.bindCombo, c.bindSource)()
-	}
-	c.bindCombo, c.bindSource = "", ""
+	defer c.traceAction(action)()
 	if action == ActionScaleUp || action == ActionScaleDown {
 		return c.scaleBind(ctx, action)
 	}
 	if dir := switchDir(action); dir != 0 {
 		return c.switchBind(ctx, dir)
 	}
+	return c.layoutAction(ctx, func() Effect { return c.applyAction(action) })
+}
+
+// layoutAction runs apply as a bind action on the layout: it closes the
+// switcher, takes the keyboard back, then animates, spawns, closes and
+// publishes what apply changed.
+func (c *Core) layoutAction(ctx context.Context, apply func() Effect) error {
+	return c.applyLayout(ctx, true, apply)
+}
+
+// applyLayout is layoutAction; a bind (bind set) also closes the switcher
+// and takes the keyboard back, which a targeted control action does not.
+func (c *Core) applyLayout(ctx context.Context, bind bool, apply func() Effect) error {
 	before := c.cur().mon.Current()
 	swiped := c.swipedWorkspace()
 	now := c.now()
 	// Snapshot before the switcher closes: its cards fly back to the layout.
 	shots := c.snapshot(now)
-	if c.switching() {
-		c.cancelSwitcher()
+	if bind {
+		if c.switching() {
+			c.cancelSwitcher()
+		}
+		c.keyboard.takeBack() // a bind acts on the windows
 	}
-	c.keyboard.takeBack() // a bind acts on the windows
-	effect := c.applyAction(action)
+	effect := apply()
 	if effect.Quit {
 		return ErrQuit
 	}
@@ -628,7 +641,11 @@ func (c *Core) runSpawn(ctx context.Context, w *Workspace, effect Effect) error 
 		commands = [][]string{append([]string(nil), c.cfg.Terminal.Command...)}
 	}
 	if effect.Stash {
-		if err := c.spawnStash(ctx, w, commands, effect.Commands == nil); err != nil {
+		if err := c.spawnStash(ctx, w, commands, effect.Commands == nil, effect.Mark); err != nil {
+			return err
+		}
+	} else if effect.Mark != "" {
+		if err := c.spawnMarked(ctx, commands, effect.Mark); err != nil {
 			return err
 		}
 	} else {
@@ -652,7 +669,7 @@ func (c *Core) runSpawn(ctx context.Context, w *Workspace, effect Effect) error 
 // spawnEmpty does. A send the gate suppresses leaves no claim behind. With
 // terminal set (the terminal of an empty stash), nothing starts while the
 // previous one is still awaited.
-func (c *Core) spawnStash(ctx context.Context, w *Workspace, commands [][]string, terminal bool) error {
+func (c *Core) spawnStash(ctx context.Context, w *Workspace, commands [][]string, terminal bool, mark string) error {
 	if c.protectionRequested() {
 		return nil
 	}
@@ -663,7 +680,20 @@ func (c *Core) spawnStash(ctx context.Context, w *Workspace, commands [][]string
 	}
 	reqs := make([]domain.SpawnRequest, len(commands))
 	for i, argv := range commands {
-		reqs[i] = c.placement.request(argv, spawnTarget{kind: spawnStash, ws: w, at: now})
+		reqs[i] = c.placement.request(argv, spawnTarget{kind: spawnStash, ws: w, at: now, mark: mark})
+	}
+	_, err := c.dispatch(ctx, reqs)
+	return err
+}
+
+// spawnMarked runs commands whose first window gets mark, placed as any
+// new window; a suppressed send drops its claim.
+func (c *Core) spawnMarked(ctx context.Context, commands [][]string, mark string) error {
+	now := c.now()
+	c.placement.expireWorkspaceClaims(now)
+	reqs := make([]domain.SpawnRequest, len(commands))
+	for i, argv := range commands {
+		reqs[i] = c.placement.request(argv, spawnTarget{kind: spawnMarked, at: now, mark: mark})
 	}
 	_, err := c.dispatch(ctx, reqs)
 	return err

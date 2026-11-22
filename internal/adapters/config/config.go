@@ -1692,21 +1692,76 @@ func checkAction(v string) (string, error) {
 	return strings.Join(parts, domain.CommandSeparator+" "), nil
 }
 
+// checkMarkAction validates a mark action; handled is false for any other
+// action. A bare unmark clears the focused window's marks.
+func checkMarkAction(v string) (handled bool, err error) {
+	if v == "unmark" {
+		return true, nil
+	}
+	for _, op := range []string{"mark", "toggle-mark", "unmark", "focus-mark", "swap-mark", "move-to-mark"} {
+		rest, ok := strings.CutPrefix(v, op+" ")
+		if !ok && v != op {
+			continue
+		}
+		var fields []string
+		if ok {
+			fields = strings.Fields(rest)
+		}
+		if op == "unmark" && (len(fields) > 1 || len(fields) == 1 && !domain.ValidMarkName(fields[0])) {
+			return true, fmt.Errorf("unmark takes an optional name (letters, digits, - or _; at most 64)")
+		}
+		if len(fields) == 0 || !domain.ValidMarkName(fields[0]) {
+			return true, fmt.Errorf("%s needs a name (letters, digits, - or _; at most 64)", op)
+		}
+		if len(fields) > 1 && op != "focus-mark" {
+			return true, fmt.Errorf("%s takes only a name", op)
+		}
+		return true, nil
+	}
+	return false, nil
+}
+
+// cutMarkFlag strips a leading "--mark NAME" from the command of a spawn
+// or stash action, checking the name.
+func cutMarkFlag(verb, rest string) (string, error) {
+	fields := strings.Fields(rest)
+	if len(fields) == 0 || fields[0] != "--mark" {
+		return rest, nil
+	}
+	if len(fields) < 2 || !domain.ValidMarkName(fields[1]) {
+		return "", fmt.Errorf("%s --mark needs a name", verb)
+	}
+	_, after, _ := strings.Cut(rest, "--mark")
+	_, after, _ = strings.Cut(after, fields[1])
+	return after, nil
+}
+
 func checkOneAction(v string) error {
 	if v == "spawn" || v == "stash" {
 		return fmt.Errorf("%s needs a command", v)
 	}
 	if rest, ok := strings.CutPrefix(v, "spawn "); ok {
+		rest, err := cutMarkFlag("spawn", rest)
+		if err != nil {
+			return err
+		}
 		if len(domain.SplitCommands(rest)) == 0 {
 			return fmt.Errorf("spawn needs a command")
 		}
 		return nil
 	}
 	if rest, ok := strings.CutPrefix(v, "stash "); ok {
+		rest, err := cutMarkFlag("stash", rest)
+		if err != nil {
+			return err
+		}
 		if len(domain.SplitCommands(rest)) == 0 {
 			return fmt.Errorf("stash needs a command")
 		}
 		return nil
+	}
+	if handled, err := checkMarkAction(v); handled {
+		return err
 	}
 	if rest, ok := strings.CutPrefix(v, "mode "); ok {
 		if !workspaceName.MatchString(strings.TrimSpace(rest)) {

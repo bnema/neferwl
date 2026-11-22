@@ -144,6 +144,18 @@ func (c *Core) traceBind(action, combo string, source domain.BindSource) func() 
 	return func() { c.emitBind(m, combo, action, source) }
 }
 
+// traceAction starts the trace of one action of the current bind, when
+// traces are on, and clears the bind's combo and source for nested work;
+// defer the returned func.
+func (c *Core) traceAction(a Action) func() {
+	done := func() {}
+	if c.ch.Binds != nil {
+		done = c.traceBind(string(a), c.bindCombo, c.bindSource)
+	}
+	c.bindCombo, c.bindSource = "", ""
+	return done
+}
+
 // traceInput hands a record to the debug log without waiting.
 func (c *Core) traceInput(t domain.InputTrace) {
 	if c.ch.Binds == nil {

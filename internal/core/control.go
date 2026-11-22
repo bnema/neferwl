@@ -63,9 +63,11 @@ func (c *Core) controlDo(ctx context.Context, r ports.ControlDo) error {
 		if strings.HasPrefix(seg, "mode ") {
 			name, ok := ModeArg(Action(seg))
 			bad = bad || !ok || !c.hasMode(name)
+		} else {
+			bad = bad || validAction(Action(seg), nil) != nil
 		}
 	}
-	if bad {
+	if bad || r.Target != "" && (len(segments) != 1 || !targetAllowed(Action(segments[0]))) {
 		controlReply(r.Reply, ports.ControlReply{Err: ports.ControlErrBadRequest})
 		return nil
 	}
@@ -76,6 +78,14 @@ func (c *Core) controlDo(ctx context.Context, r ports.ControlDo) error {
 	if !loneQuit && c.protectionRequested() {
 		controlReply(r.Reply, ports.ControlReply{Err: ports.ControlErrLocked})
 		return nil
+	}
+	// After the lock check: a locked session tells nothing about marks.
+	var target WindowID
+	if r.Target != "" {
+		if target = c.markHolder(r.Target); target == 0 {
+			controlReply(r.Reply, ports.ControlReply{Err: ports.ControlErrNoTarget})
+			return nil
+		}
 	}
 	shots, code := c.controlShots(r.Shots, r.Caps)
 	if code != "" {
@@ -89,7 +99,12 @@ func (c *Core) controlDo(ctx context.Context, r ports.ControlDo) error {
 	before := c.state()
 	baseline := c.sceneSeqs()
 	c.bindCombo, c.bindSource = "", domain.BindSourceControl
-	err := c.runBind(ctx, Action(strings.Join(segments, "; ")))
+	var err error
+	if target != 0 {
+		err = c.runTargeted(ctx, target, Action(segments[0]))
+	} else {
+		err = c.runBind(ctx, Action(strings.Join(segments, "; ")))
+	}
 	if quit {
 		// There is no subsequent settle/present pass after ErrQuit.
 		now := c.state()

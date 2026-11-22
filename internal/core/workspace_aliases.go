@@ -191,6 +191,9 @@ const FocusWorkspace = workspacedomain.FocusWorkspace
 // MoveColumnToWorkspace is workspace.MoveColumnToWorkspace.
 const MoveColumnToWorkspace = workspacedomain.MoveColumnToWorkspace
 
+// MoveWindowToWorkspace is workspace.MoveWindowToWorkspace.
+const MoveWindowToWorkspace = workspacedomain.MoveWindowToWorkspace
+
 // DropNone is workspace.DropNone.
 const DropNone = workspacedomain.DropNone
 
@@ -226,11 +229,43 @@ func NamedArg(a Action) (string, bool) { return workspacedomain.NamedArg(a) }
 // ModeArg calls workspace.ModeArg.
 func ModeArg(a Action) (string, bool) { return workspacedomain.ModeArg(a) }
 
+// MarkOp is the operation of a mark action.
+type MarkOp = workspacedomain.MarkOp
+
+// Mark operations.
+const (
+	MarkSet    = workspacedomain.MarkSet
+	MarkToggle = workspacedomain.MarkToggle
+	MarkUnmark = workspacedomain.MarkUnmark
+	MarkFocus  = workspacedomain.MarkFocus
+	MarkSwap   = workspacedomain.MarkSwap
+	MarkMoveTo = workspacedomain.MarkMoveTo
+)
+
+// MarkArg calls workspace.MarkArg.
+func MarkArg(a Action) (op MarkOp, name string, cmd []string, ok bool) {
+	return workspacedomain.MarkArg(a)
+}
+
+// SwapWindows calls workspace.SwapWindows.
+func SwapWindows(a *Workspace, ida WindowID, b *Workspace, idb WindowID) bool {
+	return workspacedomain.SwapWindows(a, ida, b, idb)
+}
+
+// MoveTileBelow calls workspace.MoveTileBelow.
+func MoveTileBelow(from *Workspace, id WindowID, to *Workspace, target WindowID) bool {
+	return workspacedomain.MoveTileBelow(from, id, to, target)
+}
+
 // SpawnCommands calls workspace.SpawnCommands.
-func SpawnCommands(a Action) ([][]string, bool) { return workspacedomain.SpawnCommands(a) }
+func SpawnCommands(a Action) (commands [][]string, mark string, ok bool) {
+	return workspacedomain.SpawnCommands(a)
+}
 
 // StashCommands calls workspace.StashCommands.
-func StashCommands(a Action) ([][]string, bool) { return workspacedomain.StashCommands(a) }
+func StashCommands(a Action) (commands [][]string, mark string, ok bool) {
+	return workspacedomain.StashCommands(a)
+}
 
 // MoveFullscreen calls workspace.MoveFullscreen.
 func MoveFullscreen(from, to *Workspace, at int) bool {
@@ -251,6 +286,9 @@ func MoveWindowTo(from, to *Workspace, at int) bool {
 func MoveFocused(from, to *Workspace, column bool) bool {
 	return workspacedomain.MoveFocused(from, to, column)
 }
+
+// MoveByRule calls workspace.MoveByRule.
+func MoveByRule(from, to *Workspace, id WindowID) { workspacedomain.MoveByRule(from, to, id) }
 
 // Expel calls workspace.Expel.
 func Expel(from, to *Workspace, dir int) bool { return workspacedomain.Expel(from, to, dir) }

@@ -93,7 +93,7 @@ func TestProtocol(t *testing.T) {
 	if !reflect.DeepEqual(caps, []string{"read", "act", "input", "capture", "admin"}) {
 		t.Fatal(caps)
 	}
-	for _, line := range []string{`{broken`, `{"id":2,"op":"unknown"}`, `{"id":3,"op":"do","action":"none","wait":"bad"}`, `{"id":4,"op":"do","action":"none","until":"bad"}`, `{"id":5,"op":"do","action":"none","timeout":"bad"}`, `{"id":5,"op":"do","action":"none","timeout":"6m"}`, `{"op":"do"}`} {
+	for _, line := range []string{`{broken`, `{"id":2,"op":"unknown"}`, `{"id":3,"op":"do","action":"none","wait":"bad"}`, `{"id":4,"op":"do","action":"none","until":"bad"}`, `{"id":5,"op":"do","action":"none","timeout":"bad"}`, `{"id":5,"op":"do","action":"none","timeout":"6m"}`, `{"op":"do"}`, `{"id":9,"op":"do","action":"none","target":"a"}`, `{"id":9,"op":"do","action":"none","target":"mark:"}`, `{"id":9,"op":"do","action":"none","target":"mark:a b"}`, `{"id":9,"op":"do","action":"none","target":"mark:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}`, `{"id":9,"op":"do","action":"none","target":""}`} {
 		got := exchange(line)
 		if string(got["error"]) != `"bad-request"` || string(got["ok"]) != "false" {
 			t.Fatal(got)
@@ -111,10 +111,10 @@ func TestProtocol(t *testing.T) {
 						t.Errorf("do: %+v", req)
 					}
 					if i == 0 {
-						if req.Wait != domain.WaitPresented || req.Timeout != 2*time.Second || req.Until == nil || req.Until.Kind != domain.UntilFocused || req.Until.AppID != "foot" {
+						if req.Wait != domain.WaitPresented || req.Timeout != 2*time.Second || req.Until == nil || req.Until.Kind != domain.UntilFocused || req.Until.AppID != "foot" || req.Target != "a" {
 							t.Errorf("explicit: %+v", req)
 						}
-					} else if req.Wait != domain.DefaultWait || req.Timeout != 10*time.Second || req.Until != nil {
+					} else if req.Wait != domain.DefaultWait || req.Timeout != 10*time.Second || req.Until != nil || req.Target != "" {
 						t.Errorf("defaults: %+v", req)
 					}
 					// Core may reach less than the requested level; preserve its report.
@@ -136,7 +136,7 @@ func TestProtocol(t *testing.T) {
 			}
 		}
 	}()
-	got := exchange(`{"id":6,"op":"do","action":"none","wait":"presented","until":"focused app_id=foot","timeout":"2s"}`)
+	got := exchange(`{"id":6,"op":"do","action":"none","wait":"presented","until":"focused app_id=foot","timeout":"2s","target":"mark:a"}`)
 	if string(got["id"]) != "6" || string(got["done"]) != `"committed"` || string(got["ok"]) != "true" {
 		t.Fatal(got)
 	}
