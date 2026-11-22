@@ -16,11 +16,16 @@ func (w *Workspace) ToggleTabbed() {
 	c.Shares = nil
 }
 
+// TabBarGap is the most space between a tab bar and its visible tab,
+// logical px: the bar reads as the tab's attached title bar.
+const TabBarGap = 2
+
 // TabInset is what a tabbed column's bar takes from the top of its visible
-// tab: the bar and, with gaps, a tile gap between the bar and the window.
+// tab: the bar and, with gaps, TabBarGap (at most the tile gap) between the
+// bar and the window.
 func (w *Workspace) TabInset() int {
 	if w.TabBar <= 0 {
 		return 0
 	}
-	return w.TabBar + w.Gap()
+	return w.TabBar + min(w.Gap(), TabBarGap)
 }
