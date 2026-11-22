@@ -27,3 +27,21 @@ func (w *Workspace) TabInset() int {
 	}
 	return w.TabBar + min(w.Gap(), domain.TabBarGap)
 }
+
+// TabWindow moves the focused tile into the neighbor column in direction
+// dir (-1 or 1) as its visible tab, as the tab drop does. It does nothing
+// without a neighbor, on a float, or while a fullscreen window hides others.
+func (w *Workspace) TabWindow(dir int) {
+	if len(w.Columns) == 0 || w.OnFloat() || w.FullscreenHides() || (dir != -1 && dir != 1) {
+		return
+	}
+	next := w.Focus + dir
+	if next < 0 || next >= len(w.Columns) {
+		return
+	}
+	id, ok := w.Focused()
+	if !ok {
+		return
+	}
+	w.applyTab(w, id, w.Columns[next].Selected())
+}

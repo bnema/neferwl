@@ -86,6 +86,12 @@ const ActionMaximizeColumn = workspacedomain.ActionMaximizeColumn
 // ActionToggleColumnTabbed is workspace.ActionToggleColumnTabbed.
 const ActionToggleColumnTabbed = workspacedomain.ActionToggleColumnTabbed
 
+// ActionTabWindowLeft is workspace.ActionTabWindowLeft.
+const ActionTabWindowLeft = workspacedomain.ActionTabWindowLeft
+
+// ActionTabWindowRight is workspace.ActionTabWindowRight.
+const ActionTabWindowRight = workspacedomain.ActionTabWindowRight
+
 // ActionToggleFullscreen is workspace.ActionToggleFullscreen.
 const ActionToggleFullscreen = workspacedomain.ActionToggleFullscreen
 

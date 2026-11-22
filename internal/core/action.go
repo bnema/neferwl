@@ -99,7 +99,7 @@ func (c *Core) applyAction(a Action) Effect {
 		level := flashWindow
 		switch a {
 		case ActionFocusWindowUp, ActionFocusWindowDown, ActionMoveWindowUp, ActionMoveWindowDown,
-			ActionConsumeOrExpelLeft, ActionConsumeOrExpelRight, ActionToggleFloating:
+			ActionConsumeOrExpelLeft, ActionConsumeOrExpelRight, ActionTabWindowLeft, ActionTabWindowRight, ActionToggleFloating:
 		case ActionToggleWindowStash:
 			if !wasStashed {
 				return

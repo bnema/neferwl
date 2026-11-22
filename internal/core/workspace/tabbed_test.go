@@ -331,3 +331,63 @@ func TestTabbedRoundTripRestoresTabs(t *testing.T) {
 		})
 	}
 }
+
+func TestTabWindow(t *testing.T) {
+	for _, o := range []Overflow{OverflowScroll, OverflowCascade, OverflowFixed} {
+		t.Run(string(o), func(t *testing.T) {
+			// Two side by side: one tabbed column {2, 1}, 1 visible and focused.
+			w := cols(o, 3, 0, []WindowID{1}, []WindowID{2})
+			w.Apply(ActionTabWindowRight)
+			if got := ids(w); !reflect.DeepEqual(got, [][]WindowID{{2, 1}}) {
+				t.Fatalf("columns %v", got)
+			}
+			if c := w.Columns[0]; !c.Tabbed || c.Shares != nil || c.Selected() != 1 {
+				t.Fatalf("column %+v", c)
+			}
+			if id, _ := w.Focused(); id != 1 {
+				t.Fatalf("focused %d", id)
+			}
+
+			// Into a tabbed column: a tab after the focused row.
+			w = cols(o, 3, 1, []WindowID{1, 2}, []WindowID{3})
+			w.Columns[0].Tabbed, w.Columns[0].Focus = true, 0
+			w.Apply(ActionTabWindowLeft)
+			if got := ids(w); !reflect.DeepEqual(got, [][]WindowID{{1, 3, 2}}) {
+				t.Fatalf("columns %v", got)
+			}
+			if c := w.Columns[0]; !c.Tabbed || c.Selected() != 3 {
+				t.Fatalf("column %+v", c)
+			}
+
+			// From a stacked column of two: the source becomes normal.
+			w = cols(o, 3, 0, []WindowID{1, 2}, []WindowID{3})
+			w.Columns[0].Tabbed = true
+			w.Apply(ActionTabWindowRight)
+			if got := ids(w); !reflect.DeepEqual(got, [][]WindowID{{1}, {3, 2}}) {
+				t.Fatalf("columns %v", got)
+			}
+			if w.Columns[0].Tabbed || !w.Columns[1].Tabbed || w.Focus != 1 {
+				t.Fatalf("source %+v target %+v focus %d", w.Columns[0], w.Columns[1], w.Focus)
+			}
+		})
+	}
+}
+
+func TestTabWindowNoOp(t *testing.T) {
+	w := cols(OverflowScroll, 3, 0, []WindowID{1}, []WindowID{2})
+	w.Apply(ActionTabWindowLeft)
+	if got := ids(w); !reflect.DeepEqual(got, [][]WindowID{{1}, {2}}) {
+		t.Fatalf("no neighbor: %v", got)
+	}
+	w.AddFloating(3, 50, 50)
+	w.Apply(ActionTabWindowRight)
+	if got := ids(w); !reflect.DeepEqual(got, [][]WindowID{{1}, {2}}) || w.Columns[1].Tabbed {
+		t.Fatalf("float: %v", got)
+	}
+	w = cols(OverflowScroll, 3, 0, []WindowID{1}, []WindowID{2})
+	w.Apply(ActionToggleFullscreen)
+	w.Apply(ActionTabWindowRight)
+	if got := ids(w); !reflect.DeepEqual(got, [][]WindowID{{1}, {2}}) {
+		t.Fatalf("fullscreen: %v", got)
+	}
+}

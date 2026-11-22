@@ -255,6 +255,8 @@ bind.cmd+r = cycle-column-width
 bind.cmd+f = maximize-column
 # Show the focused column as tabs under a title bar, or back as a stack.
 bind.cmd+t = toggle-column-tabbed
+bind.cmd+shift+bracketleft = tab-window-left
+bind.cmd+shift+bracketright = tab-window-right
 bind.cmd+shift+f = toggle-fullscreen
 bind.cmd+s = toggle-stash-visible
 bind.cmd+shift+s = toggle-window-stash

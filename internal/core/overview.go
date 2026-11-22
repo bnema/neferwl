@@ -182,7 +182,7 @@ func overviewBlocks(a Action) bool {
 	}
 	switch a {
 	case ActionMoveColumnLeft, ActionMoveColumnRight, ActionCycleColumnWidth,
-		ActionMaximizeColumn, ActionToggleColumnTabbed, ActionToggleFullscreen, ActionToggleWindowStash,
+		ActionMaximizeColumn, ActionToggleColumnTabbed, ActionTabWindowLeft, ActionTabWindowRight, ActionToggleFullscreen, ActionToggleWindowStash,
 		ActionToggleStashVisible, ActionConsumeOrExpelLeft,
 		ActionConsumeOrExpelRight, ActionMoveWorkspaceLeft, ActionMoveWorkspaceRight,
 		ActionMoveWorkspaceToMonitorUp, ActionMoveWorkspaceToMonitorDown,
