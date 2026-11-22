@@ -124,7 +124,7 @@ func (s *screen) setScale(v float64) {
 }
 
 // tabPadY is the space above and below a tab title, logical px.
-const tabPadY = 4
+const tabPadY = 3
 
 // applyTabBar sets the tab bar height of the screen's workspaces: the hint
 // font size in logical px plus the padding.

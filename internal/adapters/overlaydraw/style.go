@@ -89,3 +89,31 @@ func mix(ink, bg color.RGBA) color.RGBA {
 	channel := func(a, b uint8) uint8 { return uint8(math.Round(.45*float64(a) + .55*float64(b))) }
 	return color.RGBA{channel(ink.R, bg.R), channel(ink.G, bg.G), channel(ink.B, bg.B), 255}
 }
+
+// minTextContrast is the least contrast ratio of an ink against its
+// background (WCAG AA for normal text).
+const minTextContrast = 4.5
+
+// InkFor is an opaque ink for text drawn on bg: near-white on a dark
+// background, near-black on a light one, whichever contrasts more.
+func InkFor(bg color.RGBA) color.RGBA {
+	dark, light := color.RGBA{17, 17, 17, 255}, color.RGBA{245, 245, 245, 255}
+	if contrast(bg, light) > contrast(bg, dark) {
+		return light
+	}
+	return dark
+}
+
+// MutedInk is a quieter opaque ink than InkFor for bg (#c0c0c0 on dark,
+// #404040 on light) when it keeps minTextContrast, else InkFor's.
+func MutedInk(bg color.RGBA) color.RGBA {
+	ink := InkFor(bg)
+	muted := color.RGBA{64, 64, 64, 255}
+	if ink.R > 128 {
+		muted = color.RGBA{192, 192, 192, 255}
+	}
+	if contrast(bg, muted) >= minTextContrast {
+		return muted
+	}
+	return ink
+}

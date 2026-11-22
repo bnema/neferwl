@@ -18,19 +18,17 @@ const tabTitleOverlay uint64 = 1<<63 | 1<<62
 // logical px.
 const tabTitlePadX = 6
 
-// tabInactiveInk is the opacity of an inactive tab's title.
-const tabInactiveInk = 0.7
-
 // tabBars draws the title bars of tabbed columns (domain.Scene.TabBars) with
 // the tile lines: the bar in Border.Inactive, the active tab in
-// Border.Active, and each title left aligned, cut with an ellipsis.
+// Border.Active, and each title left aligned, cut with an ellipsis, in an
+// opaque ink contrasting with what it is drawn on (muted when inactive).
 func (w *sceneWalk) tabBars() {
 	if len(w.s.TabBars) == 0 {
 		return
 	}
-	activeBg, activeInk := overlaydraw.Colors(w.s.Border.Active, "", "")
-	inactiveBg, inactiveInk := overlaydraw.Colors(w.s.Border.Inactive, "", "")
-	inactiveInk = fadeInk(inactiveInk, tabInactiveInk)
+	rgba := func(c [3]uint8) color.RGBA { return color.RGBA{c[0], c[1], c[2], 255} }
+	activeBg, inactiveBg := rgba(w.active), rgba(w.inactive)
+	activeInk, inactiveInk := overlaydraw.InkFor(activeBg), overlaydraw.MutedInk(inactiveBg)
 	for _, bar := range w.s.TabBars {
 		if bar.Rect.W <= 0 || bar.Rect.H <= 0 {
 			continue
@@ -94,10 +92,4 @@ func (w *sceneWalk) tabTitle(tab domain.TabTitle, rect image.Rectangle, style ov
 	dr.shm = c
 	dr.pc.buf = [4]uint32{0, uint32(lw), uint32(lh), 0}
 	w.draws = append(w.draws, dr)
-}
-
-// fadeInk is the premultiplied ink c at opacity a.
-func fadeInk(c color.RGBA, a float64) color.RGBA {
-	m := func(v uint8) uint8 { return uint8(float64(v)*a + 0.5) }
-	return color.RGBA{m(c.R), m(c.G), m(c.B), m(c.A)}
 }

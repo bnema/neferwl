@@ -78,3 +78,22 @@ func TestFontPixelsClamped(t *testing.T) {
 	require.InDelta(t, 256, FontPixels(1920, 1080, 0, 0, 3, 1e9), .00001)
 	require.InDelta(t, 256, FontPixels(1920, 1080, 0, 0, 4, 72), .00001)
 }
+
+// Tab title inks keep a readable contrast on the user's bar colours.
+func TestInkContrast(t *testing.T) {
+	dark, grey := color.RGBA{0x11, 0x11, 0x11, 255}, color.RGBA{0x99, 0x99, 0x99, 255}
+	for _, c := range []struct {
+		bg         color.RGBA
+		ink, muted color.RGBA
+	}{
+		{dark, color.RGBA{245, 245, 245, 255}, color.RGBA{192, 192, 192, 255}},
+		{grey, color.RGBA{17, 17, 17, 255}, color.RGBA{17, 17, 17, 255}},
+	} {
+		if got := InkFor(c.bg); got != c.ink || contrast(c.bg, got) < minTextContrast {
+			t.Errorf("InkFor(%v) = %v", c.bg, got)
+		}
+		if got := MutedInk(c.bg); got != c.muted || contrast(c.bg, got) < minTextContrast {
+			t.Errorf("MutedInk(%v) = %v", c.bg, got)
+		}
+	}
+}
