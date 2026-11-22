@@ -215,14 +215,12 @@ func (c *Core) runTargeted(ctx context.Context, id WindowID, a Action) error {
 			return Effect{}
 		}
 		if _, _, ok := WorkspaceArg(a); ok {
-			// The window moves alone, behind no cover; the selection of its
-			// destination stays.
-			if i, _, ok := s.mon.moveDest(a); ok {
+			// The window moves alone and quietly (no selection, view or
+			// maximize change on either side), never fullscreen, behind
+			// no cover.
+			if i, _, ok := s.mon.moveDest(a); ok && !w.IsFullscreenMember(id) {
 				if dst := s.mon.Workspaces[i]; dst != w && dst.Fullscreen == 0 {
-					dstPrev, _ := dst.Focused()
-					if MoveFocused(w, dst, false) {
-						restore(dst, dstPrev)
-					}
+					MoveByRule(w, dst, id)
 				}
 			}
 		} else {

@@ -287,6 +287,9 @@ func MoveFocused(from, to *Workspace, column bool) bool {
 	return workspacedomain.MoveFocused(from, to, column)
 }
 
+// MoveByRule calls workspace.MoveByRule.
+func MoveByRule(from, to *Workspace, id WindowID) { workspacedomain.MoveByRule(from, to, id) }
+
 // Expel calls workspace.Expel.
 func Expel(from, to *Workspace, dir int) bool { return workspacedomain.Expel(from, to, dir) }
 

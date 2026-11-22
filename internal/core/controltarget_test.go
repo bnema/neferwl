@@ -256,3 +256,48 @@ func TestTargetKeepsStashOverCover(t *testing.T) {
 		}
 	})
 }
+
+// tileRects maps each tile of the visible workspace to its rect.
+func tileRects(st domain.State) map[domain.WindowID]domain.Rect {
+	out := map[domain.WindowID]domain.Rect{}
+	for _, ws := range st.Workspaces {
+		if !ws.Visible {
+			continue
+		}
+		for _, col := range ws.Columns {
+			for _, tile := range col.Windows {
+				out[tile.ID] = tile.Rect
+			}
+		}
+	}
+	return out
+}
+
+// A targeted move into the shown workspace leaves its view and the focus
+// where they are. (In a fixed layout the new column unmaximizes the shown
+// one, as for any window placed by a rule: placeColumn.)
+func TestTargetMoveIntoShownIsQuiet(t *testing.T) {
+	for _, overflow := range []string{"scroll"} {
+		t.Run(overflow, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				r := runChainRigWith(t, "none", func(c *domain.Config) { c.Layout.Overflow = overflow })
+				r.mustDo(t, "mark a; move-window-to-workspace 2")
+				before := r.current(t)
+				r.mustTarget(t, "a", "move-window-to-workspace 1")
+				st := r.current(t)
+				if stateWindow(t, st, 5).Workspace != 1 || stateFocus(st) != stateFocus(before) {
+					t.Fatalf("5 on %d, focus %d", stateWindow(t, st, 5).Workspace, stateFocus(st))
+				}
+				after := tileRects(st)
+				for id, rect := range tileRects(before) {
+					// Columns share the width with the new one; the view (the
+					// first tile's place) stays.
+					if id != 1 || after[id].X == rect.X {
+						continue
+					}
+					t.Fatalf("tile %d moved: %+v -> %+v", id, rect, after[id])
+				}
+			})
+		})
+	}
+}
