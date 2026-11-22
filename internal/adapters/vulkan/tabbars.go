@@ -18,10 +18,6 @@ const tabTitleOverlay uint64 = 1<<63 | 1<<62
 // logical px.
 const tabTitlePadX = 6
 
-// tabTitlePadY is the space above and below a title, logical px: core's
-// tabPadY (core/screens.go).
-const tabTitlePadY = 4
-
 // tabInactiveInk is the opacity of an inactive tab's title.
 const tabInactiveInk = 0.7
 
@@ -50,25 +46,27 @@ func (w *sceneWalk) tabBars() {
 				w.fillRounded(rect, w.active, radius)
 				bg, ink = activeBg, activeInk
 			}
-			// Core sizes the bar as the font plus tabTitlePadY above and
-			// below; the raster has no padding (a tiny PadX/PadY rounds
-			// to 0), the walk places it.
-			font := float64(rect.Dy() - 2*w.phys(tabTitlePadY))
-			w.tabTitle(tab, rect, overlaydraw.Style{FontPx: font, Background: bg, Foreground: ink,
-				PadX: 0.01, PadY: 0.01, TextOnly: true, MaxWidth: rect.Dx() - 2*w.phys(tabTitlePadX)})
+			// Sizes come from logical sizes, not the rounded physical
+			// rect, so a moving bar keeps its raster. The raster has no
+			// padding (a tiny PadX/PadY rounds to 0), the walk places it.
+			maxW := int(float64(tab.Rect.W-2*tabTitlePadX) * w.scale)
+			w.tabTitle(tab, rect, overlaydraw.Style{FontPx: bar.FontPx * w.scale, Background: bg, Foreground: ink,
+				PadX: 0.01, PadY: 0.01, TextOnly: true, MaxWidth: maxW})
 		}
 	}
 }
 
 // tabTitle draws tab's title raster in rect (physical), vertically centred.
-// The raster is cached by text and style (overlaydraw), its GPU copy by
-// window, scale and style, versioned by the title's hash.
+// The raster is cached per window (overlaydraw.Titles), its GPU copy by
+// window, scale and style without MaxWidth, versioned by the title's hash
+// and the raster size: a width change that cuts the title the same way
+// keeps the copy.
 func (w *sceneWalk) tabTitle(tab domain.TabTitle, rect image.Rectangle, style overlaydraw.Style) {
 	r := w.r
 	if tab.Title == "" || style.MaxWidth <= 0 || style.FontPx < 1 || r.lost {
 		return
 	}
-	pix, lw, lh := r.overlayRaster.Label(tab.Title, 0, w.scale, style)
+	pix, lw, lh := r.tabTitles.Title(uint64(tab.Window), tab.Title, style)
 	if lw <= 0 || lh <= 0 {
 		return
 	}
@@ -79,7 +77,9 @@ func (w *sceneWalk) tabTitle(tab domain.TabTitle, rect image.Rectangle, style ov
 	if clip.Empty() {
 		return
 	}
-	key := shmKey{overlay: tabTitleOverlay | uint64(tab.Window), scale: w.scale, style: style}
+	keyStyle := style
+	keyStyle.MaxWidth = 0
+	key := shmKey{overlay: tabTitleOverlay | uint64(tab.Window), scale: w.scale, style: keyStyle}
 	st := shmState{w: lw, h: lh, seq: labelSeq(tab.Title)}
 	c := r.shmCached(key, st)
 	if c == nil {

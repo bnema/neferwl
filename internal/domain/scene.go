@@ -326,6 +326,8 @@ type TabBar struct {
 	Rect Rect
 	// Radius rounds the bar and its active tab, logical px: the window's.
 	Radius int
+	// FontPx is the title font size, logical px.
+	FontPx float64
 	Tabs   []TabTitle
 }
 
@@ -338,8 +340,9 @@ type TabTitle struct {
 }
 
 // SameTabBars reports whether a and b draw the same bars.
-func SameTabBars(a, b []TabBar) bool {
-	return slices.EqualFunc(a, b, func(x, y TabBar) bool {
-		return x.Rect == y.Rect && x.Radius == y.Radius && slices.Equal(x.Tabs, y.Tabs)
-	})
+func SameTabBars(a, b []TabBar) bool { return slices.EqualFunc(a, b, SameTabBar) }
+
+// SameTabBar reports whether x and y draw the same bar.
+func SameTabBar(x, y TabBar) bool {
+	return x.Rect == y.Rect && x.Radius == y.Radius && x.FontPx == y.FontPx && slices.Equal(x.Tabs, y.Tabs)
 }

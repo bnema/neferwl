@@ -50,7 +50,7 @@ func (c *Core) appendTabBars(s *tabBarScratch, w *Workspace, layout []Placement,
 			}
 			s.titles = append(s.titles, domain.TabTitle{Rect: r, Title: title, Active: j == col.Focus, Window: tab})
 		}
-		s.bars = append(s.bars, domain.TabBar{Rect: bar, Radius: windowRadius(p, w.Gap(), c.cfg.Border.Radius)})
+		s.bars = append(s.bars, domain.TabBar{Rect: bar, Radius: windowRadius(p, w.Gap(), c.cfg.Border.Radius), FontPx: float64(max(w.TabBar-2*tabPadY, 0))})
 		s.bars[len(s.bars)-1].Tabs = s.titles[first:len(s.titles):len(s.titles)]
 	}
 }

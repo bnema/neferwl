@@ -1,6 +1,7 @@
 package overlaydraw
 
 import (
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -70,4 +71,52 @@ func TestLabelTruncatesToMaxWidth(t *testing.T) {
 	style.MaxWidth = full + 10
 	_, same, _ := r.Label("a rather long window title", 0, 1, style)
 	require.Equal(t, full, same, "fitting text is not cut")
+}
+
+// Widths that cut a title the same way share a cache entry; a fitting
+// title ignores MaxWidth.
+func TestLabelMaxWidthNormalised(t *testing.T) {
+	var r Raster
+	style := Style{FontPx: 13, TextOnly: true, PadX: 0.01, PadY: 0.01}
+	const title = "a rather long window title"
+	_, full, _ := r.Label(title, 0, 1, style)
+	style.MaxWidth = full + 10
+	fit, _, _ := r.Label(title, 0, 1, style)
+	style.MaxWidth = full + 11
+	fit2, _, _ := r.Label(title, 0, 1, style)
+	require.Same(t, &fit[0], &fit2[0])
+	style.MaxWidth = full / 2
+	a, _, _ := r.Label(title, 0, 1, style)
+	style.MaxWidth = full/2 + 1
+	b, _, _ := r.Label(title, 0, 1, style)
+	n := r.Len()
+	if &a[0] != &b[0] {
+		// full/2 sat on a glyph edge: one more px stays in the next one.
+		style.MaxWidth = full/2 + 2
+		c, _, _ := r.Label(title, 0, 1, style)
+		require.Same(t, &b[0], &c[0])
+		require.Equal(t, n, r.Len())
+	}
+}
+
+// A window's title is one entry, replaced when it changes.
+func TestTitlesOneEntryPerWindow(t *testing.T) {
+	var titles Titles
+	style := Style{FontPx: 13, TextOnly: true, PadX: 0.01, PadY: 0.01, MaxWidth: 200}
+	var most int
+	for i := range 500 {
+		titles.Title(1, "build "+strconv.Itoa(i)+" running", style)
+		titles.Title(2, "editor", style)
+		most = max(most, titles.Bytes())
+	}
+	require.Equal(t, 2, titles.Len())
+	a, _, _ := titles.Title(2, "editor", style)
+	b, _, _ := titles.Title(2, "editor", style)
+	require.Same(t, &a[0], &b[0])
+	one, w, h := titles.Title(1, "build 0 running", style)
+	require.LessOrEqual(t, most, 2*(len(one)+w*h*4))
+	for i := range maxTitles + 10 {
+		titles.Title(uint64(10+i), "x", style)
+	}
+	require.LessOrEqual(t, titles.Len(), maxTitles)
 }

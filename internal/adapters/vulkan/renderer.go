@@ -85,6 +85,8 @@ type Renderer struct {
 	fenceExports uint64 // test counter: implicit sync export ioctl attempts
 	// overlayRaster rasterizes label overlays (overlays.go); the zero value works.
 	overlayRaster overlaydraw.Raster
+	// tabTitles rasterizes tab bar titles, one per window (tabbars.go).
+	tabTitles overlaydraw.Titles
 	// panels owns one reusable panel raster per overlay ID, retired with SHM.
 	panels map[uint64]*overlaydraw.Panel
 	// shmRects is scratch for shmCopyFor.

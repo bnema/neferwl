@@ -68,13 +68,14 @@ func (r *Raster) Label(text string, typed int, scale float64, styles ...Style) (
 	if len(styles) > 0 {
 		style = styles[0]
 	}
-	k := key{text, typed, scale, style}
-	if e, ok := r.cache[k]; ok {
-		return e.pix, e.w, e.h
-	}
 	face := r.face(style.FontPx)
 	if face == nil {
 		return nil, 0, 0
+	}
+	style.MaxWidth = fitWidth(face, text, style.MaxWidth)
+	k := key{text, typed, scale, style}
+	if e, ok := r.cache[k]; ok {
+		return e.pix, e.w, e.h
 	}
 	if r.cache == nil || len(r.cache) >= maxEntries {
 		r.cache = map[key]entry{}
@@ -156,6 +157,21 @@ func render(face font.Face, text string, typed int, style Style) entry {
 	return entry{pix: pix, w: w, h: h}
 }
 
+// fitWidth normalises a MaxWidth so every width that cuts text the same
+// way is one value (and one cache key): 0 when text fits, else maxWidth
+// floored to a multiple of the font's glyph advance (the font is
+// monospace).
+func fitWidth(face font.Face, text string, maxWidth int) int {
+	if maxWidth <= 0 || font.MeasureString(face, text).Ceil() <= maxWidth {
+		return 0
+	}
+	adv, ok := face.GlyphAdvance('M')
+	if !ok || adv <= 0 {
+		return maxWidth
+	}
+	return max((fixed.I(maxWidth) / adv * adv).Floor(), 1)
+}
+
 // ellipsis ends a truncated text.
 const ellipsis = "\u2026"
 
@@ -191,3 +207,56 @@ func truncate(face font.Face, text string, maxWidth int) string {
 
 // Len is the number of cached labels.
 func (r *Raster) Len() int { return len(r.cache) }
+
+// maxTitles bounds the Titles cache, one entry per window.
+const maxTitles = 256
+
+// Titles draws and caches window titles: one raster per window, replaced
+// when its title or style changes, so titles that churn do not fill a
+// cache. It is not safe for concurrent use: the renderer owns it.
+type Titles struct {
+	faces map[float64]font.Face
+	m     map[uint64]titleEntry
+}
+
+type titleEntry struct {
+	text  string
+	style Style
+	e     entry
+}
+
+// Title returns window id's title raster, like Raster.Label without typed
+// characters; style.FontPx and MaxWidth are physical. The slice stays
+// valid until the next call for id.
+func (t *Titles) Title(id uint64, text string, style Style) (pix []byte, w, h int) {
+	if text == "" {
+		return nil, 0, 0
+	}
+	face := cachedFace(&t.faces, style.FontPx)
+	if face == nil {
+		return nil, 0, 0
+	}
+	style.MaxWidth = fitWidth(face, text, style.MaxWidth)
+	old, ok := t.m[id]
+	if ok && old.text == text && old.style == style {
+		return old.e.pix, old.e.w, old.e.h
+	}
+	if t.m == nil || !ok && len(t.m) >= maxTitles {
+		t.m = map[uint64]titleEntry{}
+	}
+	e := render(face, text, 0, style)
+	t.m[id] = titleEntry{text: text, style: style, e: e}
+	return e.pix, e.w, e.h
+}
+
+// Len is the number of cached titles.
+func (t *Titles) Len() int { return len(t.m) }
+
+// Bytes is the size of the cached title rasters.
+func (t *Titles) Bytes() int {
+	n := 0
+	for _, e := range t.m {
+		n += len(e.e.pix)
+	}
+	return n
+}
