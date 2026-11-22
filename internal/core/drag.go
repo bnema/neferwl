@@ -348,13 +348,16 @@ func (c *Core) dropAt(id WindowID, x, y float64) dropTarget {
 		prev = d.target.a
 	}
 	p := c.dropPolicy(m, w)
-	if m.shown != nil {
-		// A named workspace has no neighbours: its workspace edges would
-		// do nothing, so they offer no zone.
-		for side := domain.DropSideLeft; side <= domain.DropSideBottom; side++ {
-			if w.EdgeAction(side, p.Edge[side]) == domain.DropWorkspace {
-				p.SetEdge(side, domain.DropNone)
-			}
+	// A workspace edge with no workspace past it (a named workspace has
+	// none, the first has none before it, the last none after it) would
+	// do nothing: it offers no zone.
+	for side := domain.DropSideLeft; side <= domain.DropSideBottom; side++ {
+		if w.EdgeAction(side, p.Edge[side]) != domain.DropWorkspace {
+			continue
+		}
+		back := side == domain.DropSideLeft || side == domain.DropSideTop
+		if m.shown != nil || back && m.Active == 0 || !back && m.Active >= len(m.Workspaces)-1 {
+			p.SetEdge(side, domain.DropNone)
 		}
 	}
 	_, src := c.screenOf(id)

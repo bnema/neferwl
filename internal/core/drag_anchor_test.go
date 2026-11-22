@@ -227,3 +227,27 @@ func TestDragNamedWorkspaceHasNoWorkspaceEdge(t *testing.T) {
 		r.settle(t)
 	})
 }
+
+// The first workspace has none before it: its top edge (scroll layout)
+// offers no workspace zone, while the bottom one does.
+func TestDragFirstWorkspaceHasNoBackEdge(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := startDragRig(t, nil, dragOut)
+		r.client <- ports.WindowMapped{ID: 1}
+		set := r.settle(t)
+		one := dragRect(t, set, "A", 1)
+		r.moveTo(float64(one.X+one.W/2), float64(one.Y+one.H/2), 1)
+		r.settle(t)
+		r.press(t, 0x110, domain.ModSuper)
+		r.moveTo(500, 3, 2)
+		if p := dragScene(r.settle(t), "A").DropPreview; p != nil && p.Label == domain.DropWorkspace.Label() {
+			t.Fatalf("workspace zone before the first workspace: %+v", p)
+		}
+		r.moveTo(500, 597, 3)
+		if p := dragScene(r.settle(t), "A").DropPreview; p == nil || p.Label != domain.DropWorkspace.Label() {
+			t.Fatalf("no workspace zone toward the next one: %+v", p)
+		}
+		r.in(ports.KeyEvent{Keysym: "Escape", Mods: domain.ModSuper, Pressed: true})
+		r.settle(t)
+	})
+}
