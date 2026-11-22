@@ -49,7 +49,7 @@ func (w *Workspace) stashWindow(id WindowID) {
 func (w *Workspace) tilePlace(id WindowID) *origPlace {
 	c := w.Columns[w.Focus]
 	lone := len(c.Windows) == 1
-	back := &origPlace{col: w.Focus, row: c.Focus, slot: c.Slot, cells: c.Cells, fullWidth: c.FullWidth && lone}
+	back := &origPlace{col: w.Focus, row: c.Focus, slot: c.Slot, cells: c.Cells, fullWidth: c.FullWidth && lone, tabbed: c.Tabbed}
 	for _, v := range c.Windows {
 		if v != id {
 			back.stacked = append(back.stacked, v)
@@ -151,6 +151,9 @@ func (w *Workspace) restore(id WindowID, back *origPlace) {
 		}
 		c.Windows = slices.Insert(c.Windows, row, id)
 		c.Focus = row
+		if back.tabbed {
+			c.Tabbed, c.Shares = true, nil
+		}
 		if w.Engine().MaximizeHides() && w.Focus != i {
 			w.Unmaximize()
 		}

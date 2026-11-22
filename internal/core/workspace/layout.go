@@ -113,6 +113,9 @@ type origPlace struct {
 	cells   int
 	// fullWidth is the column's maximize-column state.
 	fullWidth bool
+	// tabbed is the column's tabbed state: a window back in the column
+	// that holds its former tabs makes it tabbed again.
+	tabbed bool
 }
 
 // Float is a floating window and its client size, logical.

@@ -277,3 +277,26 @@ func TestDropCenterSwapPolicy(t *testing.T) {
 		t.Fatalf("columns %v", got)
 	}
 }
+
+// A 2-tab column that lost a tab to the stash or to floating is tabbed
+// again when the window comes back next to its sibling.
+func TestTabbedRoundTripRestoresTabs(t *testing.T) {
+	for _, a := range []Action{ActionToggleWindowStash, ActionToggleFloating} {
+		t.Run(string(a), func(t *testing.T) {
+			w := cols(OverflowScroll, 2, 0, []WindowID{1, 2}, []WindowID{3})
+			w.TabBar = 20
+			w.Columns[0].Focus = 1
+			w.Apply(ActionToggleColumnTabbed)
+			w.Apply(a)
+			if c := w.Columns[0]; c.Tabbed || !slices.Equal(c.Windows, []WindowID{1}) {
+				t.Fatalf("after %s: windows %v tabbed %v", a, c.Windows, c.Tabbed)
+			}
+			w.FocusID(2)
+			w.Apply(a)
+			c := w.Columns[0]
+			if !slices.Equal(c.Windows, []WindowID{1, 2}) || !c.Tabbed || c.Selected() != 2 {
+				t.Fatalf("back: windows %v tabbed %v selected %d", c.Windows, c.Tabbed, c.Selected())
+			}
+		})
+	}
+}
