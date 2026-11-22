@@ -214,3 +214,63 @@ func TestTabBarWithGaps(t *testing.T) {
 		}
 	})
 }
+
+// tab-window-right moves the focused window into the right column as its
+// visible tab.
+func TestTabWindowRight(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := startMulti(t, func(c *domain.Config) { c.Binds["F3"] = "tab-window-right" }, left)
+		r.mapWindow(t, 1)
+		r.mapWindow(t, 2)
+		r.key(t, "h", domain.ModAlt)
+		r.key(t, "F3", 0)
+		st := stateAfter(t, r.state, func(st domain.State) bool {
+			for _, ws := range st.Workspaces {
+				if len(ws.Columns) == 1 && ws.Columns[0].Tabbed {
+					return true
+				}
+			}
+			return false
+		})
+		for _, ws := range st.Workspaces {
+			if len(ws.Columns) != 1 {
+				continue
+			}
+			c := ws.Columns[0]
+			if len(c.Windows) != 2 || c.Windows[0].ID != 2 || c.Windows[1].ID != 1 || c.Active != 2 || stFocus(st) != 1 {
+				t.Fatalf("column %+v focus %d", c, stFocus(st))
+			}
+		}
+	})
+}
+
+// The overview blocks tab-window: the columns stay apart.
+func TestTabWindowBlockedInOverview(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := startMulti(t, func(c *domain.Config) {
+			c.Binds["F2"] = "toggle-overview"
+			c.Binds["F3"] = "tab-window-right"
+		}, left)
+		r.mapWindow(t, 1)
+		r.mapWindow(t, 2)
+		r.key(t, "h", domain.ModAlt)
+		r.key(t, "F2", 0)
+		r.key(t, "F3", 0)
+		r.key(t, "F2", 0)
+		synctest.Wait()
+		var st domain.State
+		for len(r.state) > 0 {
+			st = <-r.state
+		}
+		for _, ws := range st.Workspaces {
+			for _, c := range ws.Columns {
+				if c.Tabbed || len(c.Windows) != 1 {
+					t.Fatalf("columns %+v", ws.Columns)
+				}
+			}
+		}
+		if len(st.Workspaces) == 0 {
+			t.Fatal("no state")
+		}
+	})
+}
