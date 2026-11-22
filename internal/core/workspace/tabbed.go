@@ -24,9 +24,10 @@ func (w *Workspace) TabInset() int {
 
 // TabWindow moves the focused tile into the neighbor column in direction
 // dir (-1 or 1) as its visible tab, as the tab drop does. It does nothing
-// without a neighbor (cascade stays in its band), on a float, while a
-// fullscreen window hides others, or when either column holds the fullscreen
-// window, which tabbing would silently drop.
+// without a neighbor (cascade stays in its band), on a float, while
+// fullscreen hides the focused column (a cover, or the focused column holds
+// the fullscreen window), or when the target column holds the fullscreen
+// window: tabbing would silently drop it.
 func (w *Workspace) TabWindow(dir int) {
 	if len(w.Columns) == 0 || w.OnFloat() || w.FullscreenHides() || (dir != -1 && dir != 1) {
 		return
@@ -35,7 +36,7 @@ func (w *Workspace) TabWindow(dir int) {
 	if next < 0 || next == w.Focus {
 		return
 	}
-	if w.Fullscreen != 0 && (w.FullscreenColumn(w.Focus) || w.FullscreenColumn(next)) {
+	if w.FullscreenColumn(next) {
 		return
 	}
 	id, ok := w.Focused()
