@@ -206,8 +206,8 @@ func TestCascadeRestoreBandMemory(t *testing.T) {
 			w.FocusID(4)
 			w.ConsumeOrExpel(-1) // {1 2 3/4} {5}
 			w.FocusID(2)
-			w.ToggleFullWidth()                                 // {1} {2*} {3/4 5}
-			Drop(w, w, 4, DropSpot{Kind: DropBelow, Anchor: 5}) // {1} {2*} {3 5/4}
+			w.ToggleFullWidth()   // {1} {2*} {3/4 5}
+			DropBelow(w, w, 4, 5) // {1} {2*} {3 5/4}
 			w.FocusID(5)
 			w.MoveColumn(-1) // {1} {2*} {5/4 3}
 			w.FocusID(2)

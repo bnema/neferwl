@@ -328,69 +328,6 @@ func (w *Workspace) EdgeScroll(lx int) bool {
 	return w.scrollBy(dir)
 }
 
-// Drop moves a tile to an output-local target, possibly in another workspace.
-func Drop(src, w *Workspace, id WindowID, t DropSpot) {
-	ci := src.ColumnOf(id)
-	if ci < 0 {
-		return
-	}
-	lone := len(src.Columns[ci].Windows) == 1
-	if t.Kind == DropSwap && w == src && lone {
-		to := w.ColumnOf(t.Anchor)
-		w.Columns[ci], w.Columns[to] = w.Columns[to], w.Columns[ci]
-		w.FocusID(id)
-	} else {
-		cells := 0
-		if lone {
-			cells = src.Columns[ci].Cells
-		}
-		srcIndex := ci
-		src.dropSlotOf(id)
-		src.RemoveWindow(id)
-		col := layout.Column{Windows: []WindowID{id}, Cells: cells}
-		switch t.Kind {
-		case DropAbove, DropBelow:
-			ai := w.ColumnOf(t.Anchor)
-			if ai < 0 {
-				w.receive(col, -1)
-				break
-			}
-			tc := &w.Columns[ai]
-			row := slices.Index(tc.Windows, t.Anchor)
-			if t.Kind == DropBelow {
-				row++
-			}
-			if row == 0 {
-				tc.Slot = 0
-			}
-			tc.Windows = slices.Insert(tc.Windows, row, id)
-			tc.Shares = nil
-			w.Activate(id)
-		default:
-			at, anchorCol := len(w.Columns), -1
-			if t.Anchor != 0 {
-				if ai := w.ColumnOf(t.Anchor); ai >= 0 {
-					at, anchorCol = ai, ai
-					if t.Kind == DropSwap && w == src && ai >= srcIndex {
-						at = ai + 1
-					}
-				}
-			}
-			if w.full() {
-				i := min(at, len(w.Columns)-1)
-				if anchorCol >= 0 {
-					i = anchorCol
-				}
-				w.Columns[i].Windows = append(w.Columns[i].Windows, id)
-				w.Columns[i].Shares = nil
-				w.Activate(id)
-			} else {
-				w.receive(col, at)
-			}
-		}
-	}
-}
-
 // FocusRow focuses window row of column col, as a click on it does.
 func (w *Workspace) FocusRow(col, row int) { w.Columns[col].Focus = row }
 

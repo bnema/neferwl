@@ -168,7 +168,7 @@ func MoveTileBelow(from *Workspace, id WindowID, to *Workspace, target WindowID)
 	if c, _ := to.Cell(target); c == 0 {
 		return false
 	}
-	Drop(from, to, id, DropSpot{Kind: DropBelow, Anchor: target})
+	DropBelow(from, to, id, target)
 	to.FocusID(id)
 	return true
 }

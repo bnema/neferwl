@@ -2,9 +2,8 @@ package workspace
 
 const (
 	// Drop geometry is measured in output-local logical pixels.
-	dropBandDiv = 4
-	gapPad      = 12
-	edgeScroll  = 32
+	gapPad     = 12
+	edgeScroll = 32
 	// Overview geometry: the card zoom, the card count and step, the peek step
 	// and the zoom bounds of a row.
 	overviewCardZoom = 0.2

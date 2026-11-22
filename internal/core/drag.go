@@ -2,7 +2,6 @@ package core
 
 import (
 	"context"
-	"slices"
 	"time"
 
 	"github.com/bnema/neferwl/internal/domain"
@@ -34,14 +33,12 @@ const (
 	edgeScrollInterval = 250 * time.Millisecond
 )
 
-// dropTarget is where a dragged tile lands. anchor is the hovered window
-// (above, below, swap) or a window of the column the new one goes before
-// (insert; 0 is the end).
+// dropTarget is where a dragged tile lands: anchor a of workspace ws on
+// screen. hints are a's drop hint rects, output-local.
 type dropTarget struct {
-	kind   DropKind
+	a      Anchor
 	screen *screen
 	ws     *Workspace
-	anchor WindowID
 	hints  []Rect
 }
 
@@ -186,8 +183,12 @@ func (c *Core) dragMotion(ctx context.Context, at time.Duration) error {
 	}
 	scrolled := c.edgeScroll(at)
 	t := c.dropAt(d.id, c.cursorX, c.cursorY)
-	if !scrolled && t.kind == d.target.kind && t.anchor == d.target.anchor && t.ws == d.target.ws && slices.Equal(t.hints, d.target.hints) {
+	if !scrolled && t.a == d.target.a && t.ws == d.target.ws && t.screen == d.target.screen {
 		return nil
+	}
+	if t.a.Kind != AnchorNone {
+		// The scene clones the hints: the old slice is reused.
+		t.hints = t.ws.AnchorHints(d.target.hints[:0], d.id, t.a, max(4*c.cfg.Border.Width, 4))
 	}
 	d.target = t
 	return c.publish(ctx)
@@ -205,7 +206,7 @@ func (c *Core) endDrag(ctx context.Context) error {
 	d := c.drag
 	c.drag = nil
 	if !d.float {
-		if t := c.dropAt(d.id, c.cursorX, c.cursorY); t.kind != DropNone {
+		if t := c.dropAt(d.id, c.cursorX, c.cursorY); t.a.Kind != AnchorNone {
 			now := c.now()
 			shots := c.snapshot(now)
 			c.drop(d.id, t)
@@ -256,8 +257,12 @@ func (c *Core) dropAt(id WindowID, x, y float64) dropTarget {
 	if m.previewing() || w.Pinned() || !m.frameHas(float64(lx), float64(ly)) {
 		return dropTarget{}
 	}
-	t := w.DropIn(id, lx, ly, max(4*c.cfg.Border.Width, 4))
-	return dropTarget{kind: t.Kind, anchor: t.Anchor, hints: t.Hints, screen: sc, ws: w}
+	var prev Anchor
+	if d := c.drag; d != nil && d.target.ws == w {
+		prev = d.target.a
+	}
+	_, src := c.screenOf(id)
+	return dropTarget{a: w.AnchorAt(src, id, lx, ly, prev, legacyDropPolicy()), screen: sc, ws: w}
 }
 
 // drop moves tile id to target t, possibly on another workspace or
@@ -267,7 +272,7 @@ func (c *Core) drop(id WindowID, t dropTarget) {
 	if from == nil || t.ws == nil || src.ColumnOf(id) < 0 {
 		return
 	}
-	Drop(src, t.ws, id, DropSpot{Kind: t.kind, Anchor: t.anchor, Hints: t.hints})
+	Drop(src, t.ws, id, t.a, int(c.cursorX)-t.screen.x, int(c.cursorY)-t.screen.y)
 	from.mon.normalize()
 	t.screen.mon.normalize()
 	c.focusScreen = c.screenIndex(t.screen.name())
@@ -289,4 +294,13 @@ func (c *Core) edgeScroll(t time.Duration) bool {
 	}
 	c.drag.scrolled = max(t, 1)
 	return true
+}
+
+// legacyDropPolicy is the default policy without side bands, the drop
+// behaviour before configurable anchors.
+func legacyDropPolicy() domain.DropPolicy {
+	p := domain.DefaultDropPolicy()
+	p.SetWindow(domain.DropSideLeft, domain.DropNone)
+	p.SetWindow(domain.DropSideRight, domain.DropNone)
+	return p
 }

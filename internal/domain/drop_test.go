@@ -119,3 +119,20 @@ func TestConfigEqualDrop(t *testing.T) {
 		t.Fatal("global drop change ignored")
 	}
 }
+
+func TestDropPolicyNoAllocs(t *testing.T) {
+	var ws, out DropPolicy
+	ws.SetWindow(DropSideLeft, DropNone)
+	out.SetEdge(DropSideTop, DropStash)
+	var sink DropPolicy
+	var ok bool
+	var label string
+	allocs := testing.AllocsPerRun(100, func() {
+		sink = ws.Over(out.Over(DefaultDropPolicy()))
+		ok = DropAllowed("edge.top", sink.Edge[DropSideTop])
+		label = sink.Window[DropSideCenter].Label()
+	})
+	if allocs != 0 || !ok || label != "swap" {
+		t.Fatalf("allocs %.1f, ok %v, label %q", allocs, ok, label)
+	}
+}

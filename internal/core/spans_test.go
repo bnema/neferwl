@@ -3,6 +3,8 @@ package core
 import (
 	"testing"
 	"testing/synctest"
+
+	"github.com/bnema/neferwl/internal/domain"
 )
 
 func TestSpansDropIntoLane(t *testing.T) {
@@ -16,7 +18,7 @@ func TestSpansDropIntoLane(t *testing.T) {
 			m.Workspaces = []*Workspace{w, src}
 			sc := &screen{mon: m}
 			c := &Core{screens: []*screen{sc}}
-			c.drop(9, dropTarget{kind: DropInsert, screen: sc, ws: w, anchor: w.Columns[1].Windows[0]})
+			c.drop(9, dropTarget{a: Anchor{Kind: AnchorGap, At: 1, Window: w.Columns[1].Windows[0], Action: domain.DropColumn}, screen: sc, ws: w})
 			if len(w.Columns) != 3 {
 				t.Fatal("not dropped", mode, w.Columns)
 			}
@@ -58,7 +60,7 @@ func TestSpanLaneIdentity(t *testing.T) {
 					if cross {
 						to = 2
 					}
-					c.drop(w.Columns[0].Windows[0], dropTarget{kind: DropSwap, screen: sc, ws: w, anchor: w.Columns[to].Windows[0]})
+					c.drop(w.Columns[0].Windows[0], dropTarget{a: Anchor{Kind: AnchorWindow, Window: w.Columns[to].Windows[0], Action: domain.DropSwap}, screen: sc, ws: w})
 				} else {
 					w.Focus = 0
 					w.MoveColumn(1)

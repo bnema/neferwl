@@ -49,7 +49,7 @@ func (c *Core) sceneFor(ctx context.Context, i int, sc *screen, only *screen, ca
 		scene.Dim = c.cfg.Floating.Dim
 		scene.DimBehind = scene.Dim > 0
 	}
-	if d := c.drag; d != nil && d.target.screen == sc && d.target.kind != DropNone {
+	if d := c.drag; d != nil && d.target.screen == sc && d.target.a.Kind != AnchorNone {
 		scene.DropHints = slices.Clone(d.target.hints)
 	}
 	if sc.mon.ov.open {
