@@ -177,3 +177,37 @@ func TestPlainSceneWarmedRetainedOverlayNoAlloc(t *testing.T) {
 		t.Fatalf("plain scene lost warmed storage: %v allocations", n)
 	}
 }
+
+// A drop preview alone takes the plain path: the capture gets the frame
+// without the preview and its thumbnail proxy.
+func TestSubmitPlainDropPreviewOnly(t *testing.T) {
+	replies := make(chan domain.CaptureDone, 1)
+	p := NewPipeline(context.Background(), replies)
+	r := portsmocks.NewMockRenderer(t)
+	frame := portsmocks.NewMockCaptureFrame(t)
+	frame.EXPECT().Done().Return((*os.File)(nil))
+	frame.EXPECT().Read(image.Rect(0, 0, 2, 2), mock.Anything, 8).Return(nil).Once()
+	var rendered []domain.Scene
+	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s domain.Scene, _ map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
+		rendered = append(rendered, s)
+		return nil, nil
+	}).Once()
+	r.EXPECT().BeginCapture().Return(frame, nil).Once()
+	r.EXPECT().EndCapture(frame).Return().Once()
+	s := excludedTestScene()
+	s.Capture = nil
+	s.Windows = append(s.Windows, domain.SceneWindow{ID: 1, Proxy: true, Rect: domain.Rect{W: 4, H: 4}, Zoom: 0.25})
+	s.DropPreview = &domain.DropPreview{Rect: domain.Rect{W: 4, H: 4}, Thumb: 1, ThumbRect: domain.Rect{W: 4, H: 4}}
+	reqs := []domain.CaptureRequest{pipelineRequest(t, 1)}
+	took, _, err := p.SubmitPlain(r, s, nil, reqs)
+	require.NoError(t, err)
+	require.True(t, took)
+	require.Len(t, rendered, 1)
+	require.Nil(t, rendered[0].DropPreview)
+	for _, w := range rendered[0].Windows {
+		require.False(t, w.Proxy, "proxy in the plain frame")
+	}
+	require.Equal(t, uint64(1), awaitCapture(t, replies).ID)
+	p.Close(r)
+	frame.Calls = nil
+}

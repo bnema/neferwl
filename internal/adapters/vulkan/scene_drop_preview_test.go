@@ -180,3 +180,35 @@ func TestSceneDropPreviewRoundedProxy(t *testing.T) {
 		require.Equal(t, float32(c.want), math.Float32frombits(ring.radii[0]))
 	}
 }
+
+// At a fractional scale the damage of the preview still covers what it
+// draws: the edge pill and the thumbnail with its ring.
+func TestDropPreviewAreaCoversDrawsAtScale(t *testing.T) {
+	r := newTestRenderer(t, 384, 384)
+	defer r.Close()
+	bounds := image.Rect(0, 0, 384, 384)
+	const scale = 1.5
+	thumb := domain.Rect{X: 150, Y: 120, W: 49, H: 37}
+	s := dropScene(&domain.DropPreview{Rect: domain.Rect{X: 224, W: 32, H: 256}, Fill: 0.12, Label: "workspace", LabelPx: 20, Edge: domain.DropSideRight, Thumb: 7, ThumbRect: thumb},
+		domain.SceneWindow{ID: 7, Proxy: true, Rect: thumb, Zoom: 0.25})
+	s.Scale = scale
+	s.Border.Width = 3
+	phys := func(r domain.Rect) image.Rectangle {
+		p := func(v int) int { return int(math.Round(float64(v) * scale)) }
+		return image.Rect(p(r.X), p(r.Y), p(r.X+r.W), p(r.Y+r.H)).Intersect(bounds)
+	}
+	area := dropPreviewArea(s.DropPreview, scale, phys)
+	// Everything but the tile and the top layer belongs to the preview.
+	skip := map[image.Rectangle]bool{phys(s.Windows[0].Rect): true, phys(s.Layers[0].Rect): true}
+	got := r.draws(s, nil, newDamage(&target{}, s, bounds))
+	n := 0
+	for _, d := range got {
+		rect := image.Rect(int(d.pc.rect[0]), int(d.pc.rect[1]), int(d.pc.rect[2]), int(d.pc.rect[3]))
+		if skip[rect] {
+			continue
+		}
+		n++
+		require.True(t, rect.In(area), "draw %v outside damage %v", rect, area)
+	}
+	require.Greater(t, n, 6, "zone, ring, pill and thumbnail drawn")
+}
