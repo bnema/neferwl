@@ -101,6 +101,7 @@ type Pipeline struct {
 	nheld         int
 	excl          excluder         // scratch of ExcludedScene, owner only
 	plainOverlays []domain.Overlay // scratch of SubmitPlain, owner only
+	plainWindows  []domain.SceneWindow
 	// classes holds requests by cursor × PQ. Rotate priority without adding
 	// GPU readback slots (each slot can hold a full output-sized image).
 	classes   [4][MaxRequests]domain.CaptureRequest

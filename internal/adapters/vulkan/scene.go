@@ -64,7 +64,7 @@ func (r *Renderer) draws(s domain.Scene, contents map[domain.WindowID]domain.Sur
 	}
 	w.windows()
 	w.popups(false)
-	w.dropHints()
+	w.dropPreview()
 	w.bounds = outputBounds
 	w.layers(true)
 	w.popups(true)
@@ -146,18 +146,14 @@ func (w *sceneWalk) captureIndicators() {
 	}
 }
 
-// dropHints fills where a dragged tile would land (domain.Scene.DropHints),
+// dropPreview fills where a dragged tile would land (domain.Scene.DropPreview),
 // in the active border color, over the workspace's windows.
-func (w *sceneWalk) dropHints() {
-	if len(w.s.DropHints) == 0 {
+func (w *sceneWalk) dropPreview() {
+	p := w.s.DropPreview
+	if p == nil || p.Rect.W <= 0 || p.Rect.H <= 0 {
 		return
 	}
-	col := w.active
-	for _, r := range w.s.DropHints {
-		if r.W > 0 && r.H > 0 {
-			w.fill(w.physRect(r.X, r.Y, r.W, r.H), col)
-		}
-	}
+	w.fill(w.physRect(p.Rect.X, p.Rect.Y, p.Rect.W, p.Rect.H), w.active)
 }
 
 // pill fills a rounded square (physical pixels) with three rects: a full

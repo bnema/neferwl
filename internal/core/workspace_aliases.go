@@ -197,6 +197,9 @@ const AnchorNone = workspacedomain.AnchorNone
 // AnchorEdge is workspace.AnchorEdge.
 const AnchorEdge = workspacedomain.AnchorEdge
 
+// AnchorWindow is workspace.AnchorWindow.
+const AnchorWindow = workspacedomain.AnchorWindow
+
 // EdgeAlways is workspace.EdgeAlways.
 const EdgeAlways = workspacedomain.EdgeAlways
 

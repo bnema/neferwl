@@ -17,8 +17,6 @@ const (
 	ResizeWidth = workspacedomain.ResizeWidth
 	// ResizeHeight is the resize axis of set-window-height.
 	ResizeHeight = workspacedomain.ResizeHeight
-	// AnchorWindow is a drop zone on a tile.
-	AnchorWindow = workspacedomain.AnchorWindow
 	// AnchorGap is a drop zone between columns.
 	AnchorGap = workspacedomain.AnchorGap
 )

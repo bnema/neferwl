@@ -295,12 +295,16 @@ func (tg *target) hold(s domain.Scene, d *damageRegion) {
 	tg.heldWindows = append(tg.heldWindows[:0], s.Windows...)
 	tg.heldSeparators = append(tg.heldSeparators[:0], s.Separators...)
 	tg.heldLayers = append(tg.heldLayers[:0], s.Layers...)
-	tg.heldHints = append(tg.heldHints[:0], s.DropHints...)
 	tg.heldIndicators = append(tg.heldIndicators[:0], s.CaptureIndicators...)
 	tg.heldOverlays = append(tg.heldOverlays[:0], s.Overlays...)
 	tg.valid, tg.sceneSeq, tg.scene, tg.windows = true, s.Seq, s, d.drawn
 	tg.scene.Windows, tg.scene.Separators, tg.scene.Layers = tg.heldWindows, tg.heldSeparators, tg.heldLayers
-	tg.scene.DropHints, tg.scene.CaptureIndicators = tg.heldHints, tg.heldIndicators
+	tg.scene.CaptureIndicators = tg.heldIndicators
+	if s.DropPreview != nil {
+		// A copy the target owns: no pointer into core's scene is kept.
+		tg.heldPreview = *s.DropPreview
+		tg.scene.DropPreview = &tg.heldPreview
+	}
 	tg.scene.Overlays = tg.heldOverlays
 	// Only whether they are set matters (any capture redraws everything):
 	// sentinels, so no pointer into the caller's capture state is kept.
@@ -335,7 +339,7 @@ func sceneDelta(old, cur domain.Scene, phys func(domain.Rect) image.Rectangle, l
 		old.Physical != cur.Physical || old.Background != cur.Background || old.Border != cur.Border ||
 		old.WorkspaceClip != cur.WorkspaceClip || old.TileInset != cur.TileInset || old.Dim != cur.Dim || old.DimBehind != cur.DimBehind ||
 		old.Capture != nil || cur.Capture != nil || old.CaptureScene != nil || cur.CaptureScene != nil ||
-		!slices.Equal(old.Layers, cur.Layers) || !slices.Equal(old.DropHints, cur.DropHints) ||
+		!slices.Equal(old.Layers, cur.Layers) ||
 		!slices.Equal(old.CaptureIndicators, cur.CaptureIndicators) || !slices.Equal(old.Overlays, cur.Overlays) ||
 		len(old.Windows) != len(cur.Windows) {
 		return image.Rectangle{}, false
@@ -371,6 +375,9 @@ func sceneDelta(old, cur domain.Scene, phys func(domain.Rect) image.Rectangle, l
 			area = area.Union(phys(cur.Outline.Rect))
 		}
 	}
+	if (old.DropPreview == nil) != (cur.DropPreview == nil) || (old.DropPreview != nil && *old.DropPreview != *cur.DropPreview) {
+		area = area.Union(dropPreviewArea(old.DropPreview, phys)).Union(dropPreviewArea(cur.DropPreview, phys))
+	}
 	for i := range old.Windows {
 		a, b := old.Windows[i], cur.Windows[i]
 		if a.ID != b.ID {
@@ -385,6 +392,29 @@ func sceneDelta(old, cur domain.Scene, phys func(domain.Rect) image.Rectangle, l
 		return image.Rectangle{}, false
 	}
 	return area, true
+}
+
+// dropPreviewOutline is the drop preview's outline width, logical px:
+// damage grows the zone and the thumbnail by it.
+const dropPreviewOutline = 2
+
+// dropPreviewArea is where p draws (physical, through phys): its zone and
+// thumbnail, outlines included; empty for nil.
+func dropPreviewArea(p *domain.DropPreview, phys func(domain.Rect) image.Rectangle) image.Rectangle {
+	var area image.Rectangle
+	if p == nil {
+		return area
+	}
+	grow := func(r domain.Rect) domain.Rect {
+		return domain.Rect{X: r.X - dropPreviewOutline, Y: r.Y - dropPreviewOutline, W: r.W + 2*dropPreviewOutline, H: r.H + 2*dropPreviewOutline}
+	}
+	if p.Rect.W > 0 && p.Rect.H > 0 {
+		area = phys(grow(p.Rect))
+	}
+	if p.Thumb != 0 && p.ThumbRect.W > 0 && p.ThumbRect.H > 0 {
+		area = area.Union(phys(grow(p.ThumbRect)))
+	}
+	return area
 }
 
 // separatorDelta is the region where the separator lists differ: a line in

@@ -109,7 +109,7 @@ func osdDrawn(s domain.Scene, id WindowID) bool {
 		return false
 	}
 	for _, w := range s.Windows {
-		if w.ID == id && !w.Popup {
+		if w.ID == id && !w.Popup && !w.Proxy {
 			return w.Preview == 0 && w.Zoom == 0 && w.Fade < 1 && s.Draws(w)
 		}
 	}

@@ -19,7 +19,7 @@ func sameSceneBase() Scene {
 		Border:       Border{Width: 2, Active: "#ffffff", Inactive: "#222222"},
 		Windows:      []SceneWindow{{ID: 1, Rect: Rect{X: 1, W: 10, H: 10}}},
 		Separators:   []Separator{{Rect: Rect{W: 1, H: 10}}},
-		DropHints:    []Rect{{W: 5, H: 5}},
+		DropPreview:  &DropPreview{Rect: Rect{W: 5, H: 5}, Fill: 0.18, Label: "swap", Thumb: 1},
 		Layers:       []SceneLayer{{ID: 9, Rect: Rect{W: 100, H: 5}}},
 		Capture:      &SceneCapture{Shown: 1, Excluded: []WindowID{3}},
 
@@ -43,49 +43,60 @@ func TestSceneSameAs(t *testing.T) {
 	assert.True(t, Scene{}.SameAs(Scene{Seq: 3}))
 
 	for name, edit := range map[string]func(*Scene){
-		"position hint":     func(s *Scene) { s.PositionHint.Opacity = 1 },
-		"outline nil":       func(s *Scene) { s.Outline = nil },
-		"outline rect":      func(s *Scene) { s.Outline.Rect.X++ },
-		"outline width":     func(s *Scene) { s.Outline.Width++ },
-		"outline radius":    func(s *Scene) { s.Outline.Radius++ },
-		"outline active":    func(s *Scene) { s.Outline.Active = false },
-		"flash nil":         func(s *Scene) { s.Flash = nil },
-		"flash rect":        func(s *Scene) { s.Flash.Rect.X++ },
-		"flash width":       func(s *Scene) { s.Flash.Width++ },
-		"flash color":       func(s *Scene) { s.Flash.Color = "#ffffff" },
-		"flash alpha":       func(s *Scene) { s.Flash.Alpha = 0.2 },
-		"window rect":       func(s *Scene) { s.Windows[0].Rect.X++ },
-		"window fade":       func(s *Scene) { s.Windows[0].Fade = 0.5 },
-		"window zoom":       func(s *Scene) { s.Windows[0].Zoom = 0.9 },
-		"window count":      func(s *Scene) { s.Windows = nil },
-		"security":          func(s *Scene) { s.Security.Generation++ },
-		"background":        func(s *Scene) { s.Background = "#111111" },
-		"border":            func(s *Scene) { s.Border.Width++ },
-		"output":            func(s *Scene) { s.Output = "B" },
-		"size":              func(s *Scene) { s.OutputWidth++ },
-		"scale":             func(s *Scene) { s.Scale = 2 },
-		"off":               func(s *Scene) { s.Off = true },
-		"clip":              func(s *Scene) { s.WorkspaceClip.W = 1 },
-		"tile inset":        func(s *Scene) { s.TileInset.Bottom = 1 },
-		"dim":               func(s *Scene) { s.Dim = 0.5 },
-		"dim behind":        func(s *Scene) { s.DimBehind = true },
-		"separator":         func(s *Scene) { s.Separators[0].Active = true },
-		"drop hint":         func(s *Scene) { s.DropHints[0].W++ },
-		"layer":             func(s *Scene) { s.Layers[0].Rect.H++ },
-		"indicator":         func(s *Scene) { s.CaptureIndicators[0].Pill = true },
-		"overlay seq":       func(s *Scene) { s.Overlays[0].Seq++ },
-		"overlay style":     func(s *Scene) { s.Overlays[0].Style.Size = 12 },
-		"overlay count":     func(s *Scene) { s.Overlays = nil },
-		"physical":          func(s *Scene) { s.Physical.MMWidth++ },
-		"excluded":          func(s *Scene) { s.Capture.Excluded[0] = 4 },
-		"transform":         func(s *Scene) { s.Transform = 1 },
-		"capture shown":     func(s *Scene) { s.Capture.Shown++ },
-		"capture session":   func(s *Scene) { s.Capture.Session++ },
-		"capture workspace": func(s *Scene) { s.Capture.Workspace++ },
-		"capture window":    func(s *Scene) { s.Capture.Window++ },
-		"capture revision":  func(s *Scene) { s.Capture.Revision++ },
-		"capture nil":       func(s *Scene) { s.Capture = nil },
-		"capture scene":     func(s *Scene) { s.CaptureScene = &Scene{} },
+		"position hint":    func(s *Scene) { s.PositionHint.Opacity = 1 },
+		"outline nil":      func(s *Scene) { s.Outline = nil },
+		"outline rect":     func(s *Scene) { s.Outline.Rect.X++ },
+		"outline width":    func(s *Scene) { s.Outline.Width++ },
+		"outline radius":   func(s *Scene) { s.Outline.Radius++ },
+		"outline active":   func(s *Scene) { s.Outline.Active = false },
+		"flash nil":        func(s *Scene) { s.Flash = nil },
+		"flash rect":       func(s *Scene) { s.Flash.Rect.X++ },
+		"flash width":      func(s *Scene) { s.Flash.Width++ },
+		"flash color":      func(s *Scene) { s.Flash.Color = "#ffffff" },
+		"flash alpha":      func(s *Scene) { s.Flash.Alpha = 0.2 },
+		"window rect":      func(s *Scene) { s.Windows[0].Rect.X++ },
+		"window fade":      func(s *Scene) { s.Windows[0].Fade = 0.5 },
+		"window zoom":      func(s *Scene) { s.Windows[0].Zoom = 0.9 },
+		"window count":     func(s *Scene) { s.Windows = nil },
+		"security":         func(s *Scene) { s.Security.Generation++ },
+		"background":       func(s *Scene) { s.Background = "#111111" },
+		"border":           func(s *Scene) { s.Border.Width++ },
+		"output":           func(s *Scene) { s.Output = "B" },
+		"size":             func(s *Scene) { s.OutputWidth++ },
+		"scale":            func(s *Scene) { s.Scale = 2 },
+		"off":              func(s *Scene) { s.Off = true },
+		"clip":             func(s *Scene) { s.WorkspaceClip.W = 1 },
+		"tile inset":       func(s *Scene) { s.TileInset.Bottom = 1 },
+		"dim":              func(s *Scene) { s.Dim = 0.5 },
+		"dim behind":       func(s *Scene) { s.DimBehind = true },
+		"separator":        func(s *Scene) { s.Separators[0].Active = true },
+		"drop preview nil": func(s *Scene) { s.DropPreview = nil },
+		"drop preview rect": func(s *Scene) {
+			s.DropPreview = &DropPreview{Rect: Rect{W: 6, H: 5}, Fill: 0.18, Label: "swap", Thumb: 1}
+		},
+		"drop preview fill": func(s *Scene) {
+			s.DropPreview = &DropPreview{Rect: Rect{W: 5, H: 5}, Fill: 0.06, Label: "swap", Thumb: 1}
+		},
+		"drop preview label": func(s *Scene) {
+			s.DropPreview = &DropPreview{Rect: Rect{W: 5, H: 5}, Fill: 0.18, Label: "stack", Thumb: 1}
+		},
+		"drop preview thumb": func(s *Scene) { s.DropPreview = &DropPreview{Rect: Rect{W: 5, H: 5}, Fill: 0.18, Label: "swap"} },
+		"window proxy":       func(s *Scene) { s.Windows[0].Proxy = true },
+		"layer":              func(s *Scene) { s.Layers[0].Rect.H++ },
+		"indicator":          func(s *Scene) { s.CaptureIndicators[0].Pill = true },
+		"overlay seq":        func(s *Scene) { s.Overlays[0].Seq++ },
+		"overlay style":      func(s *Scene) { s.Overlays[0].Style.Size = 12 },
+		"overlay count":      func(s *Scene) { s.Overlays = nil },
+		"physical":           func(s *Scene) { s.Physical.MMWidth++ },
+		"excluded":           func(s *Scene) { s.Capture.Excluded[0] = 4 },
+		"transform":          func(s *Scene) { s.Transform = 1 },
+		"capture shown":      func(s *Scene) { s.Capture.Shown++ },
+		"capture session":    func(s *Scene) { s.Capture.Session++ },
+		"capture workspace":  func(s *Scene) { s.Capture.Workspace++ },
+		"capture window":     func(s *Scene) { s.Capture.Window++ },
+		"capture revision":   func(s *Scene) { s.Capture.Revision++ },
+		"capture nil":        func(s *Scene) { s.Capture = nil },
+		"capture scene":      func(s *Scene) { s.CaptureScene = &Scene{} },
 	} {
 		t.Run(name, func(t *testing.T) {
 			o := sameSceneBase()
@@ -118,4 +129,10 @@ func TestSceneCaptureSameAsCoversEveryField(t *testing.T) {
 	const fields = 6
 	assert.Equal(t, fields, len(reflect.VisibleFields(reflect.TypeOf(SceneCapture{}))),
 		"SceneCapture fields changed: update Scene.SameAs (and TestSceneSameAs), then this count")
+}
+
+func TestSceneSameAsComparesDropPreviewByValue(t *testing.T) {
+	a, b := sameSceneBase(), sameSceneBase()
+	assert.NotSame(t, a.DropPreview, b.DropPreview)
+	assert.True(t, a.SameAs(b), "equal previews behind distinct pointers are the same")
 }

@@ -783,6 +783,9 @@ func (c *Core) publishFrame(ctx context.Context, only *screen) error {
 		return err
 	}
 	c.advanceFlash(only)
+	if c.drag != nil {
+		c.advanceDropPreview(c.now())
+	}
 	scenes := make([]domain.Scene, 0, len(c.screens))
 	// Before the first output (and after the last is unplugged) the
 	// placeholder's scene has no output name: no renderer draws it.
@@ -870,7 +873,7 @@ func (c *Core) step(ctx context.Context, only *screen) error {
 // other than only.
 func (c *Core) animatingOther(only *screen) bool {
 	for _, sc := range c.screens {
-		if sc != only && (sc.springing() || c.flashing(sc) || c.positionHintFading(sc)) {
+		if sc != only && (sc.springing() || c.flashing(sc) || c.positionHintFading(sc) || c.dropAnimating(sc)) {
 			return true
 		}
 	}

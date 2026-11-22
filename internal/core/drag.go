@@ -12,7 +12,7 @@ import (
 // cmd + right button resizes a float; xdg_toplevel.move/resize start the
 // same drag with the held button. A float follows the pointer. A tile
 // stays in place until the button is released, and NeferWL draws where
-// it lands (Scene.DropHints):
+// it lands (Scene.DropPreview):
 //
 //   - top or bottom quarter of a window: stack above or below it;
 //   - middle of a window: swap the columns (a stacked window becomes a
@@ -34,12 +34,13 @@ const (
 )
 
 // dropTarget is where a dragged tile lands: anchor a of workspace ws on
-// screen. hints are a's drop hint rects, output-local.
+// screen. preview is its published preview (advanceDropPreview); immutable,
+// replaced only when its content changes so equal frames share it.
 type dropTarget struct {
-	a      Anchor
-	screen *screen
-	ws     *Workspace
-	hints  []Rect
+	a       Anchor
+	screen  *screen
+	ws      *Workspace
+	preview *domain.DropPreview
 }
 
 type dragState struct {
@@ -54,6 +55,7 @@ type dragState struct {
 	rect   Rect
 	float  bool
 	target dropTarget
+	anim   dropAnim
 }
 
 // dragHover is the pending hover action of a tile drag on a hover edge,
@@ -186,7 +188,9 @@ func (c *Core) dragMotion(ctx context.Context) error {
 		c.abortDrag()
 		return c.publish(ctx)
 	}
-	if !c.retarget() {
+	// A thumbnail follows the pointer; a zone only moves on a new target.
+	thumb := d.target.preview != nil && d.target.preview.Thumb != 0
+	if !c.retarget() && !thumb {
 		return nil
 	}
 	return c.publish(ctx)
@@ -200,12 +204,11 @@ func (c *Core) retarget() bool {
 	if t.a == d.target.a && t.ws == d.target.ws && t.screen == d.target.screen {
 		return false
 	}
-	if t.a.Kind != AnchorNone {
-		// The scene clones the hints: the old slice is reused.
-		t.hints = t.ws.AnchorHints(d.target.hints[:0], d.id, t.a, max(4*c.cfg.Border.Width, 4))
-	}
-	same := t.a == d.target.a
+	t.preview = d.target.preview
+	old := d.target
+	same := t.a == old.a
 	d.target = t
+	c.aimDropPreview(old)
 	if !same {
 		c.stopDragHover()
 		if t.a.Kind == AnchorEdge && t.a.Action.Hover() {
@@ -267,7 +270,7 @@ func (c *Core) dragHoverTick(ctx context.Context) error {
 		}
 	}
 	// The view moved: the zone may have too.
-	d.target = dropTarget{a: d.target.a, hints: d.target.hints[:0]}
+	d.target = dropTarget{a: d.target.a, screen: d.target.screen, preview: d.target.preview}
 	c.retarget()
 	if c.dragHover.timerC == nil && d.target.a == a {
 		c.dragHover.timerC, c.dragHover.stop = newTimer(c.opts.Clock, dragHoverRepeat)

@@ -21,7 +21,7 @@ type frontImage struct {
 	windows    []domain.SceneWindow
 	separators []domain.Separator
 	layers     []domain.SceneLayer
-	hints      []domain.Rect
+	preview    domain.DropPreview
 	indicators []domain.CaptureIndicator
 }
 
@@ -38,11 +38,14 @@ func (f *frontImage) hold(fb uint32, s domain.Scene, surfaces map[domain.WindowI
 	f.windows = append(f.windows[:0], s.Windows...)
 	f.separators = append(f.separators[:0], s.Separators...)
 	f.layers = append(f.layers[:0], s.Layers...)
-	f.hints = append(f.hints[:0], s.DropHints...)
 	f.indicators = append(f.indicators[:0], s.CaptureIndicators...)
 	f.scene = s
 	f.scene.Windows, f.scene.Separators, f.scene.Layers = f.windows, f.separators, f.layers
-	f.scene.DropHints, f.scene.CaptureIndicators = f.hints, f.indicators
+	f.scene.CaptureIndicators = f.indicators
+	if s.DropPreview != nil {
+		f.preview = *s.DropPreview
+		f.scene.DropPreview = &f.preview
+	}
 	f.seqs = appendSeqs(f.seqs[:0], s, surfaces)
 	f.fb = fb
 }

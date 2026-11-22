@@ -2,6 +2,7 @@ package capture
 
 import (
 	"context"
+	"slices"
 	"testing"
 
 	"github.com/bnema/neferwl/internal/domain"
@@ -206,4 +207,44 @@ func TestPositionHintRemovedFromPlainCapture(t *testing.T) {
 	normal, excluded, _ := p.Split(s, []domain.CaptureRequest{{ID: 1, Exclude: true, Session: 7}})
 	require.Empty(t, normal)
 	require.Len(t, excluded, 1)
+}
+
+func TestDropPreviewAndProxyRemovedFromPlainCapture(t *testing.T) {
+	s := domain.Scene{
+		Windows: []domain.SceneWindow{
+			{ID: 1, Rect: domain.Rect{W: 10, H: 10}},
+			{ID: 2, Proxy: true, Rect: domain.Rect{X: 20, W: 5, H: 5}},
+			{ID: 3, Rect: domain.Rect{X: 30, W: 10, H: 10}},
+		},
+		DropPreview: &domain.DropPreview{Rect: domain.Rect{W: 10, H: 10}, Thumb: 2},
+	}
+	orig := slices.Clone(s.Windows)
+	got := plain(s)
+	require.Nil(t, got.DropPreview)
+	require.Equal(t, []domain.WindowID{1, 3}, windowIDs(got.Windows))
+	require.Equal(t, orig, s.Windows, "the displayed scene's windows are left intact")
+
+	// SubmitPlain's derivation: no allocation once warm, and the excluded
+	// scene strips them too.
+	p := &Pipeline{}
+	_ = p.plainScene(s)
+	if n := testing.AllocsPerRun(100, func() { _ = p.plainScene(s) }); n != 0 {
+		t.Fatalf("plain scene allocated %v times", n)
+	}
+	var c excluder
+	ex := c.scene(s)
+	require.Nil(t, ex.DropPreview)
+	require.Equal(t, []domain.WindowID{1, 3}, windowIDs(ex.Windows))
+
+	// A scene without proxies keeps its own slice.
+	s.Windows = s.Windows[:1]
+	require.Same(t, &s.Windows[0], &plain(s).Windows[0])
+}
+
+func windowIDs(ws []domain.SceneWindow) []domain.WindowID {
+	ids := make([]domain.WindowID, 0, len(ws))
+	for _, w := range ws {
+		ids = append(ids, w.ID)
+	}
+	return ids
 }
