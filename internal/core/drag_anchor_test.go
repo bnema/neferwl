@@ -196,3 +196,34 @@ func TestDragHoverCascadeStepsBand(t *testing.T) {
 		r.settle(t)
 	})
 }
+
+// A named workspace has no neighbours: its workspace edge offers no zone
+// and a rest there switches nothing.
+func TestDragNamedWorkspaceHasNoWorkspaceEdge(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := startDragRig(t, func(c *domain.Config) {
+			c.Binds = map[string]string{"Super+c": "workspace c"}
+			c.Workspaces = []domain.WorkspaceConfig{{Name: "c"}}
+		}, dragOut)
+		r.in(ports.KeyEvent{Keysym: "c", Mods: domain.ModSuper, Pressed: true})
+		r.in(ports.KeyEvent{Keysym: "c", Mods: domain.ModSuper})
+		r.settle(t)
+		r.client <- ports.WindowMapped{ID: 1}
+		set := r.settle(t)
+		one := dragRect(t, set, "A", 1)
+		r.moveTo(float64(one.X+one.W/2), float64(one.Y+one.H/2), 1)
+		r.settle(t)
+		r.press(t, 0x110, domain.ModSuper)
+		r.moveTo(500, 597, 2)
+		set = r.settle(t)
+		if p := dragScene(set, "A").DropPreview; p != nil && p.Label == domain.DropWorkspace.Label() {
+			t.Fatalf("workspace zone on a named workspace: %+v", p)
+		}
+		time.Sleep(time.Second)
+		if _, ok := windowIn(r.settle(t), "A", 1); !ok {
+			t.Fatal("the named workspace was switched away")
+		}
+		r.in(ports.KeyEvent{Keysym: "Escape", Mods: domain.ModSuper, Pressed: true})
+		r.settle(t)
+	})
+}

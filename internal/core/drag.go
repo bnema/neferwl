@@ -347,8 +347,18 @@ func (c *Core) dropAt(id WindowID, x, y float64) dropTarget {
 	if d := c.drag; d != nil && d.target.ws == w {
 		prev = d.target.a
 	}
+	p := c.dropPolicy(m, w)
+	if m.shown != nil {
+		// A named workspace has no neighbours: its workspace edges would
+		// do nothing, so they offer no zone.
+		for side := domain.DropSideLeft; side <= domain.DropSideBottom; side++ {
+			if w.EdgeAction(side, p.Edge[side]) == domain.DropWorkspace {
+				p.SetEdge(side, domain.DropNone)
+			}
+		}
+	}
 	_, src := c.screenOf(id)
-	return dropTarget{a: w.AnchorAt(src, id, lx, ly, prev, c.dropPolicy(m, w)), screen: sc, ws: w}
+	return dropTarget{a: w.AnchorAt(src, id, lx, ly, prev, p), screen: sc, ws: w}
 }
 
 // drop moves tile id to target t, possibly on another workspace or
