@@ -139,7 +139,21 @@ func (w *Workspace) valid(d dropSource, a Anchor) bool {
 	switch a.Kind {
 	case AnchorWindow:
 		ci := w.ColumnOf(a.Window)
-		if ci < 0 || a.Window == d.id {
+		if ci < 0 {
+			return false
+		}
+		if a.Window == d.id {
+			// A tile shared with others pops out of its own column
+			// through its side bands; nothing else lands on itself.
+			if !d.same || d.lone || a.Action != domain.DropColumn {
+				return false
+			}
+			switch a.Side {
+			case domain.DropSideLeft:
+				return w.columnValid(d, ci)
+			case domain.DropSideRight:
+				return w.columnValid(d, ci+1)
+			}
 			return false
 		}
 		// A tabbed column shows one window: nothing stacks above or

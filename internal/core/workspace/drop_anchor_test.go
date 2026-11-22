@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"slices"
 	"testing"
 	"testing/synctest"
 
@@ -267,5 +268,62 @@ func TestEdgeStashFloatOnFullWorkspace(t *testing.T) {
 				t.Errorf("%v of its own tile is invalid", act)
 			}
 		}
+	})
+}
+
+// A tile shared with others pops out of its own column through its side
+// bands; its other zones and a lone tile's bands stay closed.
+func TestAnchorOwnSideBands(t *testing.T) {
+	p := domain.DefaultDropPolicy()
+	for _, tc := range []struct {
+		name   string
+		w      *Workspace
+		id     WindowID
+		want   [][]WindowID
+		bars   int
+		tabbed bool
+	}{
+		{"tabbed", func() *Workspace { w := tabbedWorkspace(OverflowScroll); w.Columns[0].Focus = 2; return w }(), 3, [][]WindowID{{1, 2}, {3}, {4}}, 1, true},
+		{"stacked", cols(OverflowScroll, 3, 0, []WindowID{1, 2, 3}, []WindowID{4}), 3, [][]WindowID{{1, 2}, {3}, {4}}, 0, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				w := tc.w
+				w.SetOutput(1000, 800)
+				r := rectOf(t, w, tc.id)
+				for _, pt := range [][2]int{{r.X + r.W/2, r.Y + r.H/2}, {r.X + r.W/2, r.Y + 30}, {r.X + r.W/2, r.Y + r.H - 30}} {
+					if a := w.AnchorAt(w, tc.id, pt[0], pt[1], Anchor{}, p); a.Kind != AnchorNone && a.Window == tc.id {
+						t.Fatalf("own zone at %v: %+v", pt, a)
+					}
+				}
+				x, y := r.X+r.W-30, r.Y+r.H/2
+				a := w.AnchorAt(w, tc.id, x, y, Anchor{}, p)
+				if a.Kind != AnchorWindow || a.Window != tc.id || a.Side != domain.DropSideRight || a.Action != domain.DropColumn {
+					t.Fatalf("right band = %+v", a)
+				}
+				if n := testing.AllocsPerRun(50, func() { w.AnchorAt(w, tc.id, x, y, a, p) }); n != 0 {
+					t.Fatalf("AnchorAt allocates %v", n)
+				}
+				Drop(w, w, tc.id, a, x, y)
+				if got := ids(w); !slices.EqualFunc(got, tc.want, slices.Equal) {
+					t.Fatalf("columns %v, want %v", got, tc.want)
+				}
+				if w.Columns[0].Tabbed != tc.tabbed {
+					t.Fatalf("source tabbed %v", w.Columns[0].Tabbed)
+				}
+			})
+		})
+	}
+	t.Run("lone", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			w := cols(OverflowScroll, 3, 0, []WindowID{1}, []WindowID{2})
+			w.SetOutput(1000, 800)
+			r := rectOf(t, w, 1)
+			for _, x := range []int{r.X + 30, r.X + r.W - 30} {
+				if a := w.AnchorAt(w, 1, x, r.Y+r.H/2, Anchor{}, p); a.Kind == AnchorWindow && a.Window == 1 {
+					t.Fatalf("lone own band at %d: %+v", x, a)
+				}
+			}
+		})
 	})
 }

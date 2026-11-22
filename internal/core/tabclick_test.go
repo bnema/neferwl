@@ -153,3 +153,29 @@ func TestTabClickDismissesPopupGrab(t *testing.T) {
 		}
 	})
 }
+
+// The visible tab, dragged onto its own right band, pops out as a column.
+func TestTabDragOutOfOwnColumn(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r, set := tabbedDragRig(t)
+		tab := tabRect(t, set, 3)
+		three := dragRect(t, set, "A", 3)
+		r.moveTo(float64(tab.X+tab.W/2), float64(tab.Y+tab.H/2), 1)
+		r.settle(t)
+		r.press(t, 0x110, domain.ModSuper)
+		r.settle(t)
+		r.moveTo(float64(three.X+three.W-30), float64(three.Y+three.H/2), 2)
+		if p := dragScene(r.settle(t), "A").DropPreview; p == nil || p.Label != domain.DropColumn.Label() {
+			t.Fatalf("no column zone: %+v", p)
+		}
+		r.in(ports.PointerButton{Button: 0x110})
+		r.in(ports.KeyEvent{Keysym: "Super_L"})
+		set = r.settle(t)
+		if got := columnsOf(set, "A"); len(got) != 3 || !slices.Equal(got[1], []domain.WindowID{3}) {
+			t.Fatalf("columns %v", got)
+		}
+		if bars := dragScene(set, "A").TabBars; len(bars) != 1 || len(bars[0].Tabs) != 2 {
+			t.Fatalf("source bars %+v", bars)
+		}
+	})
+}

@@ -49,6 +49,9 @@ func TestDropApply(t *testing.T) {
 		{"swap lone onto a stacked tile: columns exchange", cols(S, 4, 0, []WindowID{1}, []WindowID{2, 3}), nil, 1, win(3, domain.DropSideCenter, domain.DropSwap), c{{2, 3}, {1}}, nil, true},
 		{"swap other workspace", cols(S, 4, 0, []WindowID{1}, []WindowID{2}), cols(S, 4, 0, []WindowID{9}), 9, win(2, domain.DropSideCenter, domain.DropSwap), c{{1}, {9}}, c{{2}}, true},
 		{"swap full fixed", cols(OverflowFixed, 2, 0, []WindowID{1}, []WindowID{2}), cols(S, 4, 0, []WindowID{9}), 9, win(2, domain.DropSideCenter, domain.DropSwap), c{{1}, {9}}, c{{2}}, true},
+		{"column right of itself, stacked", cols(S, 4, 0, []WindowID{1, 2}), nil, 2, win(2, domain.DropSideRight, domain.DropColumn), c{{1}, {2}}, nil, true},
+		{"column left of itself, stacked", cols(S, 4, 0, []WindowID{1, 2}, []WindowID{3}), nil, 1, win(1, domain.DropSideLeft, domain.DropColumn), c{{1}, {2}, {3}}, nil, true},
+		{"stack on itself, stacked", cols(S, 4, 0, []WindowID{1, 2}), nil, 2, win(2, domain.DropSideTop, domain.DropStack), c{{1, 2}}, nil, false},
 		{"none", cols(S, 4, 0, []WindowID{1}, []WindowID{2}), nil, 1, win(2, domain.DropSideCenter, domain.DropNone), c{{1}, {2}}, nil, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
