@@ -96,11 +96,12 @@ func (p *spawnPlacement) markPending(name string, now time.Time) bool {
 }
 
 // expireWorkspaceClaims drops workspace-bound claims older than the retry
-// interval: markRetry for a claim that marks its window, else termRetry.
+// interval: markRetry for a claim that has a mark still to give, else
+// termRetry.
 func (p *spawnPlacement) expireWorkspaceClaims(now time.Time) {
 	for token, target := range p.pending {
 		retry := termRetry
-		if target.mark != "" {
+		if target.mark != "" && !target.marked {
 			retry = markRetry
 		}
 		if target.kind != spawnSlot && now.Sub(target.at) > retry {

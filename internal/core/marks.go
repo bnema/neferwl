@@ -133,8 +133,9 @@ func (c *Core) claimMark(v ports.WindowMapped) {
 		return
 	}
 	// The stash claim stays for place, which may not consume it (a float
-	// map): no later window takes the mark again. It keeps markRetry.
-	target.marked = true
+	// map): no later window takes the mark again, and it expires as an
+	// unmarked claim, counted from now so that place still sees it.
+	target.marked, target.at = true, c.now()
 	c.placement.pending[v.Slot] = target
 }
 

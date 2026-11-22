@@ -167,3 +167,19 @@ func TestFocusMarkSpawnsAfterExpiry(t *testing.T) {
 		}
 	})
 }
+
+// A marked stash claim that gave its mark expires like an unmarked one.
+func TestStashMarkClaimExpiresOnceMarked(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := markSpawnRig(t)
+		r.mapWindow(t, 1)
+		r.key(t, "n", markMods)
+		token := slotToken(t, receive(t, r.spawn))
+		r.client <- ports.WindowMapped{ID: 2, Slot: token, Floating: true, Width: 50, Height: 50}
+		r.stateWith(t, 2)
+		time.Sleep(6 * time.Second)
+		if w := r.mapSlot(t, 3, token); w.StashIndex != 0 {
+			t.Fatalf("expired claim still stashed: %+v", w)
+		}
+	})
+}
