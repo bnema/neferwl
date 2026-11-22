@@ -158,10 +158,19 @@ func TestTabbedOverviewShowsActiveTab(t *testing.T) {
 			w := tabbedWorkspace(o)
 			tiles, _, _ := w.Engine().PreviewTiles(w.Snapshot(), nil, nil)
 			var got []WindowID
+			var hidden []WindowID
 			for _, p := range tiles {
+				if p.Hidden {
+					hidden = append(hidden, p.ID)
+					continue
+				}
 				got = append(got, p.ID)
 			}
 			slices.Sort(got)
+			slices.Sort(hidden)
+			if !slices.Equal(hidden, []WindowID{1, 3}) {
+				t.Fatalf("hidden tiles %v", hidden)
+			}
 			if !slices.Equal(got, []WindowID{2, 4}) {
 				t.Fatalf("overview tiles %v", got)
 			}
