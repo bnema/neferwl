@@ -195,3 +195,77 @@ func TestAnchorAtNoAllocs(t *testing.T) {
 		}
 	})
 }
+
+// A workspace without columns has nothing to scroll: no scroll edge, and
+// a step is a no-op rather than a panic.
+func TestAnchorNoScrollEdgeWithoutColumns(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		w, src := anchorWorkspace()
+		w.RemoveWindow(1)
+		w.RemoveWindow(2)
+		p := domain.DefaultDropPolicy()
+		for _, x := range []int{5, 995} {
+			if a := w.AnchorAt(src, 9, x, 400, Anchor{}, p); a.Kind == AnchorEdge {
+				t.Errorf("x %d: scroll edge on an empty workspace: %+v", x, a)
+			}
+		}
+		if w.ScrollStep(-1) || w.ScrollStep(1) {
+			t.Fatal("an empty workspace scrolled")
+		}
+	})
+}
+
+// Edge bands win over the zone kept by hysteresis.
+func TestAnchorEdgeBeatsHysteresis(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		w, src := anchorWorkspace()
+		p := domain.DefaultDropPolicy()
+		r := rectOf(t, w, 1)
+		band := w.AnchorAt(src, 9, edgeBand+10, r.Y+r.H/2, Anchor{}, p)
+		if band.Kind != AnchorWindow || band.Side != domain.DropSideLeft {
+			t.Fatalf("%+v", band)
+		}
+		// Within the band's hysteresis and the left edge band.
+		x := band.Rect.X - anchorHysteresis + 1
+		if x >= edgeBand {
+			t.Fatalf("test point %d off the edge band", x)
+		}
+		if a := w.AnchorAt(src, 9, x, r.Y+r.H/2, band, p); a.Kind != AnchorEdge || a.Side != domain.DropSideLeft {
+			t.Fatalf("edge hidden by the kept band: %+v", a)
+		}
+		// An empty workspace: the edge is reachable over its whole depth.
+		e, src := anchorWorkspace()
+		e.RemoveWindow(1)
+		e.RemoveWindow(2)
+		empty := e.AnchorAt(src, 9, 500, 400, Anchor{}, p)
+		if empty.Kind != AnchorGap {
+			t.Fatalf("%+v", empty)
+		}
+		f := e.dropFrame()
+		y := f.Y + f.H - edgeBand
+		if a := e.AnchorAt(src, 9, 500, y, empty, p); a.Kind != AnchorEdge || a.Side != domain.DropSideBottom {
+			t.Fatalf("y %d: bottom edge hidden by the empty zone: %+v", y, a)
+		}
+	})
+}
+
+// A stash or float edge passes the tile through a column: a full fixed
+// workspace refuses one from elsewhere, but not its own tile.
+func TestEdgeStashFloatOnFullWorkspace(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		w, src := anchorWorkspace()
+		w.SetOverflow(OverflowFixed)
+		if !w.full() {
+			t.Fatal("not full")
+		}
+		for _, act := range []domain.DropAction{domain.DropStash, domain.DropFloat} {
+			a := Anchor{Kind: AnchorEdge, Side: domain.DropSideRight, Action: act, Dir: 1}
+			if w.DropValid(src, 9, a) {
+				t.Errorf("%v from another workspace onto a full one is valid", act)
+			}
+			if !w.DropValid(w, 1, a) {
+				t.Errorf("%v of its own tile is invalid", act)
+			}
+		}
+	})
+}

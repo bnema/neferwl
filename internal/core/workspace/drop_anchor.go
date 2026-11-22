@@ -49,8 +49,9 @@ type Anchor struct {
 // AnchorAt is the drop zone of tile id, dragged from src, at the
 // output-local point x, y under policy p. prev is the zone of the last
 // motion: it is kept while the point stays near it and it still exists.
-// Hit order: floats veto, then edges, then gaps, then tiles. It does not allocate once
-// its scratch has grown (owner goroutine only).
+// Hit order: floats veto, then edges, then the kept zone, then gaps,
+// then tiles. It does not allocate once its scratch has grown (owner
+// goroutine only).
 func (w *Workspace) AnchorAt(src *Workspace, id WindowID, x, y int, prev Anchor, p domain.DropPolicy) Anchor {
 	w.anchorBuf = w.AppendLayout(w.anchorBuf[:0])
 	layout := w.anchorBuf
@@ -62,12 +63,18 @@ func (w *Workspace) AnchorAt(src *Workspace, id WindowID, x, y int, prev Anchor,
 	}
 	d := w.dropCtx(src, id)
 	cols := w.visibleColumns(layout)
-	if prev.Kind != AnchorNone && contains(grow(prev.Rect, anchorHysteresis), x, y) &&
-		w.zoneExists(layout, cols, d, prev, p) {
+	// Edges come before the zones they overlap: hysteresis keeps a
+	// window or gap zone only where no edge band answers.
+	kept := prev.Kind != AnchorNone && contains(grow(prev.Rect, anchorHysteresis), x, y) &&
+		w.zoneExists(layout, cols, d, prev, p)
+	if kept && prev.Kind == AnchorEdge {
 		return prev
 	}
 	if a, ok := w.edgeAt(d, x, y, p); ok {
 		return a
+	}
+	if kept {
+		return prev
 	}
 	if w.noColumns(cols, id) {
 		if !contains(w.Usable, x, y) {
@@ -168,9 +175,13 @@ func (w *Workspace) valid(d dropSource, a Anchor) bool {
 			}
 			return w.columnValid(d, at)
 		case domain.DropStash, domain.DropFloat:
-			return !d.full
-		case domain.DropScroll, domain.DropWorkspace:
-			// Hover actions: EdgeAction already checked the axis.
+			// The tile passes through a column of w: a full one has no room.
+			return !d.full && (d.same || !w.full())
+		case domain.DropScroll:
+			// EdgeAction checked the axis; there must be something to scroll.
+			return len(w.Columns) > 0 && !w.Pinned()
+		case domain.DropWorkspace:
+			// A hover action: EdgeAction already checked the axis.
 			return true
 		}
 	}

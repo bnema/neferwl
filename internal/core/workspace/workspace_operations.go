@@ -315,6 +315,9 @@ func (w *Workspace) DragFloat(id WindowID, from Rect, edges domain.ResizeEdges, 
 // scrolling row, else to the neighbouring snap point (a cascade band). It
 // reports whether the view moved.
 func (w *Workspace) ScrollStep(dir int) bool {
+	if len(w.Columns) == 0 || w.Pinned() {
+		return false
+	}
 	if w.scrollsRow() {
 		return w.scrollBy(dir)
 	}
