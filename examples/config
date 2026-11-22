@@ -56,7 +56,7 @@ layout.max-columns = 2
 layout.overflow = cascade
 
 # Dragging a tile (cmd + drag) drops it on an anchor. Window sides: center
-# (swap, none), left/right (column, swap, none), top/bottom (stack, swap,
+# (tab, swap, none), left/right (column, swap, none), top/bottom (stack, swap,
 # none). gap: column or none. Edges (left, right, top, bottom): auto,
 # scroll, workspace, column, stash, float or none; auto switches workspaces
 # on the workspace axis and scrolls on the other one when the layout
@@ -64,7 +64,7 @@ layout.overflow = cascade
 # edge, then every 250 ms; the others act on release. none removes an
 # anchor. Escape cancels the drag. Override per output with
 # drop.<output>.* and per workspace with workspace.<name>.drop.*.
-# drop.window.center = swap
+# drop.window.center = tab
 # drop.window.left = column
 # drop.window.right = column
 # drop.window.top = stack

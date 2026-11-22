@@ -1372,7 +1372,7 @@ func setDrop(p *domain.DropPolicy, suffix, v string) error {
 	a, ok := domain.ParseDropAction(v)
 	if !ok || !domain.DropAllowed(zone, side, a) {
 		var allowed []string
-		for x := domain.DropAuto; x <= domain.DropFloat; x++ {
+		for x := domain.DropAuto; x <= domain.DropTab; x++ {
 			if domain.DropAllowed(zone, side, x) {
 				allowed = append(allowed, x.String())
 			}

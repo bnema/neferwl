@@ -142,7 +142,14 @@ func (w *Workspace) valid(d dropSource, a Anchor) bool {
 		if ci < 0 || a.Window == d.id {
 			return false
 		}
+		// A tabbed column shows one window: nothing stacks above or
+		// below it.
+		if w.Columns[ci].Tabbed && (a.Side == domain.DropSideTop || a.Side == domain.DropSideBottom) {
+			return false
+		}
 		switch a.Action {
+		case domain.DropTab:
+			return a.Side == domain.DropSideCenter && !slices.Contains(w.Columns[ci].Windows, d.id)
 		case domain.DropStack:
 			row := slices.Index(w.Columns[ci].Windows, a.Window)
 			// Above the window just below it, or below the one just above: no move.
@@ -427,7 +434,20 @@ func Drop(src, w *Workspace, id WindowID, a Anchor, px, py int) {
 		w.applyColumn(src, id, at)
 	case domain.DropSwap:
 		w.applySwap(src, id, a.Window)
+	case domain.DropTab:
+		w.applyTab(src, id, a.Window)
 	}
+}
+
+// applyTab inserts id below target in target's column, which becomes
+// tabbed with id the visible tab.
+func (w *Workspace) applyTab(src *Workspace, id, target WindowID) {
+	w.applyStack(src, id, target, true)
+	if ci := w.ColumnOf(id); ci >= 0 && w.ColumnOf(target) == ci {
+		w.Columns[ci].Tabbed = true
+		w.Columns[ci].Shares = nil
+	}
+	w.FocusID(id)
 }
 
 // DropBelow stacks tile id from src below anchor in w, as a mark move

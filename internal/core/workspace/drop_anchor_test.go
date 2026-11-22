@@ -88,7 +88,7 @@ func TestAnchorWindowSides(t *testing.T) {
 		}
 		a = w.AnchorAt(src, 9, r.X+r.W/2, r.Y+r.H/2, Anchor{}, p)
 		center := Rect{X: r.X + bx + 5, Y: r.Y + by + 5, W: r.W - 2*bx - 10, H: r.H - 2*by - 10}
-		if a.Side != domain.DropSideCenter || a.Action != domain.DropSwap || a.Rect != center {
+		if a.Side != domain.DropSideCenter || a.Action != domain.DropTab || a.Rect != center {
 			t.Fatalf("center = %+v, want rect %+v", a, center)
 		}
 	})

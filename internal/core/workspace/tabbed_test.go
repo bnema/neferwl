@@ -1,10 +1,12 @@
 package workspace
 
 import (
+	"reflect"
 	"slices"
 	"testing"
 
 	"github.com/bnema/neferwl/internal/core/layout"
+	"github.com/bnema/neferwl/internal/domain"
 )
 
 func TestToggleTabbedOnAndOff(t *testing.T) {
@@ -203,5 +205,66 @@ func TestTabbedPlacementWithGaps(t *testing.T) {
 	want := Rect{X: col.X, Y: col.Y + 20 + 8, W: col.W, H: col.H - 28}
 	if p := tabPlacement(t, w.Layout(), 2); p.Rect != want {
 		t.Fatalf("visible tab %+v, want %+v", p.Rect, want)
+	}
+}
+
+func TestDropTab(t *testing.T) {
+	center := func(id WindowID) Anchor { return win(id, domain.DropSideCenter, domain.DropTab) }
+
+	// A lone window: a 2-tab column, the dropped one visible and focused.
+	w := cols(OverflowScroll, 4, 0, []WindowID{1}, []WindowID{2})
+	Drop(w, w, 2, center(1), 0, 0)
+	if c := w.Columns; len(c) != 1 || !slices.Equal(c[0].Windows, []WindowID{1, 2}) || !c[0].Tabbed || c[0].Selected() != 2 {
+		t.Fatalf("columns %+v", c)
+	}
+	if id, _ := w.Focused(); id != 2 {
+		t.Fatalf("focused %d", id)
+	}
+
+	// A 2-stack: the whole column becomes tabbed, the dropped one after W.
+	w = cols(OverflowScroll, 4, 0, []WindowID{1, 2}, []WindowID{3})
+	w.Columns[0].Shares = []int{3000, 7000}
+	other := cols(OverflowScroll, 4, 0, []WindowID{9})
+	Drop(other, w, 9, center(1), 0, 0)
+	if c := w.Columns[0]; !slices.Equal(c.Windows, []WindowID{1, 9, 2}) || !c.Tabbed || c.Selected() != 9 || c.Shares != nil {
+		t.Fatalf("column %+v", c)
+	}
+
+	// A window already in W's column, or W itself: no zone.
+	w = cols(OverflowScroll, 4, 0, []WindowID{1, 2})
+	if w.DropValid(w, 2, center(1)) || w.DropValid(w, 1, center(1)) {
+		t.Fatal("tab within its own column is valid")
+	}
+}
+
+// Top and bottom have no zone on a tabbed column; the sides and the centre
+// stay.
+func TestDropTabbedColumnHasNoStackZones(t *testing.T) {
+	w := cols(OverflowScroll, 4, 0, []WindowID{1, 2}, []WindowID{3})
+	w.Apply(ActionToggleColumnTabbed)
+	p := domain.DefaultDropPolicy()
+	src := cols(OverflowScroll, 4, 0, []WindowID{9})
+	on := w.sidesOn(w.dropCtx(src, 9), 2, p)
+	for _, s := range []domain.DropSide{domain.DropSideTop, domain.DropSideBottom} {
+		if bandOn(on, s) {
+			t.Fatalf("side %v on a tabbed column", s)
+		}
+	}
+	for _, s := range []domain.DropSide{domain.DropSideCenter, domain.DropSideLeft, domain.DropSideRight} {
+		if !bandOn(on, s) {
+			t.Fatalf("side %v missing", s)
+		}
+	}
+}
+
+// drop.window.center = swap restores the swap.
+func TestDropCenterSwapPolicy(t *testing.T) {
+	w := cols(OverflowScroll, 4, 0, []WindowID{1}, []WindowID{2}, []WindowID{3})
+	var p domain.DropPolicy
+	p.SetWindow(domain.DropSideCenter, domain.DropSwap)
+	p = p.Over(domain.DefaultDropPolicy())
+	Drop(w, w, 1, win(3, domain.DropSideCenter, p.Window[domain.DropSideCenter]), 0, 0)
+	if got := ids(w); !reflect.DeepEqual(got, [][]WindowID{{3}, {2}, {1}}) || w.Columns[2].Tabbed {
+		t.Fatalf("columns %v", got)
 	}
 }

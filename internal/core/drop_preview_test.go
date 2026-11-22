@@ -52,7 +52,7 @@ func TestDropPreviewLabels(t *testing.T) {
 			radius int
 		}{
 			{"stack", three.X + three.W/2, three.Y + three.H - 40, domain.DropStack, 8},
-			{"swap", two.X + two.W/2, two.Y + two.H/2, domain.DropSwap, 8},
+			{"tab", two.X + two.W/2, two.Y + two.H/2, domain.DropTab, 8},
 			{"column", (two.X + two.W + three.X) / 2, two.Y + two.H/2, domain.DropColumn, 0},
 			{"stash", 997, 300, domain.DropStash, 0},
 		} {

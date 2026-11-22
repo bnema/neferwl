@@ -321,7 +321,10 @@ func TestDragEscapeRestoresFloat(t *testing.T) {
 
 func TestDragTileZonesAndHints(t *testing.T) {
 	both(t, func(t *testing.T, animated bool) {
-		dragTileZonesAndHints(t, startDragMode(t, animated, func(c *domain.Config) { c.Layout.MaxColumns = 3 }, dragOut))
+		dragTileZonesAndHints(t, startDragMode(t, animated, func(c *domain.Config) {
+			c.Layout.MaxColumns = 3
+			c.Drop.SetWindow(domain.DropSideCenter, domain.DropSwap)
+		}, dragOut))
 	})
 }
 
@@ -600,7 +603,7 @@ func dragFixedNoGapZone(t *testing.T, r *dragRig) {
 // nothing slides, so there is no animated variant.
 func TestDragAcrossOutputs(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		dragAcrossOutputs(t, startDragRig(t, nil, dragOut, domain.OutputInfo{Name: "B", Width: 800, Height: 600}))
+		dragAcrossOutputs(t, startDragRig(t, func(c *domain.Config) { c.Drop.SetWindow(domain.DropSideCenter, domain.DropSwap) }, dragOut, domain.OutputInfo{Name: "B", Width: 800, Height: 600}))
 	})
 }
 
@@ -804,7 +807,11 @@ func TestEdgeScrollPublishesWithoutTarget(t *testing.T) {
 
 func TestDragFullFixedStacksInOutlinedColumn(t *testing.T) {
 	both(t, func(t *testing.T, animated bool) {
-		dragFullFixedStacksInOutlinedColumn(t, startDragMode(t, animated, func(c *domain.Config) { c.Layout.MaxColumns = 3; c.Layout.Overflow = "fixed" }, dragOut))
+		dragFullFixedStacksInOutlinedColumn(t, startDragMode(t, animated, func(c *domain.Config) {
+			c.Layout.MaxColumns = 3
+			c.Layout.Overflow = "fixed"
+			c.Drop.SetWindow(domain.DropSideCenter, domain.DropSwap)
+		}, dragOut))
 	})
 }
 
