@@ -34,7 +34,10 @@ type sceneWalk struct {
 	// opaque-child culling (opaqueChildren), as the corners must show what
 	// is below.
 	rounded bool
-	bounds  image.Rectangle
+	// square is the corner mask of rounded draws (roundedDraw): the
+	// corners drawn square, e.g. a visible tab's top under its bar.
+	square uint32
+	bounds image.Rectangle
 	// tileBounds is bounds cut to Scene.TileArea: where tiles and their
 	// lines draw.
 	tileBounds image.Rectangle
@@ -88,7 +91,9 @@ func (w *sceneWalk) focusFlash() {
 	w.alpha = float32(f.Alpha)
 	b := min(f.Width, f.Rect.W/2, f.Rect.H/2)
 	if f.Radius > 0 && b > 0 {
+		w.square = w.tabSquare(f.Rect)
 		w.roundedInnerBorder(f.Rect, b, f.Radius, parseColor(f.Color))
+		w.square = 0
 	} else {
 		w.innerBorder(f.Rect, b, parseColor(f.Color))
 	}
@@ -365,7 +370,7 @@ func (w *sceneWalk) fillRounded(r image.Rectangle, c [3]uint8, radius float32) *
 		return nil
 	}
 	dr := &w.draws[n]
-	roundedDraw(dr, r, radius)
+	roundedDraw(dr, r, radius, w.square)
 	return dr
 }
 
@@ -470,6 +475,7 @@ func (w *sceneWalk) window(win domain.SceneWindow) {
 	outer := w.physRect(win.Rect.X, win.Rect.Y, win.Rect.W, win.Rect.H)
 	w.dmg.window(win.ID, content, outer.Intersect(w.bounds))
 	w.rounded = win.Radius > 0
+	w.square = w.tabSquare(win.Rect)
 	var radius, innerRadius float32
 	if win.Radius > 0 {
 		radius = float32(math.Round(float64(win.Radius) * w.scale))
@@ -528,7 +534,7 @@ func (w *sceneWalk) window(win domain.SceneWindow) {
 	}
 	if win.Radius > 0 {
 		for j := start; j < len(w.draws); j++ {
-			roundedDraw(&w.draws[j], body, innerRadius)
+			roundedDraw(&w.draws[j], body, innerRadius, w.square)
 		}
 	} else {
 		w.separators(win.ID)
@@ -544,7 +550,7 @@ func (w *sceneWalk) window(win domain.SceneWindow) {
 				w.overlay(o, body, outer.Intersect(w.bounds), outputWidth)
 				if win.Radius > 0 {
 					for j := start; j < len(w.draws); j++ {
-						roundedDraw(&w.draws[j], body, innerRadius)
+						roundedDraw(&w.draws[j], body, innerRadius, w.square)
 					}
 				}
 			}
@@ -557,10 +563,10 @@ func (w *sceneWalk) window(win domain.SceneWindow) {
 	}
 	if win.Radius > 0 {
 		for j := dimStart; j < len(w.draws); j++ {
-			roundedDraw(&w.draws[j], outer, radius)
+			roundedDraw(&w.draws[j], outer, radius, w.square)
 		}
 	}
-	w.rounded = false
+	w.rounded, w.square = false, 0
 	w.alpha, w.bounds = 1, windowBounds
 }
 
@@ -961,10 +967,21 @@ func roundRect(r image.Rectangle) [4]float32 {
 	return [4]float32{float32(r.Min.X), float32(r.Min.Y), float32(r.Max.X), float32(r.Max.Y)}
 }
 
+// Corner bits of a rounded draw's square mask (draw.square).
+const (
+	cornerTopLeft uint32 = 1 << iota
+	cornerTopRight
+	cornerBottomLeft
+	cornerBottomRight
+	cornersTop    = cornerTopLeft | cornerTopRight
+	cornersBottom = cornerBottomLeft | cornerBottomRight
+)
+
 // roundedDraw makes d a rounded draw: the shader clips it to rect with
-// corners of radius (physical pixels).
-func roundedDraw(d *draw, rect image.Rectangle, radius float32) {
+// corners of radius (physical pixels), but the square ones.
+func roundedDraw(d *draw, rect image.Rectangle, radius float32, square uint32) {
 	d.pc.misc[1] |= flagRounded
 	d.round = roundRect(rect)
 	d.radii[0] = math.Float32bits(radius)
+	d.square = square
 }

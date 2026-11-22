@@ -323,6 +323,10 @@ type ContentRoute struct {
 	Windows []WindowID
 }
 
+// TabBarGap is the most space between a tab bar and its visible tab,
+// logical px: the bar reads as the tab's attached title bar.
+const TabBarGap = 2
+
 // TabBar is the title bar of a tabbed column: one tab per window, in
 // column order. Rect is the bar, output-local logical.
 type TabBar struct {

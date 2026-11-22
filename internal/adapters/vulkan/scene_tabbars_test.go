@@ -58,17 +58,62 @@ func TestSceneTabBars(t *testing.T) {
 	}
 }
 
-// A bar with a radius is rounded, and so is its active tab, at most a pill.
+// A bar with a radius is the visible tab's title bar: top corners rounded
+// at most its height, bottom square. Its active tab is rounded only on the
+// corners it shares with the bar; the visible tab window below it loses its
+// top rounding (border ring and content clip), other windows keep theirs.
 func TestSceneTabBarsRounded(t *testing.T) {
-	r := newTestRenderer(t, 256, 64)
+	r := newTestRenderer(t, 256, 128)
 	defer r.Close()
-	bounds := image.Rect(0, 0, 256, 64)
+	bounds := image.Rect(0, 0, 256, 128)
 	s := tabScene("b")
 	s.TabBars[0].Radius = 30
 	got := r.draws(s, nil, newDamage(&target{}, s, bounds))
 	require.Len(t, got, 5)
-	require.Equal(t, float32(10.5), math.Float32frombits(got[0].radii[0]), "bar capped at half its height")
-	require.Equal(t, float32(10.5), math.Float32frombits(got[2].radii[0]), "active tab rounded alike")
+	require.Equal(t, float32(21), math.Float32frombits(got[0].radii[0]), "bar capped at its height")
+	require.Equal(t, cornersBottom, got[0].square, "bar bottom square")
+	require.Equal(t, float32(21), math.Float32frombits(got[2].radii[0]), "active tab rounded alike")
+	require.Equal(t, cornersTop|cornersBottom, got[2].square, "middle tab square")
+
+	for _, c := range []struct {
+		active int
+		want   uint32
+	}{{0, cornerTopRight | cornersBottom}, {2, cornerTopLeft | cornersBottom}} {
+		e := tabScene("b")
+		e.TabBars[0].Radius = 30
+		tabs := append([]domain.TabTitle(nil), e.TabBars[0].Tabs...)
+		for i := range tabs {
+			tabs[i].Active = i == c.active
+		}
+		e.TabBars[0].Tabs = tabs
+		got := r.draws(e, nil, newDamage(&target{}, e, bounds))
+		at := 1 + c.active // the bar, the titles before it
+		require.Nil(t, got[at].shm)
+		require.Equal(t, c.want, got[at].square, "active tab %d", c.active)
+	}
+
+	// The visible tab 2 px under the bar, and a window elsewhere.
+	s.Border.Width = 2
+	s.Windows = []domain.SceneWindow{
+		{ID: 2, Rect: domain.Rect{X: 0, Y: 23, W: 240, H: 60}, Radius: 12, Focused: true},
+		{ID: 4, Rect: domain.Rect{X: 0, Y: 90, W: 100, H: 30}, Radius: 12},
+	}
+	got = r.draws(s, nil, newDamage(&target{}, s, bounds))
+	tab, other := 0, 0
+	for _, d := range got {
+		if d.pc.misc[1]&flagRounded == 0 || d.square == cornersBottom || d.round[1] < 23 {
+			continue
+		}
+		if d.round[1] < 90 {
+			require.Equal(t, cornersTop, d.square, "tab draw %+v", d.round)
+			tab++
+		} else {
+			require.Zero(t, d.square, "other window draw %+v", d.round)
+			other++
+		}
+	}
+	require.NotZero(t, tab, "tab window draws")
+	require.NotZero(t, other, "other window draws")
 }
 
 // shift moves the bars of s by dx logical px and widens every tab by dw.

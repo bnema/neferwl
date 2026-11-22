@@ -34,13 +34,23 @@ func (w *sceneWalk) tabBars() {
 			continue
 		}
 		full := w.physRect(bar.Rect.X, bar.Rect.Y, bar.Rect.W, bar.Rect.H)
-		// Rounded like the windows (with gaps), at most a pill.
-		radius := min(float32(math.Round(float64(bar.Radius)*w.scale)), float32(full.Dy())/2)
+		// The visible tab's title bar: top corners rounded like the
+		// windows (with gaps), at most the bar height; bottom square.
+		radius := min(float32(math.Round(float64(bar.Radius)*w.scale)), float32(full.Dy()))
+		w.square = cornersBottom
 		w.fillRounded(full, w.inactive, radius)
-		for _, tab := range bar.Tabs {
+		for i, tab := range bar.Tabs {
 			rect := w.physRect(tab.Rect.X, tab.Rect.Y, tab.Rect.W, tab.Rect.H)
 			bg, ink := inactiveBg, inactiveInk
 			if tab.Active {
+				// Rounded only on the corners it shares with the bar.
+				w.square = cornersBottom | cornersTop
+				if i == 0 {
+					w.square &^= cornerTopLeft
+				}
+				if i == len(bar.Tabs)-1 {
+					w.square &^= cornerTopRight
+				}
 				w.fillRounded(rect, w.active, radius)
 				bg, ink = activeBg, activeInk
 			}
@@ -52,6 +62,19 @@ func (w *sceneWalk) tabBars() {
 				PadX: 0.01, PadY: 0.01, TextOnly: true, MaxWidth: maxW})
 		}
 	}
+	w.square = 0
+}
+
+// tabSquare is the square-corner mask of a window or flash at r (logical):
+// a visible tab's top corners sit under its bar (domain.TabBar), square.
+func (w *sceneWalk) tabSquare(r domain.Rect) uint32 {
+	for i := range w.s.TabBars {
+		b := &w.s.TabBars[i].Rect
+		if gap := r.Y - b.Y - b.H; r.X == b.X && r.W == b.W && gap >= 0 && gap <= domain.TabBarGap {
+			return cornersTop
+		}
+	}
+	return 0
 }
 
 // tabTitle draws tab's title raster in rect (physical), vertically centred.
