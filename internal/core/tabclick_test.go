@@ -121,3 +121,35 @@ func TestTabCmdDragMovesHiddenTab(t *testing.T) {
 		}
 	})
 }
+
+// A tab click closes an open grabbing popup, as a click on a window does.
+func TestTabClickDismissesPopupGrab(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r, set := tabbedDragRig(t)
+		pos := domain.Positioner{Width: 10, Height: 10, AnchorRect: domain.Rect{W: 1, H: 1}, Anchor: ports.EdgeBottomRight, Gravity: ports.EdgeBottomRight}
+		r.client <- ports.PopupRequest{ID: 10, Parent: 3, Positioner: pos, Grab: true}
+		r.settle(t)
+		r.client <- ports.PopupMapped{ID: 10}
+		r.settle(t)
+		// A plain click: no modifier left from the setup binds.
+		r.in(ports.KeyEvent{Keysym: "Shift_L", Mods: domain.ModShift, Pressed: true})
+		r.in(ports.KeyEvent{Keysym: "Shift_L"})
+		r.settle(t)
+		r.drain()
+		// The visible tab's own tab: focus does not move.
+		tab := tabRect(t, set, 3)
+		r.moveTo(float64(tab.X+tab.W/2), float64(tab.Y+tab.H/2), 1)
+		r.in(ports.PointerButton{Button: 0x110, Pressed: true})
+		r.in(ports.PointerButton{Button: 0x110})
+		r.settle(t)
+		closed := false
+		for _, c := range r.drain() {
+			if v, ok := c.(ports.ClosePopup); ok && v.ID == 10 {
+				closed = true
+			}
+		}
+		if !closed {
+			t.Fatal("popup grab not dismissed")
+		}
+	})
+}

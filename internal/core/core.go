@@ -1177,7 +1177,13 @@ func (c *Core) hitForDevice(x, y float64, device domain.InputDeviceID) (WindowID
 	var sx, sy float64
 	blocked := false
 	view := sc.mon.viewport()
+	// A tab bar is over the demoted floats under it: they never take
+	// the bar's clicks.
+	_, overBar := tabAt(sc, lx, ly)
 	for _, p := range sc.shownLayout() {
+		if overBar && p.Below {
+			continue
+		}
 		r := c.clientRect(p)
 		// A peek is clickable wherever it shows, border included: it may
 		// be narrower than its border. The point is clamped to its client.
@@ -1204,7 +1210,7 @@ func (c *Core) hitForDevice(x, y float64, device domain.InputDeviceID) (WindowID
 	if id == 0 {
 		// A tab bar takes the pointer from what is under it: no client
 		// gets it (pointerButton handles its clicks).
-		if _, over := tabAt(sc, lx, ly); blocked || over {
+		if blocked || overBar {
 			return 0, 0, 0
 		}
 		return c.layerAt(sc, lx, ly, false)

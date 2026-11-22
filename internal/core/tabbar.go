@@ -127,6 +127,10 @@ func (c *Core) tabClick(ctx context.Context, v ports.PointerButton) (handled boo
 	if !over {
 		return false, nil
 	}
+	// A press outside a grabbing popup closes it, as on a window.
+	if err := c.dismissGrabs(ctx, 0); err != nil {
+		return true, err
+	}
 	w := sc.mon.Current()
 	if v.Button != btnLeft || id == 0 || w.ColumnOf(id) < 0 {
 		c.buttons[v.Button], c.swallow[v.Button] = true, true
@@ -138,7 +142,10 @@ func (c *Core) tabClick(ctx context.Context, v ports.PointerButton) (handled boo
 	c.transition(before, now)
 	if !c.synthetic && c.cmdMod != 0 && c.mods&c.cmdMod != 0 && !c.keyboard.inhibited(c.keyboardFocus()) {
 		// The drag owns the button: its release ends the drag.
-		return true, c.beginDrag(ctx, id, v.Button, false, 0)
+		if err := c.beginDrag(ctx, id, v.Button, false, 0); err != nil || c.drag != nil {
+			return true, err
+		}
+		// Not draggable: the press is swallowed like a plain tab click.
 	}
 	c.buttons[v.Button], c.swallow[v.Button] = true, true
 	return true, c.publish(ctx)
