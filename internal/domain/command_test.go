@@ -78,6 +78,40 @@ func TestWaitLevel(t *testing.T) {
 	}
 }
 
+func TestUntilMark(t *testing.T) {
+	for text, want := range map[string]Until{
+		"window-mapped mark=a": {Kind: UntilWindowMapped, Mark: "a"},
+		"focused mark=a":       {Kind: UntilFocused, Mark: "a"},
+	} {
+		if got, err := ParseUntil(text); err != nil || got != want {
+			t.Errorf("%q: %+v, %v", text, got, err)
+		}
+	}
+	mapped := Until{Kind: UntilWindowMapped, Mark: "a"}
+	plain := WindowState{ID: 1}
+	marked := WindowState{ID: 1, Marks: "a b"}
+	other := WindowState{ID: 2, Marks: "a"}
+	for _, tc := range []struct {
+		name          string
+		before, after State
+		want          bool
+	}{
+		{"mark added on an existing window", State{Windows: []WindowState{plain}}, State{Windows: []WindowState{marked}}, true},
+		{"new window mapped with the mark", State{Windows: []WindowState{plain}}, State{Windows: []WindowState{plain, other}}, true},
+		{"mark held before and after", State{Windows: []WindowState{marked}}, State{Windows: []WindowState{marked}}, false},
+		{"mark moved to another window", State{Windows: []WindowState{marked, {ID: 2}}}, State{Windows: []WindowState{plain, other}}, true},
+		{"no holder", State{}, State{Windows: []WindowState{plain}}, false},
+	} {
+		if got := mapped.Holds(tc.before, tc.after); got != tc.want {
+			t.Errorf("%s: %v", tc.name, got)
+		}
+	}
+	focused := Until{Kind: UntilFocused, Mark: "a"}
+	if !focused.Holds(State{}, State{Window: &marked}) || focused.Holds(State{}, State{Window: &plain}) || focused.Holds(State{}, State{}) {
+		t.Error("focused mark")
+	}
+}
+
 func TestUntil(t *testing.T) {
 	window := WindowState{ID: 12, AppID: "foot"}
 	state := State{Window: &window, Windows: []WindowState{window}}
@@ -103,10 +137,10 @@ func TestUntil(t *testing.T) {
 			}
 		})
 	}
-	for _, text := range []string{"", "idle", "focused", "focused id=12", "window-mapped", "window-mapped app_id=", "unmapped", "unmapped app_id=x", "unmapped id=0", "unmapped id=-1", "unmapped id=18446744073709551616", "unmapped id=x", "focused app_id=x extra"} {
+	for _, text := range []string{"", "idle", "focused", "focused id=12", "window-mapped", "window-mapped app_id=", "unmapped", "unmapped app_id=x", "unmapped id=0", "unmapped id=-1", "unmapped id=18446744073709551616", "unmapped id=x", "focused app_id=x extra", "unmapped mark=a", "focused mark=a:b", "window-mapped mark="} {
 		if _, err := ParseUntil(text); err == nil {
 			t.Errorf("accepted %q", text)
-		} else if !strings.Contains(err.Error(), "want 'window-mapped app_id=<id>'") {
+		} else if !strings.Contains(err.Error(), "want 'window-mapped app_id=<id>|mark=<name>'") {
 			t.Errorf("%q: error %v lacks the syntax", text, err)
 		}
 	}

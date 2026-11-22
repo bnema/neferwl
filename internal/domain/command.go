@@ -201,10 +201,12 @@ const (
 type Until struct {
 	Kind   UntilKind
 	AppID  string
+	Mark   string
 	Window WindowID
 }
 
-// ParseUntil parses window-mapped/focused app_id=APP or unmapped id=ID.
+// ParseUntil parses window-mapped/focused app_id=APP or mark=NAME, or
+// unmapped id=ID.
 func ParseUntil(s string) (Until, error) {
 	fields := strings.Fields(s)
 	if len(fields) != 2 {
@@ -216,12 +218,15 @@ func ParseUntil(s string) (Until, error) {
 	}
 	switch fields[0] {
 	case "window-mapped", "focused":
+		kind := UntilWindowMapped
+		if fields[0] == "focused" {
+			kind = UntilFocused
+		}
 		if key == "app_id" {
-			kind := UntilWindowMapped
-			if fields[0] == "focused" {
-				kind = UntilFocused
-			}
 			return Until{Kind: kind, AppID: value}, nil
+		}
+		if key == "mark" && ValidMarkName(value) {
+			return Until{Kind: kind, Mark: value}, nil
 		}
 	case "unmapped":
 		if key == "id" {
@@ -234,12 +239,27 @@ func ParseUntil(s string) (Until, error) {
 	return Until{}, fmt.Errorf("invalid until predicate %q (%s)", s, untilSyntax)
 }
 
-const untilSyntax = "want 'window-mapped app_id=<id>', 'focused app_id=<id>' or 'unmapped id=<n>'"
+const untilSyntax = "want 'window-mapped app_id=<id>|mark=<name>', 'focused app_id=<id>|mark=<name>' or 'unmapped id=<n>'"
 
 // Holds evaluates transitions since before; focus is an absolute predicate.
 func (u Until) Holds(before, s State) bool {
 	switch u.Kind {
 	case UntilWindowMapped:
+		if u.Mark != "" {
+			// The mark is held now by a window that did not hold it before,
+			// a new window included.
+			for _, w := range s.Windows {
+				if w.Marks.Has(u.Mark) {
+					for _, old := range before.Windows {
+						if old.ID == w.ID && old.Marks.Has(u.Mark) {
+							return false
+						}
+					}
+					return true
+				}
+			}
+			return false
+		}
 		if u.AppID == "" {
 			return false
 		}
@@ -258,6 +278,9 @@ func (u Until) Holds(before, s State) bool {
 			}
 		}
 	case UntilFocused:
+		if u.Mark != "" {
+			return s.Window != nil && s.Window.Marks.Has(u.Mark)
+		}
 		return u.AppID != "" && s.Window != nil && s.Window.AppID == u.AppID
 	case UntilUnmapped:
 		if u.Window == 0 {
