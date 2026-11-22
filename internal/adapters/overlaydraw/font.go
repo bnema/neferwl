@@ -40,7 +40,8 @@ func currentFont() *fontState {
 	return builtinFont()
 }
 
-// FontGen identifies the current font: it changes on each LoadFont.
+// FontGen identifies the current font: 0 for the built-in one, a new value
+// for each font file loaded.
 func FontGen() uint64 { return currentFont().gen }
 
 // LoadFont makes the TrueType or OpenType font at path the font of all
@@ -60,7 +61,9 @@ func LoadFont(path string) error {
 		}
 	}
 	if f == nil {
-		f = builtinFont().font
+		// The built-in font, generation 0.
+		current.Store(nil)
+		return err
 	}
 	current.Store(&fontState{font: f, gen: fontGens.Add(1)})
 	return err

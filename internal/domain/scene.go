@@ -34,7 +34,10 @@ type Scene struct {
 	// drawn until a scene without it.
 	Off        bool
 	Background string
-	Border     Border
+	// Font is the configured font path (Config.Font): a font change makes
+	// a new scene, so outputs redraw their compositor text.
+	Font   string
+	Border Border
 	// WorkspaceClip bounds workspace windows, their popups and separators
 	// in logical output coordinates. Zero inherits the full output. Layers
 	// remain output-wide; overview previews do not use this clip.
@@ -119,7 +122,7 @@ func (s Scene) SameAs(o Scene) bool {
 	if s.PositionHint != o.PositionHint || s.Security != o.Security || s.Output != o.Output ||
 		s.OutputWidth != o.OutputWidth || s.OutputHeight != o.OutputHeight ||
 		s.Scale != o.Scale || s.Transform != o.Transform || s.Off != o.Off ||
-		s.Background != o.Background || s.Border != o.Border ||
+		s.Background != o.Background || s.Font != o.Font || s.Border != o.Border ||
 		s.WorkspaceClip != o.WorkspaceClip || s.TileInset != o.TileInset || s.Dim != o.Dim || s.DimBehind != o.DimBehind {
 		return false
 	}

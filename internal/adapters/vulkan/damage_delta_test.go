@@ -19,7 +19,7 @@ import (
 func TestSceneFieldCount(t *testing.T) {
 	// Routes and Animating are scheduling metadata, intentionally ignored
 	// by sceneDelta: neither draws anything.
-	const fields = 29
+	const fields = 30
 	assert.Equal(t, fields, len(reflect.VisibleFields(reflect.TypeOf(domain.Scene{}))),
 		"Scene fields changed: check sceneDelta (a field it does not compare must force a full redraw or be covered), then this count")
 }

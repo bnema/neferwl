@@ -5,6 +5,7 @@ import (
 	"math"
 	"slices"
 
+	"github.com/bnema/neferwl/internal/adapters/overlaydraw"
 	"github.com/bnema/neferwl/internal/domain"
 )
 
@@ -52,6 +53,11 @@ func newDamage(tg *target, s domain.Scene, bounds image.Rectangle) *damageRegion
 func (d *damageRegion) hold(tg *target, s domain.Scene) {
 	if !tg.valid || s.Seq == 0 {
 		d.why.count(fullTarget)
+		return
+	}
+	if tg.fontGen != overlaydraw.FontGen() {
+		// Compositor text drawn in the old font.
+		d.why.count(fullFont)
 		return
 	}
 	if tg.sceneSeq == s.Seq {
@@ -196,6 +202,7 @@ const (
 	fullEmpty                       // the window has no content
 	fullChildren                    // the window has subsurfaces
 	fullHistory                     // the damage history does not reach the held content
+	fullFont                        // the font of compositor text changed
 	fullReasons
 )
 
@@ -297,7 +304,7 @@ func (tg *target) hold(s domain.Scene, d *damageRegion) {
 	tg.heldLayers = append(tg.heldLayers[:0], s.Layers...)
 	tg.heldIndicators = append(tg.heldIndicators[:0], s.CaptureIndicators...)
 	tg.heldOverlays = append(tg.heldOverlays[:0], s.Overlays...)
-	tg.valid, tg.sceneSeq, tg.scene, tg.windows = true, s.Seq, s, d.drawn
+	tg.valid, tg.sceneSeq, tg.scene, tg.windows, tg.fontGen = true, s.Seq, s, d.drawn, overlaydraw.FontGen()
 	tg.scene.Windows, tg.scene.Separators, tg.scene.Layers = tg.heldWindows, tg.heldSeparators, tg.heldLayers
 	tg.scene.CaptureIndicators = tg.heldIndicators
 	if s.DropPreview != nil {

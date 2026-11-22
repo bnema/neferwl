@@ -193,7 +193,7 @@ func (r *Renderer) TakeRedrawn() int {
 	r.redrawn = 0
 	if f := r.fullRedraws.take(); f != (fullRedraws{}) {
 		r.log.Debug().Int("target", f[fullTarget]).Int("scene", f[fullScene]).Int("new_window", f[fullNewWindow]).
-			Int("empty", f[fullEmpty]).Int("children", f[fullChildren]).Int("history", f[fullHistory]).Msg("full redraws")
+			Int("empty", f[fullEmpty]).Int("children", f[fullChildren]).Int("history", f[fullHistory]).Int("font", f[fullFont]).Msg("full redraws")
 	}
 	return n
 }
