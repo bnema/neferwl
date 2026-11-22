@@ -37,6 +37,8 @@ type sceneWalk struct {
 	// square is the corner mask of rounded draws (roundedDraw): the
 	// corners drawn square, e.g. a visible tab's top under its bar.
 	square uint32
+	// gen is the frame's font generation (damageRegion.fontGen).
+	gen    uint64
 	bounds image.Rectangle
 	// tileBounds is bounds cut to Scene.TileArea: where tiles and their
 	// lines draw.
@@ -50,7 +52,7 @@ func (r *Renderer) draws(s domain.Scene, contents map[domain.WindowID]domain.Sur
 	// The walk stays in scene-physical space (the target's size, swapped for
 	// a rotated output); orient maps the draws to the target afterwards.
 	sw, sh := r.sceneSize(s.Transform)
-	w := &sceneWalk{r: r, s: s, contents: contents, dmg: dmg, scale: s.Scale, zoom: 1, alpha: 1, bounds: image.Rect(0, 0, sw, sh), draws: r.scratchDraws[:0]}
+	w := &sceneWalk{r: r, s: s, contents: contents, dmg: dmg, scale: s.Scale, zoom: 1, alpha: 1, gen: dmg.fontGen, bounds: image.Rect(0, 0, sw, sh), draws: r.scratchDraws[:0]}
 	w.bg, w.active, w.inactive = parseColor(s.Background), parseColor(s.Border.Active), parseColor(s.Border.Inactive)
 	r.scratchCovers = r.scratchCovers[:0]
 	if w.scale <= 0 {
@@ -274,7 +276,7 @@ func (w *sceneWalk) dropLabel(p *domain.DropPreview, zone image.Rectangle) {
 		return
 	}
 	key := shmKey{overlay: dropLabelOverlay, scale: w.scale, style: style}
-	st := shmState{w: lw, h: lh, seq: labelSeq(p.Label), windowSeq: overlaydraw.FontGen()}
+	st := shmState{w: lw, h: lh, seq: labelSeq(p.Label), windowSeq: w.gen}
 	c := r.shmCached(key, st)
 	if c == nil {
 		var err error

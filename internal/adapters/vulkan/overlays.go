@@ -49,7 +49,7 @@ func (w *sceneWalk) overlay(o domain.Overlay, anchor, clip image.Rectangle, outp
 		// before touching the panel's reusable CPU raster.
 		if surface := r.shm[key]; surface != nil {
 			for _, b := range surface.bufs {
-				if b != nil && b.valid && b.holds.seq == o.Seq {
+				if b != nil && b.valid && b.holds.seq == o.Seq && b.holds.windowSeq == w.gen {
 					lw, lh = b.holds.w, b.holds.h
 					c = r.shmCached(key, b.holds)
 					break
@@ -94,7 +94,7 @@ func (w *sceneWalk) overlay(o domain.Overlay, anchor, clip image.Rectangle, outp
 	if rect.Intersect(clip).Empty() {
 		return
 	}
-	st := shmState{w: lw, h: lh, seq: o.Seq, windowSeq: overlaydraw.FontGen()}
+	st := shmState{w: lw, h: lh, seq: o.Seq, windowSeq: w.gen}
 	c = r.shmCached(key, st)
 	if c == nil {
 		var err error

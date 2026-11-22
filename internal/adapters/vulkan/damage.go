@@ -33,6 +33,10 @@ type damageRegion struct {
 	contentRects []domain.Rect
 	// why counts the reasons of full redraws (the renderer's; nil: none).
 	why *fullRedraws
+	// fontGen is the font generation (overlaydraw.FontGen) read once when
+	// the frame starts: the walk tags compositor text with it and the
+	// target holds it, so a font swapped mid-frame redraws the next one.
+	fontGen uint64
 }
 
 // heldWindow is a window a target holds: its content Seq and rect.
@@ -51,11 +55,12 @@ func newDamage(tg *target, s domain.Scene, bounds image.Rectangle) *damageRegion
 // number (setup, tests): redraw all. The same Seq keeps everything; a new
 // one keeps all but what sceneDelta finds changed.
 func (d *damageRegion) hold(tg *target, s domain.Scene) {
+	d.fontGen = overlaydraw.FontGen()
 	if !tg.valid || s.Seq == 0 {
 		d.why.count(fullTarget)
 		return
 	}
-	if tg.fontGen != overlaydraw.FontGen() {
+	if tg.fontGen != d.fontGen {
 		// Compositor text drawn in the old font.
 		d.why.count(fullFont)
 		return
@@ -304,7 +309,7 @@ func (tg *target) hold(s domain.Scene, d *damageRegion) {
 	tg.heldLayers = append(tg.heldLayers[:0], s.Layers...)
 	tg.heldIndicators = append(tg.heldIndicators[:0], s.CaptureIndicators...)
 	tg.heldOverlays = append(tg.heldOverlays[:0], s.Overlays...)
-	tg.valid, tg.sceneSeq, tg.scene, tg.windows, tg.fontGen = true, s.Seq, s, d.drawn, overlaydraw.FontGen()
+	tg.valid, tg.sceneSeq, tg.scene, tg.windows, tg.fontGen = true, s.Seq, s, d.drawn, d.fontGen
 	tg.scene.Windows, tg.scene.Separators, tg.scene.Layers = tg.heldWindows, tg.heldSeparators, tg.heldLayers
 	tg.scene.CaptureIndicators = tg.heldIndicators
 	if s.DropPreview != nil {
@@ -343,7 +348,7 @@ func sceneDelta(old, cur domain.Scene, phys func(domain.Rect) image.Rectangle, l
 	if old.Security != cur.Security || old.Output != cur.Output ||
 		old.OutputWidth != cur.OutputWidth || old.OutputHeight != cur.OutputHeight ||
 		old.Scale != cur.Scale || old.Transform != cur.Transform || old.Off != cur.Off ||
-		old.Physical != cur.Physical || old.Background != cur.Background || old.Border != cur.Border ||
+		old.Physical != cur.Physical || old.Font != cur.Font || old.Background != cur.Background || old.Border != cur.Border ||
 		old.WorkspaceClip != cur.WorkspaceClip || old.TileInset != cur.TileInset || old.Dim != cur.Dim || old.DimBehind != cur.DimBehind ||
 		old.Capture != nil || cur.Capture != nil || old.CaptureScene != nil || cur.CaptureScene != nil ||
 		!slices.Equal(old.Layers, cur.Layers) ||

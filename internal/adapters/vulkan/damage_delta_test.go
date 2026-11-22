@@ -98,6 +98,7 @@ func TestDamageDeltaFullRedraws(t *testing.T) {
 		"transform":      func(s *domain.Scene) { s.Transform = 1 },
 		"off":            func(s *domain.Scene) { s.Off = true },
 		"background":     func(s *domain.Scene) { s.Background = "#111111" },
+		"font":           func(s *domain.Scene) { s.Font = "x.ttf" },
 		"border":         func(s *domain.Scene) { s.Border.Width = 2 },
 		"workspace clip": func(s *domain.Scene) { s.WorkspaceClip = domain.Rect{W: 10, H: 10} },
 		"tile inset":     func(s *domain.Scene) { s.TileInset = domain.Insets{Bottom: 10} },
