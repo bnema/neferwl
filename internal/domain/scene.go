@@ -36,8 +36,11 @@ type Scene struct {
 	Background string
 	// Font is the configured font path (Config.Font): a font change makes
 	// a new scene, so outputs redraw their compositor text.
-	Font   string
-	Border Border
+	Font string
+	// FontGen is the loaded font's generation (Config.FontGen): a font
+	// loaded again, same path, also makes a new scene.
+	FontGen uint64
+	Border  Border
 	// WorkspaceClip bounds workspace windows, their popups and separators
 	// in logical output coordinates. Zero inherits the full output. Layers
 	// remain output-wide; overview previews do not use this clip.
@@ -122,7 +125,7 @@ func (s Scene) SameAs(o Scene) bool {
 	if s.PositionHint != o.PositionHint || s.Security != o.Security || s.Output != o.Output ||
 		s.OutputWidth != o.OutputWidth || s.OutputHeight != o.OutputHeight ||
 		s.Scale != o.Scale || s.Transform != o.Transform || s.Off != o.Off ||
-		s.Background != o.Background || s.Font != o.Font || s.Border != o.Border ||
+		s.Background != o.Background || s.Font != o.Font || s.FontGen != o.FontGen || s.Border != o.Border ||
 		s.WorkspaceClip != o.WorkspaceClip || s.TileInset != o.TileInset || s.Dim != o.Dim || s.DimBehind != o.DimBehind {
 		return false
 	}

@@ -349,7 +349,7 @@ func sceneDelta(old, cur domain.Scene, phys func(domain.Rect) image.Rectangle, l
 	if old.Security != cur.Security || old.Output != cur.Output ||
 		old.OutputWidth != cur.OutputWidth || old.OutputHeight != cur.OutputHeight ||
 		old.Scale != cur.Scale || old.Transform != cur.Transform || old.Off != cur.Off ||
-		old.Physical != cur.Physical || old.Font != cur.Font || old.Background != cur.Background || old.Border != cur.Border ||
+		old.Physical != cur.Physical || old.Font != cur.Font || old.FontGen != cur.FontGen || old.Background != cur.Background || old.Border != cur.Border ||
 		old.WorkspaceClip != cur.WorkspaceClip || old.TileInset != cur.TileInset || old.Dim != cur.Dim || old.DimBehind != cur.DimBehind ||
 		old.Capture != nil || cur.Capture != nil || old.CaptureScene != nil || cur.CaptureScene != nil ||
 		!slices.Equal(old.Layers, cur.Layers) ||

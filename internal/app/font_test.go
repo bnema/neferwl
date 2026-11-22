@@ -31,14 +31,12 @@ func TestFontLoaderWarnsAndRetries(t *testing.T) {
 	if err := os.WriteFile(path, goregular.TTF, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	fonts.load(path)
-	gen := overlaydraw.FontGen()
-	if gen == 0 {
-		t.Fatal("failed path not retried")
+	gen := fonts.load(path)
+	if gen == 0 || gen != overlaydraw.FontGen() {
+		t.Fatalf("failed path not retried: generation %d", gen)
 	}
 	// A loaded path is not read again.
-	fonts.load(path)
-	if overlaydraw.FontGen() != gen {
+	if fonts.load(path) != gen || overlaydraw.FontGen() != gen {
 		t.Fatal("loaded path reloaded")
 	}
 }

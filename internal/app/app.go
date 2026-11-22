@@ -159,7 +159,7 @@ func relayConfig(ctx context.Context, cur domain.Config, in <-chan domain.Config
 			}
 		}
 		curs.SetHideAfter(ev.Config.Cursor.HideAfter)
-		fonts.load(ev.Config.Font)
+		ev.Config.FontGen = fonts.load(ev.Config.Font)
 		if ev.Config.InputDevicesConfig != devCfg {
 			devCfg = ev.Config.InputDevicesConfig
 			routing.Latest(deviceConfigs, devCfg) // this goroutine is the only sender
@@ -195,9 +195,11 @@ type fontLoader struct {
 
 // load makes path the font: a new path is loaded, the same one again only
 // after a failed load. A bad file keeps the built-in font, with a warning.
-func (f *fontLoader) load(path string) {
+// It returns the generation of the font in place (overlaydraw.FontGen),
+// which the app forwards as Config.FontGen.
+func (f *fontLoader) load(path string) uint64 {
 	if path == f.path && !f.failed {
-		return
+		return overlaydraw.FontGen()
 	}
 	f.path = path
 	err := overlaydraw.LoadFont(path)
@@ -205,6 +207,7 @@ func (f *fontLoader) load(path string) {
 	if err != nil {
 		f.log.Warn().Err(err).Msg("font not loaded; using the built-in font")
 	}
+	return overlaydraw.FontGen()
 }
 
 func consumeScenes(ctx context.Context, scenes <-chan []domain.Scene, configErrors <-chan error, binds <-chan domain.InputTrace, placements <-chan domain.PlacementTrace, tap chan<- []domain.Scene, renderScenes chan []domain.Scene) {
