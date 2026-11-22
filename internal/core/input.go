@@ -563,6 +563,13 @@ func (c *Core) runSegment(ctx context.Context, action Action) error {
 		}
 		return nil
 	}
+	if op, name, cmd, ok := MarkArg(action); ok {
+		if c.ch.Binds != nil {
+			defer c.traceBind(string(action), c.bindCombo, c.bindSource)()
+		}
+		c.bindCombo, c.bindSource = "", ""
+		return c.runMark(ctx, op, name, cmd)
+	}
 	return c.runAction(ctx, action)
 }
 

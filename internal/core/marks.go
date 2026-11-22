@@ -1,6 +1,10 @@
 package core
 
-import "github.com/bnema/neferwl/internal/domain"
+import (
+	"context"
+
+	"github.com/bnema/neferwl/internal/domain"
+)
 
 // markHolder returns the mapped window holding name, 0 if none.
 func (c *Core) markHolder(name string) WindowID {
@@ -68,4 +72,41 @@ func (c *Core) unmarkAll(id WindowID) bool {
 	}
 	c.windows.setMarks(id, "")
 	return true
+}
+
+// runMark runs a mark action on the focused window of the focused screen's
+// current workspace. A missing window or mark is a no-op, as is any mark
+// action while that screen's overview is open.
+func (c *Core) runMark(ctx context.Context, op MarkOp, name string, cmd []string) error {
+	if c.cur().mon.ov.open {
+		return nil
+	}
+	focused, _ := c.cur().mon.Current().Focused()
+	var changed bool
+	switch op {
+	case MarkSet:
+		changed = c.setMark(focused, name)
+	case MarkToggle:
+		changed = c.toggleMark(focused, name)
+	case MarkUnmark:
+		if name == "" {
+			changed = c.unmarkAll(focused)
+		} else {
+			changed = c.unmarkName(name)
+		}
+	case MarkFocus:
+		holder := c.markHolder(name)
+		if holder == 0 {
+			_ = cmd // run-or-raise spawning lands with spawn claims
+			return nil
+		}
+		return c.layoutAction(ctx, func() Effect {
+			c.raise(holder)
+			return Effect{}
+		})
+	}
+	if changed {
+		return c.publish(ctx)
+	}
+	return nil
 }
