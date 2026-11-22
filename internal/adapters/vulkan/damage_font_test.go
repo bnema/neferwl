@@ -62,7 +62,7 @@ func TestDamageFontSnapshotAtFrameStart(t *testing.T) {
 }
 
 // A font change between two frames recopies the compositor text whose
-// raster keeps its size and content: tab titles, and an OSD panel.
+// raster keeps its content: tab titles, and an OSD panel.
 func TestFontChangeRecopiesText(t *testing.T) {
 	r := newTestRenderer(t, 256, 64)
 	s := tabScene("b")
@@ -84,4 +84,32 @@ func TestFontChangeRecopiesText(t *testing.T) {
 		require.True(t, held, "copy %x in the new font", k.overlay)
 	}
 	require.Len(t, r.shm, 2)
+}
+
+// Reloading the same font file changes only the generation: every
+// compositor text copy (tab title, drop label, panel) keeps its size and
+// content and is still recopied in the new generation.
+func TestSameSizeFontChangeRecopiesText(t *testing.T) {
+	r := newTestRenderer(t, 256, 64)
+	s := tabScene("b")
+	s.TabBars[0].Tabs = s.TabBars[0].Tabs[:1]
+	s.TabBars[0].Tabs[0].Title = "x"
+	s.Overlays = []domain.Overlay{{ID: 42, Seq: 1, Kind: domain.OverlayPanel, Anchor: domain.AnchorTopCenter,
+		Panel: &domain.PanelContent{Lines: [4]string{"p"}}}}
+	s.DropPreview = &domain.DropPreview{Rect: domain.Rect{X: 10, Y: 10, W: 200, H: 40}, Fill: 0.18, Label: "stack", LabelPx: 13}
+	loadTestFont(t)
+	s.Seq = 1
+	require.NoError(t, render(r, s, nil))
+	require.Len(t, r.shm, 3)
+	loadTestFont(t)
+	gen := overlaydraw.FontGen()
+	s.Seq++
+	require.NoError(t, render(r, s, nil))
+	for k, surface := range r.shm {
+		held := false
+		for _, b := range surface.bufs {
+			held = held || (b != nil && b.valid && b.holds.windowSeq == gen)
+		}
+		require.True(t, held, "copy %x in the new font", k.overlay)
+	}
 }

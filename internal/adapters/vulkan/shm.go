@@ -247,7 +247,8 @@ type shmSurface struct {
 
 // shmCached returns the GPU buffer already holding a surface's content st,
 // or nil. It needs no client pixels: a kept window whose pool is closed
-// still draws from it.
+// still draws from it. Compositor text (an overlay key) also needs the
+// font generation it was drawn in (windowSeq).
 func (r *Renderer) shmCached(key shmKey, st shmState) *shmCopy {
 	s := r.shm[key]
 	if s == nil {
@@ -255,7 +256,7 @@ func (r *Renderer) shmCached(key shmKey, st shmState) *shmCopy {
 	}
 	s.last = r.frame
 	for _, c := range s.bufs {
-		if c != nil && c.valid && c.holds.w == st.w && c.holds.h == st.h && c.holds.seq == st.seq {
+		if c != nil && c.valid && c.holds.w == st.w && c.holds.h == st.h && c.holds.seq == st.seq && (key.overlay == 0 || c.holds.windowSeq == st.windowSeq) {
 			c.gpu.last = r.frame
 			return c
 		}
