@@ -202,13 +202,15 @@ func (c *Core) dragMotion(ctx context.Context) error {
 		c.abortDrag()
 		return c.publish(ctx)
 	}
+	was := d.moved
 	if !d.moved {
 		dx, dy := c.cursorX-d.start[0], c.cursorY-d.start[1]
 		d.moved = dx*dx+dy*dy > dragSelfSlop*dragSelfSlop
 	}
 	// A thumbnail follows the pointer; a zone only moves on a new target.
+	// Crossing the slop publishes once so the thumbnail appears.
 	thumb := d.target.preview != nil && d.target.preview.Thumb != 0
-	if !c.retarget(src) && !thumb {
+	if !c.retarget(src) && !thumb && (!d.moved || was) {
 		return nil
 	}
 	return c.publish(ctx)

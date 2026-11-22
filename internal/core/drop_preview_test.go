@@ -292,42 +292,50 @@ func TestDropPreviewHoverFillRamp(t *testing.T) {
 // place, once the pointer moved past the slop, with animations on or off:
 // the scene keeps one entry per window (no proxy).
 func TestDropThumbnailOnOwnOutputAfterMotion(t *testing.T) {
-	for _, on := range []bool{false, true} {
-		synctest.Test(t, func(t *testing.T) {
-			r := startDragRig(t, func(c *domain.Config) {
-				c.Animations.On, c.Animations.Slowdown = on, 1
-				c.Layout.MaxColumns = 3
-			}, dragOut)
-			set := dragThreeColumns(t, r)
-			one := dragRect(t, set, "A", 1)
-			x, y := one.X+one.W/2, one.Y+one.H/2
-			r.moveTo(float64(x), float64(y), 1)
-			r.settle(t)
-			r.press(t, 0x110, domain.ModSuper)
-			if p := dragScene(r.settle(t), "A").DropPreview; p != nil && p.Thumb != 0 {
-				t.Fatalf("thumb before motion: %+v", p)
-			}
-			r.moveTo(float64(x+3), float64(y+3), 2)
-			if p := dragScene(r.settle(t), "A").DropPreview; p != nil && p.Thumb != 0 {
-				t.Fatalf("thumb within the slop: %+v", p)
-			}
-			r.moveTo(float64(x+40), float64(y), 3)
-			s := dragScene(r.settle(t), "A")
-			p := s.DropPreview
-			if p == nil || p.Thumb != 1 || p.ThumbRect.X != x+40+12 || p.ThumbZoom <= 0 {
-				t.Fatalf("thumb after motion: %+v", p)
-			}
-			n := 0
-			for _, w := range s.Windows {
-				if w.ID == 1 && !w.Popup {
-					n++
+	both(t, func(t *testing.T, animated bool) {
+		r := startDragMode(t, animated, func(c *domain.Config) { c.Layout.MaxColumns = 3 }, dragOut)
+		set := dragThreeColumns(t, r)
+		one := dragRect(t, set, "A", 1)
+		x, y := one.X+one.W/2, one.Y+one.H/2
+		r.moveTo(float64(x), float64(y), 1)
+		r.settle(t)
+		r.press(t, 0x110, domain.ModSuper)
+		if p := dragScene(r.settle(t), "A").DropPreview; p != nil && p.Thumb != 0 {
+			t.Fatalf("thumb before motion: %+v", p)
+		}
+		r.moveTo(float64(x+3), float64(y+3), 2)
+		if p := dragScene(r.settle(t), "A").DropPreview; p != nil && p.Thumb != 0 {
+			t.Fatalf("thumb within the slop: %+v", p)
+		}
+		// The motion crossing the slop publishes the thumbnail itself, before
+		// any settle barrier.
+		r.moveTo(float64(x+40), float64(y), 3)
+		synctest.Wait()
+		var s domain.Scene
+		for drained := false; !drained; {
+			select {
+			case got := <-r.scenes:
+				if p := dragScene(got, "A").DropPreview; p != nil && p.Thumb != 0 {
+					s = dragScene(got, "A")
 				}
+			default:
+				drained = true
 			}
-			if _, proxies := proxyIn(r.last, "A"); n != 1 || proxies != 0 {
-				t.Fatalf("window 1 entries %d, proxies %d", n, proxies)
+		}
+		p := s.DropPreview
+		if p == nil || p.Thumb != 1 || p.ThumbRect.X != x+40+12 || p.ThumbZoom <= 0 {
+			t.Fatalf("thumb after motion: %+v", p)
+		}
+		n := 0
+		for _, w := range s.Windows {
+			if w.ID == 1 && !w.Popup {
+				n++
 			}
-			r.in(ports.KeyEvent{Keysym: "Escape", Mods: domain.ModSuper, Pressed: true})
-			r.settle(t)
-		})
-	}
+		}
+		if _, proxies := proxyIn([]domain.Scene{s}, "A"); n != 1 || proxies != 0 {
+			t.Fatalf("window 1 entries %d, proxies %d", n, proxies)
+		}
+		r.in(ports.KeyEvent{Keysym: "Escape", Mods: domain.ModSuper, Pressed: true})
+		r.settle(t)
+	})
 }
