@@ -2,6 +2,7 @@ package vulkan
 
 import (
 	"image"
+	"math"
 	"testing"
 
 	"github.com/bnema/neferwl/internal/domain"
@@ -54,4 +55,17 @@ func TestSceneTabBars(t *testing.T) {
 	if n := testing.AllocsPerRun(50, func() { r.draws(s, nil, newDamage(&target{}, s, bounds)) }); n > base {
 		t.Fatalf("tab bars allocated %v times, %v without them", n, base)
 	}
+}
+
+// A bar with a radius is rounded, and so is its active tab, at most a pill.
+func TestSceneTabBarsRounded(t *testing.T) {
+	r := newTestRenderer(t, 256, 64)
+	defer r.Close()
+	bounds := image.Rect(0, 0, 256, 64)
+	s := tabScene("b")
+	s.TabBars[0].Radius = 30
+	got := r.draws(s, nil, newDamage(&target{}, s, bounds))
+	require.Len(t, got, 5)
+	require.Equal(t, float32(10.5), math.Float32frombits(got[0].radii[0]), "bar capped at half its height")
+	require.Equal(t, float32(10.5), math.Float32frombits(got[2].radii[0]), "active tab rounded alike")
 }

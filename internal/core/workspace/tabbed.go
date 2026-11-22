@@ -15,3 +15,12 @@ func (w *Workspace) ToggleTabbed() {
 	c.Tabbed = !c.Tabbed
 	c.Shares = nil
 }
+
+// TabInset is what a tabbed column's bar takes from the top of its visible
+// tab: the bar and, with gaps, a tile gap between the bar and the window.
+func (w *Workspace) TabInset() int {
+	if w.TabBar <= 0 {
+		return 0
+	}
+	return w.TabBar + w.Gap()
+}

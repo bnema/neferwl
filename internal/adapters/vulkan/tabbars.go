@@ -3,6 +3,7 @@ package vulkan
 import (
 	"image"
 	"image/color"
+	"math"
 
 	"github.com/bnema/neferwl/internal/adapters/overlaydraw"
 	"github.com/bnema/neferwl/internal/domain"
@@ -38,12 +39,15 @@ func (w *sceneWalk) tabBars() {
 		if bar.Rect.W <= 0 || bar.Rect.H <= 0 {
 			continue
 		}
-		w.fill(w.physRect(bar.Rect.X, bar.Rect.Y, bar.Rect.W, bar.Rect.H), w.inactive)
+		full := w.physRect(bar.Rect.X, bar.Rect.Y, bar.Rect.W, bar.Rect.H)
+		// Rounded like the windows (with gaps), at most a pill.
+		radius := min(float32(math.Round(float64(bar.Radius)*w.scale)), float32(full.Dy())/2)
+		w.fillRounded(full, w.inactive, radius)
 		for _, tab := range bar.Tabs {
 			rect := w.physRect(tab.Rect.X, tab.Rect.Y, tab.Rect.W, tab.Rect.H)
 			bg, ink := inactiveBg, inactiveInk
 			if tab.Active {
-				w.fill(rect, w.active)
+				w.fillRounded(rect, w.active, radius)
 				bg, ink = activeBg, activeInk
 			}
 			// Core sizes the bar as the font plus tabTitlePadY above and

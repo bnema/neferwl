@@ -509,7 +509,7 @@ func tabBarDelta(old, cur []domain.TabBar, phys func(domain.Rect) image.Rectangl
 			area = area.Union(phys(cur[i].Rect))
 		case i >= len(cur):
 			area = area.Union(phys(old[i].Rect))
-		case old[i].Rect != cur[i].Rect || !slices.Equal(old[i].Tabs, cur[i].Tabs):
+		case old[i].Rect != cur[i].Rect || old[i].Radius != cur[i].Radius || !slices.Equal(old[i].Tabs, cur[i].Tabs):
 			area = area.Union(phys(old[i].Rect)).Union(phys(cur[i].Rect))
 		}
 	}

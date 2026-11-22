@@ -188,3 +188,29 @@ func TestTabbedStateTileRects(t *testing.T) {
 		t.Fatal("no visible workspace")
 	})
 }
+
+// With gaps the bar sits a gap above the visible tab, rounded like it.
+func TestTabBarWithGaps(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := startMulti(t, func(c *domain.Config) { c.Layout.Gaps = 8; c.Border.Radius = 10 }, left)
+		r.mapWindow(t, 1)
+		r.mapWindow(t, 2)
+		r.key(t, "bracketleft", domain.ModAlt)
+		set := r.key(t, "t", domain.ModAlt)
+		if s, ok := latestScene(t, r.scenes); ok {
+			set = s
+		}
+		if len(set[0].TabBars) != 1 {
+			t.Fatalf("bars %+v", set[0].TabBars)
+		}
+		bar := set[0].TabBars[0]
+		for _, w := range set[0].Windows {
+			if w.ID == 2 && (w.Rect.Y != bar.Rect.Y+bar.Rect.H+8 || w.Rect.X != bar.Rect.X || w.Rect.W != bar.Rect.W) {
+				t.Fatalf("tab %+v, bar %+v", w.Rect, bar.Rect)
+			}
+		}
+		if bar.Radius != 10 || bar.Rect.Y != 8 {
+			t.Fatalf("bar %+v", bar)
+		}
+	})
+}

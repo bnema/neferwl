@@ -568,7 +568,7 @@ func (w *Workspace) AppendLayout(dst []Placement) []Placement {
 			// tiles keep the rects set above.
 			if c.Tabbed && !full && !hidden {
 				if j == c.Focus {
-					bar := min(w.TabBar, col.H)
+					bar := min(w.TabInset(), col.H)
 					r = Rect{X: col.X, Y: col.Y + bar, W: col.W, H: col.H - bar}
 				} else {
 					hidden = true

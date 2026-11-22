@@ -74,6 +74,7 @@ func TestSceneSameAs(t *testing.T) {
 		"drop preview nil": func(s *Scene) { s.DropPreview = nil },
 		"tab bars nil":     func(s *Scene) { s.TabBars = nil },
 		"tab bar rect":     func(s *Scene) { s.TabBars[0].Rect.X++ },
+		"tab bar radius":   func(s *Scene) { s.TabBars[0].Radius++ },
 		"tab title":        func(s *Scene) { s.TabBars[0].Tabs[1].Title = "c" },
 		"tab active":       func(s *Scene) { s.TabBars[0].Tabs[1].Active = true },
 		"drop preview rect": func(s *Scene) {

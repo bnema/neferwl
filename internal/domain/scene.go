@@ -324,7 +324,9 @@ type ContentRoute struct {
 // column order. Rect is the bar, output-local logical.
 type TabBar struct {
 	Rect Rect
-	Tabs []TabTitle
+	// Radius rounds the bar and its active tab, logical px: the window's.
+	Radius int
+	Tabs   []TabTitle
 }
 
 // TabTitle is one tab of a TabBar. Active is the visible tab.
@@ -338,6 +340,6 @@ type TabTitle struct {
 // SameTabBars reports whether a and b draw the same bars.
 func SameTabBars(a, b []TabBar) bool {
 	return slices.EqualFunc(a, b, func(x, y TabBar) bool {
-		return x.Rect == y.Rect && slices.Equal(x.Tabs, y.Tabs)
+		return x.Rect == y.Rect && x.Radius == y.Radius && slices.Equal(x.Tabs, y.Tabs)
 	})
 }

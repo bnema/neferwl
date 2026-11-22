@@ -30,7 +30,7 @@ func (c *Core) appendTabBars(s *tabBarScratch, w *Workspace, layout []Placement,
 		if p.Fullscreen || !v.shows(p) {
 			continue
 		}
-		bar := Rect{X: p.Rect.X - off.X, Y: p.Rect.Y - w.TabBar - off.Y, W: p.Rect.W, H: w.TabBar}
+		bar := Rect{X: p.Rect.X - off.X, Y: p.Rect.Y - w.TabInset() - off.Y, W: p.Rect.W, H: w.TabBar}
 		first := len(s.titles)
 		n := len(col.Windows)
 		tw := bar.W / n
@@ -45,7 +45,7 @@ func (c *Core) appendTabBars(s *tabBarScratch, w *Workspace, layout []Placement,
 			}
 			s.titles = append(s.titles, domain.TabTitle{Rect: r, Title: title, Active: j == col.Focus, Window: tab})
 		}
-		s.bars = append(s.bars, domain.TabBar{Rect: bar})
+		s.bars = append(s.bars, domain.TabBar{Rect: bar, Radius: windowRadius(p, w.Gap(), c.cfg.Border.Radius)})
 		s.bars[len(s.bars)-1].Tabs = s.titles[first:len(s.titles):len(s.titles)]
 	}
 }
