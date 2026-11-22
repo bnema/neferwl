@@ -179,3 +179,35 @@ func TestTabDragOutOfOwnColumn(t *testing.T) {
 		}
 	})
 }
+
+// A cmd+click on a tile's own side band drops nothing; moving away and
+// back into it pops the tile out.
+func TestOwnBandNeedsMotion(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r, set := tabbedDragRig(t)
+		three := dragRect(t, set, "A", 3)
+		band := [2]float64{float64(three.X + three.W - 30), float64(three.Y + three.H/2)}
+		r.moveTo(band[0], band[1], 1)
+		r.settle(t)
+		before := columnsOf(r.settle(t), "A")
+		r.press(t, 0x110, domain.ModSuper)
+		r.settle(t)
+		r.in(ports.PointerButton{Button: 0x110})
+		set = r.settle(t)
+		if got := columnsOf(set, "A"); len(got) != len(before) {
+			t.Fatalf("click popped out: %v", got)
+		}
+		r.press(t, 0x110, domain.ModSuper)
+		r.settle(t)
+		r.moveTo(band[0]-200, band[1], 2)
+		r.settle(t)
+		r.moveTo(band[0], band[1], 3)
+		r.settle(t)
+		r.in(ports.PointerButton{Button: 0x110})
+		r.in(ports.KeyEvent{Keysym: "Super_L"})
+		set = r.settle(t)
+		if got := columnsOf(set, "A"); len(got) != len(before)+1 {
+			t.Fatalf("no pop out after motion: %v", got)
+		}
+	})
+}
