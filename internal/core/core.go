@@ -1554,22 +1554,26 @@ func (c *Core) dispatch(ctx context.Context, reqs []domain.SpawnRequest) (issued
 // (the exception to the ADR 011 golden rule).
 func (c *Core) activate(ctx context.Context, id WindowID) error {
 	before := c.cur().mon.Current()
-	c.raise(id)
+	if !c.raise(id) {
+		return nil
+	}
 	return c.workspaceVisible(ctx, c.cur().mon.Current() != before)
 }
 
 // raise shows the workspace of id on its screen, focuses id there and
-// focuses that screen; the caller reports the workspace change.
-func (c *Core) raise(id WindowID) {
+// focuses that screen; the caller reports the workspace change. It
+// reports false, doing nothing, for a popup or a window on no screen.
+func (c *Core) raise(id WindowID) bool {
 	s, w := c.screenOf(id)
 	if s == nil || c.popups[id] != nil {
-		return
+		return false
 	}
 	if w != s.mon.Current() {
 		s.mon.show(w)
 	}
 	w.Activate(id)
 	c.focusScreen = c.screenIndex(s.name())
+	return true
 }
 
 // heldKey names a key for press tracking: by physical key, since Shift
