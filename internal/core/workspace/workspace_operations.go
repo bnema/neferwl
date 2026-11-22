@@ -311,21 +311,34 @@ func (w *Workspace) DragFloat(id WindowID, from Rect, edges domain.ResizeEdges, 
 	return true
 }
 
-// EdgeScroll scrolls the columns when an output-local pointer reaches an edge.
-func (w *Workspace) EdgeScroll(lx int) bool {
-	if !w.scrollsRow() || len(w.Columns) == 0 || w.Pinned() {
+// ScrollStep moves the view one step toward dir (-1 or 1): a column in a
+// scrolling row, else to the neighbouring snap point (a cascade band). It
+// reports whether the view moved.
+func (w *Workspace) ScrollStep(dir int) bool {
+	if w.scrollsRow() {
+		return w.scrollBy(dir)
+	}
+	if !w.Engine().Scrolls() {
 		return false
 	}
-	dir := 0
-	switch {
-	case lx < w.Usable.X+edgeScroll:
-		dir = -1
-	case lx >= w.Usable.X+w.Usable.W-edgeScroll:
-		dir = 1
-	default:
+	w.snapBuf = w.Engine().SnapPoints(w.Snapshot(), w.snapBuf[:0])
+	view := float64(w.View)
+	next, found := 0.0, false
+	for _, p := range w.snapBuf {
+		if dir < 0 && p < view-0.5 {
+			next, found = p, true
+		}
+		if dir > 0 && p > view+0.5 {
+			next, found = p, true
+			break
+		}
+	}
+	if !found {
 		return false
 	}
-	return w.scrollBy(dir)
+	w.StopColumns()
+	w.View = int(next)
+	return true
 }
 
 // FocusRow focuses window row of column col, as a click on it does.

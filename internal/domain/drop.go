@@ -152,3 +152,8 @@ func DropAllowed(key string, a DropAction) bool {
 	}
 	return false
 }
+
+// EdgeSet reports whether edge s was explicitly set.
+func (p DropPolicy) EdgeSet(s DropSide) bool {
+	return s != DropSideCenter && p.set&(1<<dropEdgeBit(s)) != 0
+}

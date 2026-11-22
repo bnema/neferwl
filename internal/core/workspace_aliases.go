@@ -194,6 +194,9 @@ const MoveWindowToWorkspace = workspacedomain.MoveWindowToWorkspace
 // AnchorNone is workspace.AnchorNone.
 const AnchorNone = workspacedomain.AnchorNone
 
+// AnchorEdge is workspace.AnchorEdge.
+const AnchorEdge = workspacedomain.AnchorEdge
+
 // EdgeAlways is workspace.EdgeAlways.
 const EdgeAlways = workspacedomain.EdgeAlways
 

@@ -96,6 +96,8 @@ type Workspace struct {
 	// columns), reused per pointer motion.
 	anchorBuf  []Placement
 	anchorCols []visibleColumn
+	// snapBuf is ScrollStep's scratch for the snap points.
+	snapBuf []float64
 }
 
 // origPlace remembers where a stashed window was: its column, its row in a

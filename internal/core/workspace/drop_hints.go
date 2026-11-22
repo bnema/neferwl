@@ -7,6 +7,8 @@ import "github.com/bnema/neferwl/internal/domain"
 // swapped column or of an empty workspace.
 func (w *Workspace) AnchorHints(dst []Rect, id WindowID, a Anchor, t int) []Rect {
 	switch a.Kind {
+	case AnchorEdge:
+		return append(dst, a.Rect)
 	case AnchorGap:
 		w.anchorBuf = w.AppendLayout(w.anchorBuf[:0])
 		if w.noColumns(w.visibleColumns(w.anchorBuf), id) {

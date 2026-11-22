@@ -519,3 +519,12 @@ type XwaylandSettings struct {
 	RootCursor bool
 	Cursor     CursorImage
 }
+
+// ConfigWarning is a non-fatal diagnostic about an applied configuration:
+// the config is in effect, a part of it does nothing. Component names the
+// subsystem that logs it.
+type ConfigWarning struct {
+	Component, Msg string
+}
+
+func (w ConfigWarning) Error() string { return w.Msg }

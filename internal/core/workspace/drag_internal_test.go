@@ -67,8 +67,8 @@ func TestAnchorHiddenColumns(t *testing.T) {
 		if a := w.AnchorAt(w, 2, 900, 400, Anchor{}, p); a.Kind != AnchorNone {
 			t.Fatalf("%+v", a)
 		}
-		// Dragging 1 (hidden) over 2: the top band stacks above 2.
-		if a := w.AnchorAt(w, 1, 500, 30, Anchor{}, p); a.Action != domain.DropStack || a.Side != domain.DropSideTop || a.Window != 2 {
+		// Dragging 1 (hidden) over 2: the top band, below the edge zone, stacks above 2.
+		if a := w.AnchorAt(w, 1, 500, 50, Anchor{}, p); a.Action != domain.DropStack || a.Side != domain.DropSideTop || a.Window != 2 {
 			t.Fatalf("%+v", a)
 		}
 	})

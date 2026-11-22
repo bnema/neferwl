@@ -76,6 +76,8 @@ type NamedWorkspace struct {
 	// Size overrides the logical width and height; a zero side inherits
 	// the monitor and the scale is always the monitor's.
 	Size [2]int
+	// Drop is the workspace's drop policy, over the output and global ones.
+	Drop domain.DropPolicy
 }
 
 func NewMonitor() *Monitor { return newMonitor("", "") }

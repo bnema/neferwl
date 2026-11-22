@@ -82,7 +82,7 @@ func TestAnchorWindowSides(t *testing.T) {
 		if a != want {
 			t.Fatalf("left = %+v, want %+v", a, want)
 		}
-		a = w.AnchorAt(src, 9, r.X+r.W/2, r.Y+r.H-3, Anchor{}, p)
+		a = w.AnchorAt(src, 9, r.X+r.W/2, r.Y+r.H-40, Anchor{}, p)
 		if a.Side != domain.DropSideBottom || a.Action != domain.DropStack {
 			t.Fatalf("bottom = %+v", a)
 		}
@@ -135,7 +135,7 @@ func TestAnchorHysteresis(t *testing.T) {
 		r := rectOf(t, w, 2)
 		p := domain.DefaultDropPolicy()
 		x := r.X + r.W/2
-		top := w.AnchorAt(src, 9, x, r.Y+5, Anchor{}, p)
+		top := w.AnchorAt(src, 9, x, r.Y+40, Anchor{}, p)
 		if top.Side != domain.DropSideTop {
 			t.Fatalf("%+v", top)
 		}

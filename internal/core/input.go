@@ -134,7 +134,7 @@ func (c *Core) pointerMotion(ctx context.Context, v ports.PointerMotion) error {
 	}
 	if c.drag != nil {
 		// The dragged window and the others get no pointer events.
-		return c.dragMotion(ctx, v.Time)
+		return c.dragMotion(ctx)
 	}
 	if c.dataDrag != nil {
 		// A data drag goes to the surface under the pointer, by its own

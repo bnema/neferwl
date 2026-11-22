@@ -49,7 +49,7 @@ type Anchor struct {
 // AnchorAt is the drop zone of tile id, dragged from src, at the
 // output-local point x, y under policy p. prev is the zone of the last
 // motion: it is kept while the point stays near it and it still exists.
-// Hit order: floats veto, then gaps, then tiles. It does not allocate once
+// Hit order: floats veto, then edges, then gaps, then tiles. It does not allocate once
 // its scratch has grown (owner goroutine only).
 func (w *Workspace) AnchorAt(src *Workspace, id WindowID, x, y int, prev Anchor, p domain.DropPolicy) Anchor {
 	w.anchorBuf = w.AppendLayout(w.anchorBuf[:0])
@@ -65,6 +65,9 @@ func (w *Workspace) AnchorAt(src *Workspace, id WindowID, x, y int, prev Anchor,
 	if prev.Kind != AnchorNone && contains(grow(prev.Rect, anchorHysteresis), x, y) &&
 		w.zoneExists(layout, cols, d, prev, p) {
 		return prev
+	}
+	if a, ok := w.edgeAt(d, x, y, p); ok {
+		return a
 	}
 	if w.noColumns(cols, id) {
 		if !contains(w.Usable, x, y) {
@@ -97,10 +100,13 @@ type dropSource struct {
 	// its column. col is -1 when src does not tile it.
 	col, row int
 	lone     bool
+	// full is true when id is fullscreen in src.
+	full bool
+	src  *Workspace
 }
 
 func (w *Workspace) dropCtx(src *Workspace, id WindowID) dropSource {
-	d := dropSource{id: id, same: src == w, col: -1, row: -1}
+	d := dropSource{id: id, same: src == w, col: -1, row: -1, src: src}
 	if src == nil {
 		return d
 	}
@@ -108,6 +114,7 @@ func (w *Workspace) dropCtx(src *Workspace, id WindowID) dropSource {
 		c := src.Columns[d.col].Windows
 		d.row = slices.Index(c, id)
 		d.lone = len(c) == 1
+		d.full = src.Fullscreen == id
 	}
 	return d
 }
@@ -144,10 +151,28 @@ func (w *Workspace) valid(d dropSource, a Anchor) bool {
 			}
 			return w.columnValid(d, at)
 		case domain.DropSwap:
-			return !d.same || ci != d.col
+			if d.same && ci == d.col {
+				return false
+			}
+			// Columns exchange as a whole; single tiles must be swappable.
+			return d.same && d.lone || d.src.markable(d.id) && w.markable(a.Window)
 		}
 	case AnchorGap:
 		return a.Action == domain.DropColumn && w.columnValid(d, a.At)
+	case AnchorEdge:
+		switch a.Action {
+		case domain.DropColumn:
+			at := 0
+			if a.Dir > 0 {
+				at = len(w.Columns)
+			}
+			return w.columnValid(d, at)
+		case domain.DropStash, domain.DropFloat:
+			return !d.full
+		case domain.DropScroll, domain.DropWorkspace:
+			// Hover actions: EdgeAction already checked the axis.
+			return true
+		}
 	}
 	return false
 }
@@ -228,6 +253,9 @@ func (w *Workspace) zoneExists(layout []Placement, cols []visibleColumn, d dropS
 			return prev == w.emptyAnchor()
 		}
 		a, ok := w.gapAnchor(cols, d, 0, 0, p, prev.At)
+		return ok && a == prev
+	case AnchorEdge:
+		a, ok := w.edgeAnchor(d, prev.Side, p)
 		return ok && a == prev
 	}
 	return false
@@ -366,8 +394,11 @@ func grow(r Rect, d int) Rect {
 // workspace; the tile is then focused in w. px, py is the pointer,
 // output-local. An invalid anchor changes nothing.
 func Drop(src, w *Workspace, id WindowID, a Anchor, px, py int) {
-	_, _ = px, py // the float edge centres on the pointer
 	if !w.DropValid(src, id, a) {
+		return
+	}
+	if a.Kind == AnchorEdge {
+		w.applyEdge(src, id, a, px, py)
 		return
 	}
 	switch a.Action {
@@ -442,34 +473,44 @@ func (w *Workspace) applyColumn(src *Workspace, id WindowID, at int) {
 }
 
 // applySwap exchanges a lone tile's column with target's in the same
-// workspace. Otherwise the tile lands in a new column beside target, or
-// in target's column when w is full.
+// workspace. Otherwise the two tiles trade places, across workspaces too.
+// id is then focused in w.
 func (w *Workspace) applySwap(src *Workspace, id, target WindowID) {
 	ci := src.ColumnOf(id)
-	lone := len(src.Columns[ci].Windows) == 1
-	if src == w && lone {
+	if src == w && len(src.Columns[ci].Windows) == 1 {
 		to := w.ColumnOf(target)
 		w.Columns[ci], w.Columns[to] = w.Columns[to], w.Columns[ci]
 		w.FocusID(id)
 		return
 	}
-	col := takeTile(src, id)
-	at, anchorCol := len(w.Columns), -1
-	if ai := w.ColumnOf(target); ai >= 0 {
-		at, anchorCol = ai, ai
-		if w == src && ai >= ci {
-			at = ai + 1
+	if SwapWindows(src, id, w, target) {
+		w.FocusID(id)
+	}
+}
+
+// applyEdge runs the release action of edge anchor a. Hover actions
+// (scroll, workspace) change nothing on release.
+func (w *Workspace) applyEdge(src *Workspace, id WindowID, a Anchor, px, py int) {
+	switch a.Action {
+	case domain.DropColumn:
+		at := 0
+		if a.Dir > 0 {
+			at = len(w.Columns)
+		}
+		w.applyColumn(src, id, at)
+	case domain.DropStash, domain.DropFloat:
+		if src != w {
+			w.receive(takeTile(src, id), -1)
+		}
+		w.FocusID(id)
+		if a.Action == domain.DropStash {
+			w.ToggleWindowStash()
+			return
+		}
+		w.ToggleFloating()
+		// Centre the new float on the pointer.
+		if r, ok := w.placed(id); ok {
+			w.DragFloat(id, r, 0, px-(r.X+r.W/2), py-(r.Y+r.H/2), false)
 		}
 	}
-	if w.full() {
-		i := min(at, len(w.Columns)-1)
-		if anchorCol >= 0 {
-			i = anchorCol
-		}
-		w.Columns[i].Windows = append(w.Columns[i].Windows, id)
-		w.Columns[i].Shares = nil
-		w.Activate(id)
-		return
-	}
-	w.receive(col, at)
 }

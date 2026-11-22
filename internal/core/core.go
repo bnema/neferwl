@@ -140,6 +140,7 @@ type Core struct {
 	configures     configures
 	pointer        WindowID
 	hover          pendingHover
+	dragHover      dragHover
 	hoverLocked    bool     // a non-pointer focus change holds hover focus
 	hoverLock      WindowID // hover target the hold ignores: the window under the cursor, retargeted when layout changes what lies there
 	focusByPointer bool     // set while focusPointer publishes, so syncFocus does not arm the hold
@@ -427,7 +428,7 @@ func (c *Core) apply(cfg domain.Config) error {
 			return fmt.Errorf("invalid workspace %q", ws.Name)
 		}
 		seen[ws.Name] = true
-		named = append(named, NamedWorkspace{Name: ws.Name, Monitor: ws.Monitor, MaxColumns: ws.MaxColumns, Overflow: o, Size: ws.Size})
+		named = append(named, NamedWorkspace{Name: ws.Name, Monitor: ws.Monitor, MaxColumns: ws.MaxColumns, Overflow: o, Size: ws.Size, Drop: ws.Drop})
 	}
 	specs, err := parseSlots(cfg.Workspaces)
 	if err != nil {
@@ -484,6 +485,14 @@ func (c *Core) apply(cfg domain.Config) error {
 		old, now := axes[s.mon], (layoutAxes{content, workspace})
 		if old.content != now.content || old.workspace != now.workspace {
 			s.mon.ov.dropScroll()
+		}
+	}
+	// The config is in effect: warn, against the layouts now in place,
+	// about the edge actions they cannot do. Like a rejection, a full channel drops the warning.
+	for _, msg := range c.dropAxisWarnings(cfg) {
+		select {
+		case c.ch.ConfigErrors <- domain.ConfigWarning{Component: "drag", Msg: msg}:
+		default:
 		}
 	}
 	return nil
@@ -1240,6 +1249,7 @@ func (c *Core) Run(ctx context.Context) error {
 	defer c.stopFlashTimer()
 	defer c.stopPositionHintTimer()
 	defer c.cancelHover()
+	defer c.stopDragHover()
 	defer c.cancelSwitcher()
 	defer c.stopRepeat()
 	// Startup commands run once per session. Full launcher queues retain a
@@ -1334,6 +1344,11 @@ func (c *Core) Run(ctx context.Context) error {
 			}
 			c.frameC = nil
 			if c.step(ctx, nil) != nil {
+				return nil
+			}
+			continue
+		case <-c.dragHover.timerC:
+			if c.securityCheckpoint(ctx) != nil || c.dragHoverTick(ctx) != nil {
 				return nil
 			}
 			continue

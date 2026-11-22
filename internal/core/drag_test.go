@@ -339,7 +339,7 @@ func dragTileZonesAndHints(t *testing.T, r *dragRig) {
 	r.moveTo(float64(a.X+a.W/2), float64(a.Y+a.H/2), 1)
 	r.settle(t)
 	r.press(t, 0x110, domain.ModSuper)
-	r.moveTo(float64(c.X+c.W/2), float64(c.Y+c.H-5), 2)
+	r.moveTo(float64(c.X+c.W/2), float64(c.Y+c.H-40), 2)
 	set = r.settle(t)
 	hints := dragScene(set, "A").DropHints
 	if len(hints) != 1 || hints[0].Y+hints[0].H != c.Y+c.H || hints[0].W != c.W {
@@ -359,8 +359,8 @@ func dragTileZonesAndHints(t *testing.T, r *dragRig) {
 	if len(dragScene(set, "A").DropHints) != 0 {
 		t.Fatal("hints left")
 	}
-	// Centre of 2 with stacked 1 dragged from its right: 1 becomes a
-	// column in 2's place, 2 moves toward where 1 came from.
+	// Centre of 2 with stacked 1 dragged from its right: 1 and 2 trade
+	// places.
 	b := dragRect(t, set, "A", 2)
 	one := dragRect(t, set, "A", 1)
 	r.moveTo(float64(one.X+one.W/2), float64(one.Y+one.H/2), 3)
@@ -374,21 +374,21 @@ func dragTileZonesAndHints(t *testing.T, r *dragRig) {
 	r.lands = 0
 	r.in(ports.PointerButton{Button: 0x110})
 	set = r.settle(t)
-	if got := columnsOf(set, "A"); !slices.EqualFunc(got, [][]domain.WindowID{{1}, {2}, {3}}, slices.Equal) {
+	if got := columnsOf(set, "A"); !slices.EqualFunc(got, [][]domain.WindowID{{1}, {3, 2}}, slices.Equal) {
 		t.Fatal(got)
 	}
-	// Lone 3 on the centre of 2: the columns swap.
-	b, c = dragRect(t, set, "A", 2), dragRect(t, set, "A", 3)
-	r.moveTo(float64(c.X+c.W/2), float64(c.Y+c.H/2), 5)
+	// Lone 1 on the centre of 3: the columns swap.
+	one, c = dragRect(t, set, "A", 1), dragRect(t, set, "A", 3)
+	r.moveTo(float64(one.X+one.W/2), float64(one.Y+one.H/2), 5)
 	r.settle(t)
 	r.in(ports.PointerButton{Button: 0x110, Pressed: true})
-	r.moveTo(float64(b.X+b.W/2), float64(b.Y+b.H/2), 6)
+	r.moveTo(float64(c.X+c.W/2), float64(c.Y+c.H/2), 6)
 	r.settle(t)
 	// The drop itself must run a spring: the guard counts from here.
 	r.lands = 0
 	r.in(ports.PointerButton{Button: 0x110})
 	set = r.settle(t)
-	if got := columnsOf(set, "A"); !slices.EqualFunc(got, [][]domain.WindowID{{1}, {3}, {2}}, slices.Equal) {
+	if got := columnsOf(set, "A"); !slices.EqualFunc(got, [][]domain.WindowID{{3, 2}, {1}}, slices.Equal) {
 		t.Fatal(got)
 	}
 	// Escape mid tile drag: nothing moves, no hints.
@@ -403,7 +403,7 @@ func dragTileZonesAndHints(t *testing.T, r *dragRig) {
 	}
 	r.in(ports.KeyEvent{Keysym: "Escape", Mods: domain.ModSuper, Pressed: true})
 	set = r.settle(t)
-	if got := columnsOf(set, "A"); !slices.EqualFunc(got, [][]domain.WindowID{{1}, {3}, {2}}, slices.Equal) || len(dragScene(set, "A").DropHints) != 0 {
+	if got := columnsOf(set, "A"); !slices.EqualFunc(got, [][]domain.WindowID{{3, 2}, {1}}, slices.Equal) || len(dragScene(set, "A").DropHints) != 0 {
 		t.Fatal(got, dragScene(set, "A").DropHints)
 	}
 }
@@ -496,7 +496,7 @@ func TestDragDropTileSlides(t *testing.T) {
 		r.settle(t)
 		r.press(t, 0x110, domain.ModSuper)
 		// The bottom band of 3: 1 stacks below it.
-		r.moveTo(float64(three0.X+three0.W/2), float64(three0.Y+three0.H-5), 2)
+		r.moveTo(float64(three0.X+three0.W/2), float64(three0.Y+three0.H-40), 2)
 		set = r.settle(t)
 		if got := dragRect(t, set, "A", 1); got != one0 {
 			t.Fatalf("tile left its slot during the drag: %+v, was %+v", got, one0)
@@ -586,7 +586,7 @@ func dragFixedNoGapZone(t *testing.T, r *dragRig) {
 		t.Fatalf("fixed gap hint %+v", hints)
 	}
 	// Top band of 2 stacks 1 above it.
-	r.moveTo(float64(two.X+two.W/2), float64(two.Y+3), 3)
+	r.moveTo(float64(two.X+two.W/2), float64(two.Y+40), 3)
 	r.settle(t)
 	// The drop itself must run a spring: the guard counts from here.
 	r.lands = 0
@@ -596,9 +596,11 @@ func dragFixedNoGapZone(t *testing.T, r *dragRig) {
 	}
 }
 
+// A drop on the centre of a tile on another output swaps the two in place:
+// nothing slides, so there is no animated variant.
 func TestDragAcrossOutputs(t *testing.T) {
-	both(t, func(t *testing.T, animated bool) {
-		dragAcrossOutputs(t, startDragMode(t, animated, nil, dragOut, domain.OutputInfo{Name: "B", Width: 800, Height: 600}))
+	synctest.Test(t, func(t *testing.T) {
+		dragAcrossOutputs(t, startDragRig(t, nil, dragOut, domain.OutputInfo{Name: "B", Width: 800, Height: 600}))
 	})
 }
 
@@ -631,6 +633,13 @@ func dragAcrossOutputs(t *testing.T, r *dragRig) {
 	}
 	if w, _ := windowIn(set, "B", 1); !w.Focused {
 		t.Fatal("1 not focused")
+	}
+	// A swap: 3 took 1's place on A.
+	if _, ok := windowIn(set, "A", 3); !ok {
+		t.Fatal("3 not on A")
+	}
+	if _, ok := windowIn(set, "B", 3); ok {
+		t.Fatal("3 still on B")
 	}
 }
 
@@ -699,49 +708,97 @@ func TestLockClearsDrag(t *testing.T) {
 	})
 }
 
+// A still pointer on a scroll edge steps the view after 400 ms, then every
+// 250 ms; leaving the band stops it. The hover timer runs on the bubble's
+// clock: the animated rig's clock never fires timers.
 func TestDragEdgeScroll(t *testing.T) {
-	both(t, func(t *testing.T, animated bool) { dragEdgeScroll(t, startDragMode(t, animated, nil, dragOut)) })
+	synctest.Test(t, func(t *testing.T) {
+		r := startDragRig(t, nil, dragOut)
+		for id := domain.WindowID(1); id <= 4; id++ {
+			r.client <- ports.WindowMapped{ID: id}
+			r.settle(t)
+		}
+		// Back to the first column: 3 and 4 are off screen to the right.
+		for range 3 {
+			r.in(ports.KeyEvent{Keysym: "Left", Mods: domain.ModSuper, Pressed: true})
+			r.in(ports.KeyEvent{Keysym: "Left", Mods: domain.ModSuper})
+		}
+		set := r.settle(t)
+		one := dragRect(t, set, "A", 1)
+		if one.X != 10 {
+			t.Fatalf("%+v", one)
+		}
+		r.moveTo(float64(one.X+one.W/2), float64(one.Y+one.H/2), 1000)
+		r.settle(t)
+		r.press(t, 0x110, domain.ModSuper)
+		r.moveTo(995, 300, 1001)
+		r.settle(t)
+		time.Sleep(399 * time.Millisecond)
+		if got := dragRect(t, r.settle(t), "A", 1); got != one {
+			t.Fatalf("scrolled before 400 ms: %+v", got)
+		}
+		time.Sleep(time.Millisecond)
+		first := dragRect(t, r.settle(t), "A", 1)
+		if first.X >= one.X {
+			t.Fatalf("no scroll at 400 ms: %+v", first)
+		}
+		time.Sleep(249 * time.Millisecond)
+		if got := dragRect(t, r.settle(t), "A", 1); got != first {
+			t.Fatalf("second step too soon: %+v", got)
+		}
+		time.Sleep(time.Millisecond)
+		second := dragRect(t, r.settle(t), "A", 1)
+		if second.X >= first.X {
+			t.Fatalf("no second step at 650 ms: %+v", second)
+		}
+		// Leaving the band stops the steps.
+		r.moveTo(500, 300, 1700)
+		r.settle(t)
+		time.Sleep(time.Second)
+		if got := dragRect(t, r.settle(t), "A", 1); got != second {
+			t.Fatalf("scrolled after leaving the edge: %+v", got)
+		}
+		r.in(ports.KeyEvent{Keysym: "Escape", Mods: domain.ModSuper, Pressed: true})
+		r.settle(t)
+	})
 }
 
-func dragEdgeScroll(t *testing.T, r *dragRig) {
-	for id := domain.WindowID(1); id <= 4; id++ {
-		r.client <- ports.WindowMapped{ID: id}
+// The hover step publishes by itself: no motion follows the still pointer.
+func TestEdgeScrollPublishesWithoutTarget(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := startDragRig(t, nil, dragOut)
+		for id := domain.WindowID(1); id <= 4; id++ {
+			r.client <- ports.WindowMapped{ID: id}
+			r.settle(t)
+		}
+		for range 3 {
+			r.in(ports.KeyEvent{Keysym: "Left", Mods: domain.ModSuper, Pressed: true})
+			r.in(ports.KeyEvent{Keysym: "Left", Mods: domain.ModSuper})
+		}
+		two := dragRect(t, r.settle(t), "A", 2)
+		r.moveTo(float64(two.X+two.W/2), float64(two.Y+two.H/2), 1000)
 		r.settle(t)
-	}
-	// Back to the first column: 3 and 4 are off screen to the right.
-	for range 3 {
-		r.in(ports.KeyEvent{Keysym: "Left", Mods: domain.ModSuper, Pressed: true})
-		r.in(ports.KeyEvent{Keysym: "Left", Mods: domain.ModSuper})
-	}
-	set := r.settle(t)
-	one := dragRect(t, set, "A", 1)
-	if one.X != 10 {
-		t.Fatalf("%+v", one)
-	}
-	r.moveTo(float64(one.X+one.W/2), float64(one.Y+one.H/2), 1000)
-	r.settle(t)
-	r.press(t, 0x110, domain.ModSuper)
-	r.moveTo(995, 300, 1001)
-	first := dragRect(t, r.settle(t), "A", 1)
-	if first.X >= one.X {
-		t.Fatalf("no scroll: %+v", first)
-	}
-	// Under 250 ms: no second step.
-	r.moveTo(996, 300, 1100)
-	if got := dragRect(t, r.settle(t), "A", 1); got != first {
-		t.Fatalf("scrolled too soon: %+v", got)
-	}
-	r.moveTo(997, 300, 1300)
-	second := dragRect(t, r.settle(t), "A", 1)
-	r.moveTo(998, 300, 1600)
-	r.moveTo(999, 300, 1900)
-	end := dragRect(t, r.settle(t), "A", 1)
-	r.moveTo(998, 300, 2200)
-	if got := dragRect(t, r.settle(t), "A", 1); second.X >= first.X || got != end {
-		t.Fatalf("first %+v second %+v end %+v got %+v", first, second, end, got)
-	}
-	r.in(ports.KeyEvent{Keysym: "Escape", Mods: domain.ModSuper, Pressed: true})
-	r.settle(t)
+		r.press(t, 0x110, domain.ModSuper)
+		r.moveTo(float64(dragOut.Width-5), 300, 1001)
+		r.settle(t)
+		// Drain the motion's scene: what comes next is the timer's.
+		select {
+		case <-r.scenes:
+		default:
+		}
+		time.Sleep(400 * time.Millisecond)
+		synctest.Wait()
+		select {
+		case set := <-r.scenes:
+			if got := dragRect(t, set, "A", 2); got.X >= two.X {
+				t.Fatalf("not scrolled: %+v", got)
+			}
+		default:
+			t.Fatal("the hover step published nothing")
+		}
+		r.in(ports.KeyEvent{Keysym: "Escape", Mods: domain.ModSuper, Pressed: true})
+		r.settle(t)
+	})
 }
 
 func TestDragFullFixedStacksInOutlinedColumn(t *testing.T) {
@@ -764,7 +821,7 @@ func dragFullFixedStacksInOutlinedColumn(t *testing.T, r *dragRig) {
 	r.moveTo(float64(four.X+four.W/2), float64(four.Y+four.H/2), 1)
 	r.settle(t)
 	r.press(t, 0x110, domain.ModSuper)
-	r.moveTo(float64(one.X+one.W/2), float64(one.Y+3), 2)
+	r.moveTo(float64(one.X+one.W/2), float64(one.Y+40), 2)
 	r.settle(t)
 	// The drop itself must run a spring: the guard counts from here.
 	r.lands = 0
@@ -782,7 +839,8 @@ func dragFullFixedStacksInOutlinedColumn(t *testing.T, r *dragRig) {
 	// The drop itself must run a spring: the guard counts from here.
 	r.lands = 0
 	r.in(ports.PointerButton{Button: 0x110})
-	if got := columnsOf(r.settle(t), "A"); !slices.EqualFunc(got, [][]domain.WindowID{{4}, {2, 1}, {3}}, slices.Equal) {
+	// Stacked 1 on the centre of 2: they trade places.
+	if got := columnsOf(r.settle(t), "A"); !slices.EqualFunc(got, [][]domain.WindowID{{4, 2}, {1}, {3}}, slices.Equal) {
 		t.Fatal(got)
 	}
 }
@@ -857,49 +915,6 @@ func TestClientDragUsesLastPress(t *testing.T) {
 		}
 
 	})
-}
-
-func TestEdgeScrollPublishesWithoutTarget(t *testing.T) {
-	both(t, func(t *testing.T, animated bool) {
-		edgeScrollPublishesWithoutTarget(t, startDragMode(t, animated, nil, dragOut))
-	})
-}
-
-func edgeScrollPublishesWithoutTarget(t *testing.T, r *dragRig) {
-	for id := domain.WindowID(1); id <= 4; id++ {
-		r.client <- ports.WindowMapped{ID: id}
-		r.settle(t)
-	}
-	for range 3 {
-		r.in(ports.KeyEvent{Keysym: "Left", Mods: domain.ModSuper, Pressed: true})
-		r.in(ports.KeyEvent{Keysym: "Left", Mods: domain.ModSuper})
-	}
-	// Drag 2 into the top gap, then along it to the right edge: no drop
-	// target before or after, but the view scrolls.
-	two := dragRect(t, r.settle(t), "A", 2)
-	edge := float64(dragOut.Width - 30)
-	if float64(two.X+two.W) <= edge {
-		t.Fatalf("2 does not reach the edge: %+v", two)
-	}
-	r.moveTo(float64(two.X+two.W/2), float64(two.Y+two.H/2), 1000)
-	r.settle(t)
-	r.press(t, 0x110, domain.ModSuper)
-	r.moveTo(float64(two.X+two.W/2), 5, 1001)
-	if hints := dragScene(r.settle(t), "A").DropHints; len(hints) != 0 {
-		t.Fatalf("hint in the gap %+v", hints)
-	}
-	r.moveTo(edge, 5, 1300)
-	// An axis event publishes nothing mid-drag: once core took it, the
-	// motion's scene, if any, is in the channel.
-	r.in(ports.PointerAxis{})
-	select {
-	case set := <-r.scenes:
-		if got := dragRect(t, set, "A", 2); got.X >= two.X {
-			t.Fatalf("not scrolled: %+v", got)
-		}
-	default:
-		t.Fatal("edge scroll not published")
-	}
 }
 
 func TestModsFollowKeys(t *testing.T) {
