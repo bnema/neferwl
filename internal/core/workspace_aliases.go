@@ -191,6 +191,9 @@ const FocusWorkspace = workspacedomain.FocusWorkspace
 // MoveColumnToWorkspace is workspace.MoveColumnToWorkspace.
 const MoveColumnToWorkspace = workspacedomain.MoveColumnToWorkspace
 
+// MoveWindowToWorkspace is workspace.MoveWindowToWorkspace.
+const MoveWindowToWorkspace = workspacedomain.MoveWindowToWorkspace
+
 // DropNone is workspace.DropNone.
 const DropNone = workspacedomain.DropNone
 

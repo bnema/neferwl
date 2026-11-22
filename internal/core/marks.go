@@ -171,3 +171,55 @@ func (c *Core) markMove(ctx context.Context, op MarkOp, id, holder WindowID) err
 		return Effect{}
 	})
 }
+
+// targetAllowed reports whether a do request may run a on a marked window.
+func targetAllowed(a Action) bool {
+	switch a {
+	case ActionCloseWindow, ActionToggleFloating, ActionToggleFullscreen, ActionToggleWindowStash:
+		return true
+	}
+	_, op, ok := WorkspaceArg(a)
+	return ok && op == MoveWindowToWorkspace
+}
+
+// runTargeted runs an allowed action on id in its own workspace, without
+// moving the keyboard focus or any current workspace: it borrows the
+// workspace's focus for the action. It does nothing while the target's
+// overview is open, or when id cannot take that focus (another window
+// covers it fullscreen, or it is in a hidden stash).
+func (c *Core) runTargeted(ctx context.Context, id WindowID, a Action) error {
+	if c.ch.Binds != nil {
+		defer c.traceBind(string(a), c.bindCombo, c.bindSource)()
+	}
+	c.bindCombo, c.bindSource = "", ""
+	s, w := c.screenOf(id)
+	if s == nil || s.mon.ov.open {
+		return nil
+	}
+	if a == ActionCloseWindow {
+		return c.layoutAction(ctx, func() Effect { return Effect{Close: id} })
+	}
+	return c.layoutAction(ctx, func() Effect {
+		prev, _ := w.Focused()
+		restore := func() {
+			if prev != 0 && prev != id && w.Has(prev) {
+				w.FocusID(prev)
+			}
+		}
+		w.FocusID(id)
+		if got, _ := w.Focused(); got != id {
+			restore()
+			return Effect{}
+		}
+		if _, _, ok := WorkspaceArg(a); ok {
+			if i, _, ok := s.mon.moveDest(a); ok && s.mon.Workspaces[i] != w {
+				MoveFocused(w, s.mon.Workspaces[i], false)
+			}
+		} else {
+			w.Apply(a)
+		}
+		restore()
+		s.mon.normalize()
+		return Effect{}
+	})
+}
