@@ -732,22 +732,23 @@ func TestDragEdgeScroll(t *testing.T) {
 		r.settle(t)
 		r.press(t, 0x110, domain.ModSuper)
 		r.moveTo(995, 300, 1001)
-		r.settle(t)
+		// 2 shows the view: 1 is drawn as a thumbnail once out of it.
+		two := dragRect(t, r.settle(t), "A", 2)
 		time.Sleep(399 * time.Millisecond)
-		if got := dragRect(t, r.settle(t), "A", 1); got != one {
+		if got := dragRect(t, r.settle(t), "A", 2); got != two {
 			t.Fatalf("scrolled before 400 ms: %+v", got)
 		}
 		time.Sleep(time.Millisecond)
-		first := dragRect(t, r.settle(t), "A", 1)
-		if first.X >= one.X {
+		first := dragRect(t, r.settle(t), "A", 2)
+		if first.X >= two.X {
 			t.Fatalf("no scroll at 400 ms: %+v", first)
 		}
 		time.Sleep(249 * time.Millisecond)
-		if got := dragRect(t, r.settle(t), "A", 1); got != first {
+		if got := dragRect(t, r.settle(t), "A", 2); got != first {
 			t.Fatalf("second step too soon: %+v", got)
 		}
 		time.Sleep(time.Millisecond)
-		second := dragRect(t, r.settle(t), "A", 1)
+		second := dragRect(t, r.settle(t), "A", 2)
 		if second.X >= first.X {
 			t.Fatalf("no second step at 650 ms: %+v", second)
 		}
@@ -755,7 +756,7 @@ func TestDragEdgeScroll(t *testing.T) {
 		r.moveTo(500, 300, 1700)
 		r.settle(t)
 		time.Sleep(time.Second)
-		if got := dragRect(t, r.settle(t), "A", 1); got != second {
+		if got := dragRect(t, r.settle(t), "A", 2); got != second {
 			t.Fatalf("scrolled after leaving the edge: %+v", got)
 		}
 		r.in(ports.KeyEvent{Keysym: "Escape", Mods: domain.ModSuper, Pressed: true})

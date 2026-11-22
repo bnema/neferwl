@@ -139,7 +139,9 @@ func (c *Core) dropLabelPx(sc *screen) float64 {
 	return ports.HintFontPixels(sc.info.Width, sc.info.Height, sc.info.PhysicalW, sc.info.PhysicalH, scale, c.cfg.Hint.Size)
 }
 
-// dropShown reports whether sc draws window id at its size.
+// dropShown reports whether sc draws window id at its size. The preview
+// gives a thumbnail (advanceDropPreview) and the scene a proxy (dropProxy)
+// exactly when it does not.
 func (c *Core) dropShown(sc *screen, id WindowID) bool {
 	view := sc.mon.viewport()
 	for _, pl := range sc.shown {
@@ -168,20 +170,21 @@ func (c *Core) dropThumb(sc *screen, id WindowID, buf *[]Placement) (Rect, float
 	if nat.W <= 0 || nat.H <= 0 {
 		return Rect{}, 0
 	}
-	o := sc.mon.Output()
+	// The renderer clips to the viewport frame: keep the thumbnail in it.
+	f := sc.mon.Frame()
 	tw := max(int(math.Round(float64(nat.W)*dropThumbScale)), dropThumbMinW)
 	zoom := float64(tw) / float64(nat.W)
 	th := max(int(math.Round(float64(nat.H)*zoom)), 1)
 	x := int(c.cursorX) - sc.x + dropThumbOffset
 	y := int(c.cursorY) - sc.y + dropThumbOffset
-	x = max(min(x, o.W-tw), 0)
-	y = max(min(y, o.H-th), 0)
+	x = max(min(x, f.X+f.W-tw), f.X)
+	y = max(min(y, f.Y+f.H-th), f.Y)
 	return Rect{X: x, Y: y, W: tw, H: th}, zoom
 }
 
 // dropProxy adds the thumbnail window of the drag preview of sc to ws,
-// keeping its IDs unique: it replaces a hidden entry of the window (its
-// workspace switched away) and is not added when ws draws it.
+// keeping its IDs unique: it replaces the window's entry, which sc does
+// not draw (dropShown: hidden, or out of the view), else it is added.
 func (c *Core) dropProxy(ws []domain.SceneWindow, sc *screen) []domain.SceneWindow {
 	d := c.drag
 	if d == nil || d.target.screen != sc || d.target.preview == nil || d.target.preview.Thumb == 0 || d.anim.zoom <= 0 {
@@ -189,11 +192,12 @@ func (c *Core) dropProxy(ws []domain.SceneWindow, sc *screen) []domain.SceneWind
 	}
 	p := d.target.preview
 	proxy := domain.SceneWindow{ID: p.Thumb, Proxy: true, Rect: p.ThumbRect, Zoom: d.anim.zoom}
+	if c.dropShown(sc, p.Thumb) {
+		return ws
+	}
 	for i, w := range ws {
-		if w.ID == p.Thumb {
-			if w.Hidden && !w.Popup {
-				ws[i] = proxy
-			}
+		if w.ID == p.Thumb && !w.Popup {
+			ws[i] = proxy
 			return ws
 		}
 	}

@@ -583,15 +583,15 @@ func (c *Core) animate(now time.Time, only *screen) {
 	}
 }
 
-// sliding reports whether a spring, focus flash or position hint fade runs
-// on the named output.
+// sliding reports whether a spring, focus flash, position hint fade or
+// drop preview slide or ramp runs on the named output.
 func (c *Core) sliding(output string) bool {
 	i := c.screenIndex(output)
 	return i >= 0 && (c.screens[i].springing() || c.flashing(c.screens[i]) || c.positionHintFading(c.screens[i]) || c.dropAnimating(c.screens[i]))
 }
 
-// animating reports whether a spring, focus flash or position hint fade
-// runs on any output.
+// animating reports whether a spring, focus flash, position hint fade or
+// drop preview slide or ramp runs on any output.
 func (c *Core) animating() bool {
 	if c.flash.running != nil || c.dropAnimating(nil) {
 		return true

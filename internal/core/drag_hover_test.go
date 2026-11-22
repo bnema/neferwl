@@ -188,3 +188,34 @@ func TestDragHoverStopsWithDrag(t *testing.T) {
 		})
 	}
 }
+
+// A dragged column scrolled out of the view gets a thumbnail and exactly
+// one proxy of it.
+func TestDragScrolledOutTileHasProxy(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := startDragRig(t, nil, dragOut)
+		one := fourColumnsAtStart(t, r)
+		grabTile(t, r, one, 1)
+		r.moveTo(995, 300, 2)
+		r.settle(t)
+		time.Sleep(400*time.Millisecond + 2*250*time.Millisecond)
+		s := dragScene(r.settle(t), "A")
+		if p := s.DropPreview; p == nil || p.Thumb != 1 {
+			t.Fatalf("no thumbnail: %+v", p)
+		}
+		n := 0
+		for _, w := range s.Windows {
+			if w.ID == 1 {
+				n++
+				if !w.Proxy {
+					t.Errorf("1 drawn as %+v", w)
+				}
+			}
+		}
+		if n != 1 {
+			t.Fatalf("%d entries of 1", n)
+		}
+		r.in(ports.KeyEvent{Keysym: "Escape", Mods: domain.ModSuper, Pressed: true})
+		r.settle(t)
+	})
+}

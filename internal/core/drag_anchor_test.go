@@ -188,9 +188,13 @@ func TestDragHoverCascadeStepsBand(t *testing.T) {
 		r.moveTo(500, 597, 2)
 		r.settle(t)
 		time.Sleep(400 * time.Millisecond)
-		got := dragRect(t, r.settle(t), "A", 1)
-		if got.Y >= one.Y || one.Y-got.Y < one.H/2 {
-			t.Fatalf("no band step: %+v from %+v", got, one)
+		// 1 left the view (a thumbnail now): 2's band shows.
+		set = r.settle(t)
+		if w, _ := windowIn(set, "A", 1); !w.Proxy {
+			t.Fatalf("1 still drawn: %+v", w)
+		}
+		if got := dragRect(t, set, "A", 2); got.Y != one.Y {
+			t.Fatalf("no band step: 2 at %+v, band at %+v", got, one)
 		}
 		r.in(ports.KeyEvent{Keysym: "Escape", Mods: domain.ModSuper, Pressed: true})
 		r.settle(t)
