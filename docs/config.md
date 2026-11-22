@@ -619,6 +619,7 @@ While a tile is dragged, the anchor under the pointer is filled in `border.activ
 
 - `tab` adds the dragged window to the target's column, right after the target, and makes the whole column [tabbed](#tabbed-columns), with the dragged window shown. On a tabbed column, the `top` and `bottom` zones are removed.
 - `swap` trades the dragged window and the target. `column` makes the dragged window a new column on that side. `stack` puts it above or below the target in its column.
+- A window that shares its column (stacked or tabbed) can be dropped on its own left or right band to become a new column on that side.
 - On an edge, `column` adds a first or last column, `stash` [stashes](#stash) the window, and `float` makes it a float centered on the pointer. These act on release.
 - `scroll` and `workspace` act while the pointer rests on the edge: after 400 ms, then every 250 ms while it stays there. The drag survives a workspace switch, and a release drops the window on the workspace now shown.
 
