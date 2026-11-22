@@ -1,6 +1,11 @@
 package core
 
-import "github.com/bnema/neferwl/internal/domain"
+import (
+	"context"
+
+	"github.com/bnema/neferwl/internal/domain"
+	"github.com/bnema/neferwl/internal/ports"
+)
 
 // tabBarScratch holds the bars a scene build computes before it knows
 // whether they changed. Owner goroutine only; never published.
@@ -80,3 +85,61 @@ func placementIndex(layout []Placement, id WindowID) int {
 	return -1
 }
 
+
+// tabAt is the tab of sc's published bars at lx, ly (output-local
+// logical); over is set on a bar even between tabs.
+func tabAt(sc *screen, lx, ly float64) (id WindowID, over bool) {
+	in := func(r Rect) bool {
+		return lx >= float64(r.X) && lx < float64(r.X+r.W) && ly >= float64(r.Y) && ly < float64(r.Y+r.H)
+	}
+	for i := range sc.last.TabBars {
+		bar := &sc.last.TabBars[i]
+		if !in(bar.Rect) {
+			continue
+		}
+		for _, t := range bar.Tabs {
+			if in(t.Rect) {
+				return t.Window, true
+			}
+		}
+		return 0, true
+	}
+	return 0, false
+}
+
+// tabClick handles a press on a tab bar of the screen under the pointer:
+// a left press shows and focuses the tab, with cmd held it starts that
+// tab's tile drag; other buttons do nothing. No client sees the press or
+// its release. handled is false off the bars.
+func (c *Core) tabClick(ctx context.Context, v ports.PointerButton) (handled bool, err error) {
+	if !v.Pressed || c.pointer != 0 || c.grab != 0 || c.held() != 0 {
+		return false, nil
+	}
+	i := c.pointerScreenAt(c.cursorX, c.cursorY, v.Device)
+	if i < 0 {
+		return false, nil
+	}
+	sc := c.screens[i]
+	if sc.mon.previewing() {
+		return false, nil
+	}
+	id, over := tabAt(sc, c.cursorX-float64(sc.x), c.cursorY-float64(sc.y))
+	if !over {
+		return false, nil
+	}
+	w := sc.mon.Current()
+	if v.Button != btnLeft || id == 0 || w.ColumnOf(id) < 0 {
+		c.buttons[v.Button], c.swallow[v.Button] = true, true
+		return true, nil
+	}
+	now := c.now()
+	before := c.snapshot(now)
+	c.focusClick(sc, w, id, false)
+	c.transition(before, now)
+	if !c.synthetic && c.cmdMod != 0 && c.mods&c.cmdMod != 0 && !c.keyboard.inhibited(c.keyboardFocus()) {
+		// The drag owns the button: its release ends the drag.
+		return true, c.beginDrag(ctx, id, v.Button, false, 0)
+	}
+	c.buttons[v.Button], c.swallow[v.Button] = true, true
+	return true, c.publish(ctx)
+}

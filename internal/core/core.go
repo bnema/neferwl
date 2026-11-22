@@ -1202,7 +1202,9 @@ func (c *Core) hitForDevice(x, y float64, device domain.InputDeviceID) (WindowID
 		}
 	}
 	if id == 0 {
-		if blocked {
+		// A tab bar takes the pointer from what is under it: no client
+		// gets it (pointerButton handles its clicks).
+		if _, over := tabAt(sc, lx, ly); blocked || over {
 			return 0, 0, 0
 		}
 		return c.layerAt(sc, lx, ly, false)

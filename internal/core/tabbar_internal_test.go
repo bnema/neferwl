@@ -34,3 +34,24 @@ func TestTabBarsUnchangedAllocs(t *testing.T) {
 		t.Fatalf("unchanged rebuild allocates %v", n)
 	}
 }
+
+// The bar hit-test finds the tab, the bar between tabs, nothing off it,
+// without allocating.
+func TestTabAt(t *testing.T) {
+	sc := &screen{}
+	sc.last.TabBars = []domain.TabBar{{Rect: Rect{X: 10, Y: 0, W: 100, H: 20}, Tabs: []domain.TabTitle{
+		{Rect: Rect{X: 10, W: 50, H: 20}, Window: 1}, {Rect: Rect{X: 60, W: 40, H: 20}, Window: 2},
+	}}}
+	for _, tc := range []struct {
+		x, y float64
+		id   WindowID
+		over bool
+	}{{15, 5, 1, true}, {70, 19.5, 2, true}, {105, 5, 0, true}, {5, 5, 0, false}, {50, 20, 0, false}} {
+		if id, over := tabAt(sc, tc.x, tc.y); id != tc.id || over != tc.over {
+			t.Fatalf("at %v,%v: %d %v", tc.x, tc.y, id, over)
+		}
+	}
+	if n := testing.AllocsPerRun(100, func() { tabAt(sc, 70, 5) }); n != 0 {
+		t.Fatalf("tabAt allocates %v", n)
+	}
+}

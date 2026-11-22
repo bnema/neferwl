@@ -255,6 +255,9 @@ func (c *Core) pointerButton(ctx context.Context, v ports.PointerButton) error {
 	if c.grab == 0 && c.pointerInputBlocked() {
 		return nil
 	}
+	if handled, err := c.tabClick(ctx, v); err != nil || handled {
+		return err
+	}
 	if started, err := c.startPointerGrab(ctx, v); err != nil || started {
 		return err
 	}
