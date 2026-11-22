@@ -420,6 +420,7 @@ bind.XF86MonBrightnessDown = spawn brightnessctl set 5%-
 | `hint` | Label the clickable elements on the focused screen, then click the one you type; OCR URLs open with `xdg-open` ([hint mode](#hint-mode)) |
 | `switch-column-next` / `-prev` | Switch to the previously used column. Hold `cmd` and press again to go further back |
 | `maximize-column` | Toggle full width for the focused column |
+| `toggle-column-tabbed` | Show the focused column as [tabs](#tabbed-columns), or back as a stack |
 | `cycle-column-width` | Grow the focused column by one [cell](#column-widths), then back to equal widths |
 | `set-column-width <+N\|-N>` | Widen or narrow the focused column by N cells |
 | `set-window-height <+N%\|-N%>` | Change the focused window's share of its column |
@@ -463,6 +464,7 @@ Note on `toggle-fullscreen`: a parentless window whose first committed size is e
 | `cmd+alt+up/down`, `cmd+alt+k/j` | `set-window-height -10%/+10%` |
 | `cmd+r` | `cycle-column-width` |
 | `cmd+f` | `maximize-column` |
+| `cmd+t` | `toggle-column-tabbed` |
 | `cmd+shift+f` | `toggle-fullscreen` |
 | `cmd+shift+space` | `toggle-floating` |
 | `cmd+s` | `toggle-stash-visible` |
@@ -560,6 +562,19 @@ The default layout. Columns sit side by side in bands of up to `max-columns`, st
 - A tiled window that a fullscreen window's program launches as a different program (a game started from Steam Big Picture, found by [process lineage](#process-lineage-shell-exclusions)) opens fullscreen too, in a column of its own to the right in scroll or a band of its own below in cascade, and fills the screen; the launcher stays fullscreen next to it. Moving the focus between them changes which one fills the screen, with no fullscreen toggle, and closing the program returns to the fullscreen launcher. Windows of the launcher's own app, floating and parented windows keep the behaviour above; fixed opens the program as a float above the launcher.
 - `move-column-left/right` on a fullscreen window (tiled or floating) sends it to the neighbor monitor, where it stays fullscreen and focused; with no neighbor monitor nothing moves.
 - A band left empty goes away. A smaller `max-columns` moves the extra columns of a band to a new band below it.
+
+### Tabbed columns
+
+A tabbed column shows one of its windows at a time, under a title bar with one tab per window.
+
+- `toggle-column-tabbed` (`cmd+t`) turns the focused column into tabs, or back into a stack with equal row heights. It does nothing on a float, a stash window or a column with one window.
+- `focus-window-up/down` switches tabs. At the first or last tab it leaves the column like in a stack. `move-window-up/down` reorders the tabs.
+- The bar shows each window's title, cut with `…` when too long. The visible tab is filled with `border.active`, the rest of the bar with `border.inactive`. Its height follows the [hint](#hint-mode) font size. With `layout.gaps`, a gap separates the bar from the window, and the bar and the active tab are rounded with `border.radius`.
+- A click on a tab shows it; the window under it gets no click. `cmd` + drag on a tab drags that window, even a hidden one.
+- Dropping a window on another window's center (`drop.window.center = tab`, the default) adds it to that window's column as a new tab and makes the whole column tabbed.
+- A tabbed column has no row borders and ignores `set-window-height`.
+- A column left with one window is a normal column again.
+- The overview shows only the visible tab. A fullscreen tab covers the bar.
 
 ### Column widths
 
