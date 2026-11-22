@@ -65,6 +65,7 @@ func TestDragSideNoneWidensCenter(t *testing.T) {
 		r := startDragMode(t, animated, func(c *domain.Config) {
 			c.Layout.MaxColumns = 3
 			c.Drop.SetWindow(domain.DropSideLeft, domain.DropNone)
+			c.Drop.SetWindow(domain.DropSideCenter, domain.DropSwap)
 		}, dragOut)
 		set := dragThreeColumns(t, r)
 		// The left band of 1 is the centre now: lone 3 swaps with 1.

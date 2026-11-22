@@ -49,7 +49,7 @@ func (w *Workspace) stashWindow(id WindowID) {
 func (w *Workspace) tilePlace(id WindowID) *origPlace {
 	c := w.Columns[w.Focus]
 	lone := len(c.Windows) == 1
-	back := &origPlace{col: w.Focus, row: c.Focus, slot: c.Slot, cells: c.Cells, fullWidth: c.FullWidth && lone}
+	back := &origPlace{col: w.Focus, row: c.Focus, slot: c.Slot, cells: c.Cells, fullWidth: c.FullWidth && lone, tabbed: c.Tabbed}
 	for _, v := range c.Windows {
 		if v != id {
 			back.stacked = append(back.stacked, v)
@@ -149,8 +149,14 @@ func (w *Workspace) restore(id WindowID, back *origPlace) {
 				row++
 			}
 		}
+		// Re-tab only what Normalize untabbed when the column fell to one
+		// window; a column the user untabbed or a stack stays as it is.
+		retab := back.tabbed && !c.Tabbed && len(c.Windows) == 1
 		c.Windows = slices.Insert(c.Windows, row, id)
 		c.Focus = row
+		if retab {
+			c.Tabbed, c.Shares = true, nil
+		}
 		if w.Engine().MaximizeHides() && w.Focus != i {
 			w.Unmaximize()
 		}

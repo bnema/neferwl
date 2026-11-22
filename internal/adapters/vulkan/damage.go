@@ -5,6 +5,7 @@ import (
 	"math"
 	"slices"
 
+	"github.com/bnema/neferwl/internal/adapters/overlaydraw"
 	"github.com/bnema/neferwl/internal/domain"
 )
 
@@ -32,6 +33,10 @@ type damageRegion struct {
 	contentRects []domain.Rect
 	// why counts the reasons of full redraws (the renderer's; nil: none).
 	why *fullRedraws
+	// fontGen is the font generation (overlaydraw.FontGen) read once when
+	// the frame starts: the walk tags compositor text with it and the
+	// target holds it, so a font swapped mid-frame redraws the next one.
+	fontGen uint64
 }
 
 // heldWindow is a window a target holds: its content Seq and rect.
@@ -50,8 +55,14 @@ func newDamage(tg *target, s domain.Scene, bounds image.Rectangle) *damageRegion
 // number (setup, tests): redraw all. The same Seq keeps everything; a new
 // one keeps all but what sceneDelta finds changed.
 func (d *damageRegion) hold(tg *target, s domain.Scene) {
+	d.fontGen = overlaydraw.FontGen()
 	if !tg.valid || s.Seq == 0 {
 		d.why.count(fullTarget)
+		return
+	}
+	if tg.fontGen != d.fontGen {
+		// Compositor text drawn in the old font.
+		d.why.count(fullFont)
 		return
 	}
 	if tg.sceneSeq == s.Seq {
@@ -153,13 +164,14 @@ func (d *damageRegion) pixels() int {
 }
 
 // window records a window drawn in rect (physical): if its content changed
-// and no finer damage comes (content), the whole rect is redrawn.
+// and no finer damage comes (content), the whole rect is redrawn. The
+// target holds the first rect of a window drawn twice (its slot, then its
+// drag thumbnail), but each rect is damaged.
 func (d *damageRegion) window(id domain.WindowID, c domain.SurfaceContent, rect image.Rectangle) {
-	if d.seen[id] {
-		return
+	if !d.seen[id] {
+		d.seen[id] = true
+		d.drawn[id] = heldWindow{seq: c.Seq, rect: rect}
 	}
-	d.seen[id] = true
-	d.drawn[id] = heldWindow{seq: c.Seq, rect: rect}
 	if d.held == nil {
 		return
 	}
@@ -196,6 +208,7 @@ const (
 	fullEmpty                       // the window has no content
 	fullChildren                    // the window has subsurfaces
 	fullHistory                     // the damage history does not reach the held content
+	fullFont                        // the font of compositor text changed
 	fullReasons
 )
 
@@ -297,7 +310,7 @@ func (tg *target) hold(s domain.Scene, d *damageRegion) {
 	tg.heldLayers = append(tg.heldLayers[:0], s.Layers...)
 	tg.heldIndicators = append(tg.heldIndicators[:0], s.CaptureIndicators...)
 	tg.heldOverlays = append(tg.heldOverlays[:0], s.Overlays...)
-	tg.valid, tg.sceneSeq, tg.scene, tg.windows = true, s.Seq, s, d.drawn
+	tg.valid, tg.sceneSeq, tg.scene, tg.windows, tg.fontGen = true, s.Seq, s, d.drawn, d.fontGen
 	tg.scene.Windows, tg.scene.Separators, tg.scene.Layers = tg.heldWindows, tg.heldSeparators, tg.heldLayers
 	tg.scene.CaptureIndicators = tg.heldIndicators
 	if s.DropPreview != nil {
@@ -336,7 +349,7 @@ func sceneDelta(old, cur domain.Scene, phys func(domain.Rect) image.Rectangle, l
 	if old.Security != cur.Security || old.Output != cur.Output ||
 		old.OutputWidth != cur.OutputWidth || old.OutputHeight != cur.OutputHeight ||
 		old.Scale != cur.Scale || old.Transform != cur.Transform || old.Off != cur.Off ||
-		old.Physical != cur.Physical || old.Background != cur.Background || old.Border != cur.Border ||
+		old.Physical != cur.Physical || old.Font != cur.Font || old.FontGen != cur.FontGen || old.Background != cur.Background || old.Border != cur.Border ||
 		old.WorkspaceClip != cur.WorkspaceClip || old.TileInset != cur.TileInset || old.Dim != cur.Dim || old.DimBehind != cur.DimBehind ||
 		old.Capture != nil || cur.Capture != nil || old.CaptureScene != nil || cur.CaptureScene != nil ||
 		!slices.Equal(old.Layers, cur.Layers) ||
@@ -388,6 +401,8 @@ func sceneDelta(old, cur domain.Scene, phys func(domain.Rect) image.Rectangle, l
 		}
 	}
 	area = area.Union(separatorDelta(old.Separators, cur.Separators, phys))
+	area = area.Union(tabBarDelta(old.TabBars, cur.TabBars, phys))
+	area = area.Union(tabRingDelta(old, area, phys)).Union(tabRingDelta(cur, area, phys))
 	if area.Dx()*area.Dy() > limit {
 		return image.Rectangle{}, false
 	}
@@ -495,4 +510,38 @@ func countSeparator(list []domain.Separator, sep domain.Separator) int {
 		}
 	}
 	return n
+}
+
+// tabRingDelta is the bars of s whose visible tab is in area: its ring
+// (border, flash) encloses the bar, so a ring change repaints the bar too.
+func tabRingDelta(s domain.Scene, area image.Rectangle, phys func(domain.Rect) image.Rectangle) image.Rectangle {
+	var out image.Rectangle
+	if area.Empty() {
+		return out
+	}
+	for i := range s.Windows {
+		r := s.Windows[i].Rect
+		if u, ok := tabRing(s.TabBars, s.Windows[i].ID, r); ok && phys(r).Overlaps(area) {
+			out = out.Union(phys(u))
+		}
+	}
+	return out
+}
+
+// tabBarDelta is the area of the bars that differ between old and cur: the
+// old and new rect of each changed bar, every bar of the longer list past
+// the shorter one.
+func tabBarDelta(old, cur []domain.TabBar, phys func(domain.Rect) image.Rectangle) image.Rectangle {
+	var area image.Rectangle
+	for i := range max(len(old), len(cur)) {
+		switch {
+		case i >= len(old):
+			area = area.Union(phys(cur[i].Rect))
+		case i >= len(cur):
+			area = area.Union(phys(old[i].Rect))
+		case !domain.SameTabBar(old[i], cur[i]):
+			area = area.Union(phys(old[i].Rect)).Union(phys(cur[i].Rect))
+		}
+	}
+	return area
 }

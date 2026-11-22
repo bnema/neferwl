@@ -45,7 +45,7 @@ bind.Super+w = workspace web
 
 func TestDropKeysInvalid(t *testing.T) {
 	for _, tc := range []struct{ line, msg string }{
-		{"drop.window.center = column", `invalid value "column" (allowed: none, swap)`},
+		{"drop.window.center = column", `invalid value "column" (allowed: none, swap, tab)`},
 		{"drop.window.top = column", "invalid value"},
 		{"drop.gap = swap", "invalid value"},
 		{"drop.edge.left = bogus", "invalid value"},
@@ -100,5 +100,12 @@ drop.DP-1.edge.left = stash
 	}
 	if len(w) != 1 || !strings.Contains(w[0].Msg, "drop.DP-1.edge.left") {
 		t.Fatalf("warnings %v", w)
+	}
+}
+
+func TestDropCenterTab(t *testing.T) {
+	c, w := parseString(t, "drop.window.center = tab\ndrop.window.left = tab\n")
+	if c.Drop.Window[domain.DropSideCenter] != domain.DropTab || len(w) != 1 || !strings.Contains(w[0].Msg, "invalid value") {
+		t.Fatalf("center %v, warnings %v", c.Drop.Window[domain.DropSideCenter], w)
 	}
 }

@@ -65,7 +65,7 @@ func (b *composeBatch) add(dr draw, resources, maxDraws int) bool {
 			b.used++
 		}
 	}
-	b.instances = append(b.instances, instanceDraw{pc: dr.pc, resource: [4]uint32{uint32(index), dr.radii[0], dr.radii[1]}, round: dr.round, roundInner: dr.roundInner})
+	b.instances = append(b.instances, instanceDraw{pc: dr.pc, resource: [4]uint32{uint32(index), dr.radii[0], dr.radii[1], dr.square}, round: dr.round, roundInner: dr.roundInner})
 	return true
 }
 

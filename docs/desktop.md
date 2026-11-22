@@ -164,7 +164,7 @@ Each window also carries metadata keys:
 
 The top-level `mode` key is the active [bind mode](config.md#modes), empty in default.
 
-The `workspaces` list holds every workspace with its `visible` flag, its columns and the windows in them, each with `x`, `y`, `width` and `height` in logical pixels of its output. A workspace's `cover` is its active fullscreen window, 0 if none; a window's `fullscreen` is also set for the other fullscreen windows it holds, which sit output-sized in their own column or band. The file is written at most once per second.
+The `workspaces` list holds every workspace with its `visible` flag, its columns and the windows in them, each with `x`, `y`, `width` and `height` in logical pixels of its output. A workspace's `cover` is its active fullscreen window, 0 if none; a window's `fullscreen` is also set for the other fullscreen windows it holds, which sit output-sized in their own column or band. A tabbed column has `tabbed` set and `active`, the 1-based row of its visible tab (0 when not tabbed); each of its windows reports the rect it has when shown, below the bar. The file is written at most once per second.
 
 `neferwl state` prints it. On a headless session it reads the live state over
 the [control socket](control.md) (`neferwl -s ID state`); otherwise it reads the

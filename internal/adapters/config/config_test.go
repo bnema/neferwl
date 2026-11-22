@@ -56,10 +56,10 @@ func TestNavigationEdge(t *testing.T) {
 func TestDefaultsAndLoad(t *testing.T) {
 	t.Setenv("TERMINAL", "")
 	d := Defaults()
-	if d.Keyboard.RepeatRate != 25 || d.Keyboard.CmdKey != "super" || !d.Render.DirectScanout || len(d.Binds) != 79 || d.Layout.MaxColumns != 2 || d.Floating.Dim != 0.3 {
+	if d.Keyboard.RepeatRate != 25 || d.Keyboard.CmdKey != "super" || !d.Render.DirectScanout || len(d.Binds) != 82 || d.Layout.MaxColumns != 2 || d.Floating.Dim != 0.3 {
 		t.Fatalf("defaults: %+v", d)
 	}
-	if d.Binds["Cmd+s"] != "toggle-stash-visible" || d.Binds["Cmd+Shift+s"] != "toggle-window-stash" || d.Binds["Cmd+o"] != "toggle-overview" || d.Binds["Cmd+f"] != "maximize-column" || d.Binds["Cmd+Shift+f"] != "toggle-fullscreen" || d.Binds["Cmd+Shift+h"] != "move-column-left" || d.Binds["Cmd+j"] != "focus-window-down" || d.Binds["Cmd+Shift+code:2"] != "move-column-to-workspace 1" || d.Focus.FollowMove || d.Focus.FollowMouse {
+	if d.Binds["Cmd+s"] != "toggle-stash-visible" || d.Binds["Cmd+Shift+s"] != "toggle-window-stash" || d.Binds["Cmd+o"] != "toggle-overview" || d.Binds["Cmd+f"] != "maximize-column" || d.Binds["Cmd+t"] != "toggle-column-tabbed" || d.Binds["Cmd+Shift+f"] != "toggle-fullscreen" || d.Binds["Cmd+Shift+h"] != "move-column-left" || d.Binds["Cmd+j"] != "focus-window-down" || d.Binds["Cmd+Shift+code:2"] != "move-column-to-workspace 1" || d.Focus.FollowMove || d.Focus.FollowMouse {
 		t.Fatal(d.Binds)
 	}
 	if d.Binds["Cmd+Shift+Up"] != "move-window-up" || d.Binds["Cmd+Shift+j"] != "move-window-down" || d.Binds["Alt+Cmd+Left"] != "set-column-width -1" || d.Binds["Alt+Cmd+l"] != "set-column-width +1" || d.Binds["Alt+Cmd+k"] != "set-window-height -10%" || d.Binds["Cmd+Ctrl+Shift+Down"] != "move-workspace-next" || d.Binds["Cmd+Ctrl+Shift+k"] != "move-workspace-prev" || d.Binds["Cmd+Shift+space"] != "toggle-floating" {
@@ -1409,5 +1409,31 @@ func TestFollowMouseDelay(t *testing.T) {
 				t.Fatalf("delay %s warnings %v", c.Focus.FollowMouseDelay, warnings)
 			}
 		})
+	}
+}
+
+// font takes a path as is; the adapter that draws text reads it.
+func TestParseFont(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	font := filepath.Join(home, "Some Font.ttf")
+	if err := os.WriteFile(font, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, w, err := Parse(strings.NewReader("font = ~/Some Font.ttf\n"))
+	if err != nil || len(w) != 0 || c.Font != font {
+		t.Fatalf("font %q, %v, %v", c.Font, w, err)
+	}
+	c, w, err = Parse(strings.NewReader("font = /nonexistent/x.ttf\n"))
+	if err != nil || len(w) != 1 || !strings.Contains(w[0].Msg, "font:") || c.Font != "/nonexistent/x.ttf" {
+		t.Fatalf("bad font %q, %v, %v", c.Font, w, err)
+	}
+	// A directory is no font file: a warning, the path kept.
+	c, w, err = Parse(strings.NewReader("font = " + home + "\n"))
+	if err != nil || len(w) != 1 || !strings.Contains(w[0].Msg, "not a regular file") || c.Font != home {
+		t.Fatalf("directory font %q, %v, %v", c.Font, w, err)
+	}
+	if c, _, _ := Parse(strings.NewReader("")); c.Font != "" {
+		t.Fatalf("default font %q", c.Font)
 	}
 }

@@ -16,7 +16,7 @@ import (
 // and in NewFrom.
 var workspaceFields = map[string]bool{ // true: setting
 	"ID": false, "Name": false, "OverviewAfter": false, "recent": false, "view": false,
-	"monitor": true, "reserved": true, "size": false, "border": true, "left": false,
+	"monitor": true, "reserved": true, "size": false, "border": true, "TabBar": true, "left": false,
 	"Floats": false, "floatFocus": false, "Stash": false, "stashAt": false, "stashView": false,
 	"stashFocus": false, "stashHidden": false, "stashWidth": true, "stashGap": true,
 	"hiddenFullscreen": false, "stashOver": false, "Home": false, "HomePos": false, "TermAt": false,
@@ -41,6 +41,7 @@ func templateWorkspace() *Workspace {
 	t.SetGaps(7)
 	t.SetMaxColumns(3)
 	t.SetBorder(2)
+	t.TabBar = 24
 	t.SetStash(30, 4)
 	t.SetOverflow(OverflowFixed)
 	return t
@@ -79,7 +80,7 @@ func TestNewFromCopiesOnlySettings(t *testing.T) {
 		if w.ID != 9 {
 			t.Fatalf("ID %d", w.ID)
 		}
-		if w.monitor != tpl.monitor || w.reserved != tpl.reserved || w.border != tpl.border ||
+		if w.monitor != tpl.monitor || w.reserved != tpl.reserved || w.border != tpl.border || w.TabBar != tpl.TabBar ||
 			w.stashWidth != tpl.stashWidth || w.stashGap != tpl.stashGap ||
 			w.Gaps != tpl.Gaps || w.MaxColumns != tpl.MaxColumns || w.Overflow != tpl.Overflow {
 			t.Fatalf("settings differ: %+v from %+v", w, tpl)

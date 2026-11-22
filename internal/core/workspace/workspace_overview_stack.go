@@ -259,6 +259,19 @@ func (w *Workspace) previewItem(item StackItem, selected int, axis layout.Axis, 
 	r := Rect{W: max(w.Usable.W-2*g, 0), H: max(w.Usable.H-2*g, 0)}
 	r.X = (w.Usable.W - r.W) / 2
 	r.Y = (w.Usable.H - r.H) / 2
+	if c.Tabbed {
+		id := c.Selected()
+		tiles := make([]Placement, 0, len(c.Windows))
+		for _, t := range c.Windows {
+			if t == id {
+				tiles = append(tiles, Placement{ID: id, Rect: r, Focused: true, Fullscreen: id == w.Cover()})
+			} else {
+				// Hidden tabs keep their last configure.
+				tiles = append(tiles, Placement{ID: t, Hidden: true})
+			}
+		}
+		return w.previewRowTiles(axis, slot, dim, lit, false, tiles, w.Usable.W, r)
+	}
 	tiles := make([]Placement, 0, len(c.Windows))
 	w.rowBuf = layout.RowRectsInto(w.rowBuf[:0], r, c, g)
 	for j, t := range w.rowBuf {

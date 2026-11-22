@@ -44,8 +44,10 @@ type target struct {
 	// immutable for core, but output adapters reuse their slices in place
 	// (DRM overlay frames, capture), so the compared slices of scene point
 	// into the target's own buffers, copied by hold.
-	valid          bool
-	sceneSeq       uint64
+	valid    bool
+	sceneSeq uint64
+	// fontGen is the overlaydraw.FontGen its text was drawn with.
+	fontGen        uint64
 	scene          domain.Scene
 	heldWindows    []domain.SceneWindow
 	heldSeparators []domain.Separator

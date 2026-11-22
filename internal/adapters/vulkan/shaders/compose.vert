@@ -11,7 +11,7 @@ struct Draw {
     vec4 crop; // source crop bounds in buffer pixels
     uvec4 buf; // pixel-buffer first word, width, height; YUV metadata in w
     uvec4 misc; // mode, flags, target width, target height
-    uvec4 resourceIndex; // slot, outer radius bits, inner radius bits, padding
+    uvec4 resourceIndex; // slot, outer radius bits, inner radius bits, square-corner mask
     vec4 round;
     vec4 roundInner;
 };
@@ -28,6 +28,7 @@ layout(location = 0) out Parameters {
     flat vec4 round;
     flat vec4 roundInner;
     flat vec2 radii;
+    flat uint square;
 } parameters;
 
 void main() {
@@ -47,4 +48,5 @@ void main() {
     parameters.round = d.round;
     parameters.roundInner = d.roundInner;
     parameters.radii = uintBitsToFloat(d.resourceIndex.yz);
+    parameters.square = d.resourceIndex.w;
 }

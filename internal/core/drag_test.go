@@ -321,7 +321,10 @@ func TestDragEscapeRestoresFloat(t *testing.T) {
 
 func TestDragTileZonesAndHints(t *testing.T) {
 	both(t, func(t *testing.T, animated bool) {
-		dragTileZonesAndHints(t, startDragMode(t, animated, func(c *domain.Config) { c.Layout.MaxColumns = 3 }, dragOut))
+		dragTileZonesAndHints(t, startDragMode(t, animated, func(c *domain.Config) {
+			c.Layout.MaxColumns = 3
+			c.Drop.SetWindow(domain.DropSideCenter, domain.DropSwap)
+		}, dragOut))
 	})
 }
 
@@ -582,8 +585,8 @@ func dragFixedNoGapZone(t *testing.T, r *dragRig) {
 	r.settle(t)
 	r.press(t, 0x110, domain.ModSuper)
 	r.moveTo(float64((one.X+one.W+two.X)/2), float64(one.Y+one.H/2), 2)
-	if pv := dragScene(r.settle(t), "A").DropPreview; pv != nil {
-		t.Fatalf("fixed gap preview %+v", pv)
+	if pv := dragScene(r.settle(t), "A").DropPreview; pv == nil || pv.Rect.W != 0 || pv.Thumb != 1 {
+		t.Fatalf("fixed gap preview %+v, want the thumbnail alone", pv)
 	}
 	// Top band of 2 stacks 1 above it.
 	r.moveTo(float64(two.X+two.W/2), float64(two.Y+40), 3)
@@ -600,7 +603,7 @@ func dragFixedNoGapZone(t *testing.T, r *dragRig) {
 // nothing slides, so there is no animated variant.
 func TestDragAcrossOutputs(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		dragAcrossOutputs(t, startDragRig(t, nil, dragOut, domain.OutputInfo{Name: "B", Width: 800, Height: 600}))
+		dragAcrossOutputs(t, startDragRig(t, func(c *domain.Config) { c.Drop.SetWindow(domain.DropSideCenter, domain.DropSwap) }, dragOut, domain.OutputInfo{Name: "B", Width: 800, Height: 600}))
 	})
 }
 
@@ -804,7 +807,11 @@ func TestEdgeScrollPublishesWithoutTarget(t *testing.T) {
 
 func TestDragFullFixedStacksInOutlinedColumn(t *testing.T) {
 	both(t, func(t *testing.T, animated bool) {
-		dragFullFixedStacksInOutlinedColumn(t, startDragMode(t, animated, func(c *domain.Config) { c.Layout.MaxColumns = 3; c.Layout.Overflow = "fixed" }, dragOut))
+		dragFullFixedStacksInOutlinedColumn(t, startDragMode(t, animated, func(c *domain.Config) {
+			c.Layout.MaxColumns = 3
+			c.Layout.Overflow = "fixed"
+			c.Drop.SetWindow(domain.DropSideCenter, domain.DropSwap)
+		}, dragOut))
 	})
 }
 

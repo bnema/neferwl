@@ -32,6 +32,7 @@ See [examples/config](../examples/config) for every key with its default.
 | `xwayland` | `builtin` | `off`, `satellite`, `builtin` or a satellite binary path |
 | `xwayland.xsettings` | `on` | With `xwayland = builtin`, publish `Gtk/CursorThemeName`, `Gtk/CursorThemeSize`, `Xft/DPI`, `Gdk/WindowScalingFactor` and `Gdk/UnscaledDPI` to X11 apps through XSETTINGS (restart required); the scale is always announced as 1 (96 dpi) because X11 apps see logical sizes and neferwl upscales their windows; `off` leaves them to the apps |
 | `background` | `#111111` | Background color |
+| `font` | built-in Go Mono | Path of a `.ttf` or `.otf` font for all text the compositor draws (tab titles, drop and hint labels, window info); `~/` is your home. An unreadable file is a config warning; a file that does not load keeps the built-in font |
 | `border.radius` | `0` | Corner radius in logical pixels, `0` to `64`; floats always, tiles only with gaps |
 | `border.width` | `2` | Border width in pixels; `0` hides borders |
 | `border.active` / `.inactive` | `#808080` / `#111111` | Border colors of the focused / other windows |
@@ -420,6 +421,8 @@ bind.XF86MonBrightnessDown = spawn brightnessctl set 5%-
 | `hint` | Label the clickable elements on the focused screen, then click the one you type; OCR URLs open with `xdg-open` ([hint mode](#hint-mode)) |
 | `switch-column-next` / `-prev` | Switch to the previously used column. Hold `cmd` and press again to go further back |
 | `maximize-column` | Toggle full width for the focused column |
+| `toggle-column-tabbed` | Show the focused column as [tabs](#tabbed-columns), or back as a stack |
+| `tab-window-left`, `tab-window-right` | Move the focused window into the column on that side as its visible [tab](#tabbed-columns) |
 | `cycle-column-width` | Grow the focused column by one [cell](#column-widths), then back to equal widths |
 | `set-column-width <+N\|-N>` | Widen or narrow the focused column by N cells |
 | `set-window-height <+N%\|-N%>` | Change the focused window's share of its column |
@@ -463,6 +466,8 @@ Note on `toggle-fullscreen`: a parentless window whose first committed size is e
 | `cmd+alt+up/down`, `cmd+alt+k/j` | `set-window-height -10%/+10%` |
 | `cmd+r` | `cycle-column-width` |
 | `cmd+f` | `maximize-column` |
+| `cmd+t` | `toggle-column-tabbed` |
+| `cmd+shift+bracketleft/bracketright` | `tab-window-left/right` |
 | `cmd+shift+f` | `toggle-fullscreen` |
 | `cmd+shift+space` | `toggle-floating` |
 | `cmd+s` | `toggle-stash-visible` |
@@ -561,6 +566,22 @@ The default layout. Columns sit side by side in bands of up to `max-columns`, st
 - `move-column-left/right` on a fullscreen window (tiled or floating) sends it to the neighbor monitor, where it stays fullscreen and focused; with no neighbor monitor nothing moves.
 - A band left empty goes away. A smaller `max-columns` moves the extra columns of a band to a new band below it.
 
+### Tabbed columns
+
+A tabbed column shows one of its windows at a time, under a title bar with one tab per window.
+
+- `toggle-column-tabbed` (`cmd+t`) turns the focused column into tabs, or back into a stack with equal row heights. It does nothing on a float, a stash window or a column with one window.
+- `tab-window-left/right` (`cmd+shift+[` / `cmd+shift+]`) moves the focused window into the neighbour column as its visible, focused tab; that column becomes tabbed. It does nothing without a neighbour, on a float, a stash window, in fullscreen or in the overview.
+- `focus-window-up/down` switches tabs. At the first or last tab it leaves the column like in a stack. `move-window-up/down` reorders the tabs.
+- The bar shows each window's title in `font`, cut with `…` when too long, in an ink that contrasts with the bar. The visible tab is filled with `border.active`, the rest of the bar with `border.inactive`; when that is the background colour (the default), with `border.active` blended over the background at 25 %. Its height follows the [hint](#hint-mode) font size.
+- With `layout.gaps`, the bar is the visible window's attached title bar: it sits right on the window, with no gap, its top corners are rounded with `border.radius` and its bottom corners are square, and the window below loses its top rounding. The window border surrounds the bar and the visible tab as one, with four rounded corners. The active tab is rounded only where it meets the bar's top corners. Without gaps, the bar and the window are square and flush.
+- A click on a tab shows it; the window under it gets no click. `cmd` + drag on a tab drags that window, even a hidden one.
+- Dropping a window on another window's center (`drop.window.center = tab`, the default) adds it to that window's column as a new tab and makes the whole column tabbed.
+- A tabbed column has no row borders and ignores `set-window-height`.
+- A column left with one window is a normal column again. A tab sent to the stash or floated and then brought back makes its column tabbed again.
+- In `cascade`, a fullscreen tab leaves its column and does not return; a column left with one window becomes a normal column.
+- The overview shows only the visible tab. A fullscreen tab covers the bar.
+
 ### Column widths
 
 A cell is `1/max-columns` of the screen width. A column is 1 to 16 cells wide. Columns without a set width share the space equally.
@@ -591,17 +612,19 @@ The window must appear within 5 seconds, otherwise it opens normally. Apps that 
 
 While a tile is dragged, the anchor under the pointer is filled in `border.active` with an outline and the name of its action. On an output or workspace that does not show the dragged window, a thumbnail of it follows the pointer. With animations on, the zone slides between anchors.
 
-**Anchors.** Each window has five zones: a band along each side and the center. The gap between two columns and the 32 px band along each output edge are anchors too. An anchor set to `none` is removed, and its neighbors take its place. A drop that would change nothing is not offered.
+**Anchors.** Each window has five zones: a band along each side and the center. The gap between two columns and the 32 px band along each output edge are anchors too. An anchor set to `none` is removed, and its neighbors take its place. A drop that would change nothing is not offered: over such a side band, the pointer targets the center, which keeps its size.
 
 | Key | Default | Allowed values |
 |---|---|---|
-| `drop.window.center` | `swap` | `swap`, `none` |
+| `drop.window.center` | `tab` | `tab`, `swap`, `none` |
 | `drop.window.left`, `.right` | `column` | `column`, `swap`, `none` |
 | `drop.window.top`, `.bottom` | `stack` | `stack`, `swap`, `none` |
 | `drop.gap` | `column` | `column`, `none` |
 | `drop.edge.left`, `.right`, `.top`, `.bottom` | `auto` | `auto`, `scroll`, `workspace`, `column`, `stash`, `float`, `none` |
 
+- `tab` adds the dragged window to the target's column, right after the target, and makes the whole column [tabbed](#tabbed-columns), with the dragged window shown. On a tabbed column, the `top` and `bottom` zones are removed.
 - `swap` trades the dragged window and the target. `column` makes the dragged window a new column on that side. `stack` puts it above or below the target in its column.
+- A window that shares its column (stacked or tabbed) can be dropped on its own left or right band to become a new column on that side.
 - On an edge, `column` adds a first or last column, `stash` [stashes](#stash) the window, and `float` makes it a float centered on the pointer. These act on release.
 - `scroll` and `workspace` act while the pointer rests on the edge: after 400 ms, then every 250 ms while it stays there. The drag survives a workspace switch, and a release drops the window on the workspace now shown.
 
@@ -648,6 +671,7 @@ The overlay shows `scanout on` for zero-copy presentation, `scanout on (OSD hidd
 With AT-SPI compatible apps such as Firefox, hint mode covers every clickable element. OCR is a best-effort fallback that detects URL-like text and underlined links, and still produces false positives.
 
 Hint mode is off by default: set `hint.enable = on` and restart NeferWL.
+Labels use the `font` key.
 While it is off, nothing of hint mode runs or uses memory, and the `hint` bind
 logs a notice once and does nothing. A reload does not change it.
 

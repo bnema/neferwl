@@ -20,7 +20,7 @@ func (c *Core) sceneFor(ctx context.Context, i int, sc *screen, only *screen, ca
 	// layout is what is drawn; settled (same indexes) is where the
 	// windows are going, and alone sizes the configures.
 	layout, settled := sc.shown, sc.settledLayout
-	scene = domain.Scene{Security: c.security, Output: sc.name(), OutputWidth: o.W, OutputHeight: o.H, WorkspaceClip: clip, Scale: sc.scale, Transform: sc.transform, Off: sc.off, Background: c.cfg.Background.Color, Border: domain.Border{Radius: c.cfg.Border.Radius, Width: c.cfg.Border.Width, Active: c.cfg.Border.Active, Inactive: c.cfg.Border.Inactive}, Windows: make([]domain.SceneWindow, 0, len(layout)+len(c.popupOrder)+len(c.unmanagedOrder)+1), Layers: shownLayers(sc)}
+	scene = domain.Scene{Security: c.security, Output: sc.name(), OutputWidth: o.W, OutputHeight: o.H, WorkspaceClip: clip, Scale: sc.scale, Transform: sc.transform, Off: sc.off, Background: c.cfg.Background.Color, Font: c.cfg.Font, FontGen: c.cfg.FontGen, Border: domain.Border{Radius: c.cfg.Border.Radius, Width: c.cfg.Border.Width, Active: c.cfg.Border.Active, Inactive: c.cfg.Border.Inactive}, Windows: make([]domain.SceneWindow, 0, len(layout)+len(c.popupOrder)+len(c.unmanagedOrder)+1), Layers: shownLayers(sc)}
 	if !sc.mon.previewing() {
 		// Tiles stop at the panels; the overview lays out previews over
 		// the whole output.
@@ -48,7 +48,7 @@ func (c *Core) sceneFor(ctx context.Context, i int, sc *screen, only *screen, ca
 		scene.Dim = c.cfg.Floating.Dim
 		scene.DimBehind = scene.Dim > 0
 	}
-	if d := c.drag; d != nil && d.target.screen == sc && d.target.a.Kind != AnchorNone {
+	if d := c.drag; d != nil && d.anim.screen == sc {
 		scene.DropPreview = d.target.preview
 	}
 	if sc.mon.ov.open {
@@ -66,6 +66,9 @@ func (c *Core) sceneFor(ctx context.Context, i int, sc *screen, only *screen, ca
 	} else {
 		// Only the focused output lights the focused window's lines.
 		scene.Separators = separators(layout, c.cfg.Border.Width, sc.mon.Current().Gap(), view, i == c.focusScreen)
+		sc.tabs.bars, sc.tabs.titles = sc.tabs.bars[:0], sc.tabs.titles[:0]
+		c.appendTabBars(&sc.tabs, sc.mon.Current(), layout, view, Rect{})
+		scene.TabBars = publishTabBars(&sc.tabs, sc.last.TabBars)
 	}
 	caps, _ := c.outputHDRCaps(sc.name())
 	config, configured := c.outputConfig(sc.name())
@@ -138,7 +141,7 @@ func (c *Core) sceneFor(ctx context.Context, i int, sc *screen, only *screen, ca
 	scene.Windows = append(scene.Windows, c.scenePopups(sc)...)
 	scene.Windows = c.sceneUnmanaged(scene.Windows, sc)
 	// The dragged window's thumbnail where it is not drawn otherwise.
-	scene.Windows = c.dropProxy(scene.Windows, sc)
+	scene.Windows = c.dropProxy(scene.Windows, sc, caps, config)
 	if icon, ok := c.dataDragIconOn(i, sc); ok {
 		// The drag icon is over everything, popups and layers included.
 		scene.Windows = append(scene.Windows, icon)

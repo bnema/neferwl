@@ -17,6 +17,9 @@ type Style struct {
 	// TextOnly draws the glyphs on a transparent raster, without the box
 	// and its outline: the caller draws the background.
 	TextOnly bool
+	// MaxWidth, above 0, is the widest the text may draw, in physical
+	// pixels: longer text is cut and ends with an ellipsis.
+	MaxWidth int
 }
 
 // FontPixels resolves the shared physical font size.
@@ -85,4 +88,40 @@ func Colors(active, background, foreground string) (color.RGBA, color.RGBA) {
 func mix(ink, bg color.RGBA) color.RGBA {
 	channel := func(a, b uint8) uint8 { return uint8(math.Round(.45*float64(a) + .55*float64(b))) }
 	return color.RGBA{channel(ink.R, bg.R), channel(ink.G, bg.G), channel(ink.B, bg.B), 255}
+}
+
+// minTextContrast is the least contrast ratio of an ink against its
+// background (WCAG AA for normal text).
+const minTextContrast = 4.5
+
+// The opaque inks of compositor text: InkFor picks inkLight or inkDark,
+// MutedInk their quieter mutedLight or mutedDark.
+var (
+	inkDark    = color.RGBA{17, 17, 17, 255}
+	inkLight   = color.RGBA{245, 245, 245, 255}
+	mutedDark  = color.RGBA{64, 64, 64, 255}
+	mutedLight = color.RGBA{192, 192, 192, 255}
+)
+
+// InkFor is an opaque ink for text drawn on bg: near-white on a dark
+// background, near-black on a light one, whichever contrasts more.
+func InkFor(bg color.RGBA) color.RGBA {
+	if contrast(bg, inkLight) > contrast(bg, inkDark) {
+		return inkLight
+	}
+	return inkDark
+}
+
+// MutedInk is a quieter opaque ink than InkFor for bg (mutedLight on
+// dark, mutedDark on light) when it keeps minTextContrast, else InkFor's.
+func MutedInk(bg color.RGBA) color.RGBA {
+	ink := InkFor(bg)
+	muted := mutedDark
+	if ink == inkLight {
+		muted = mutedLight
+	}
+	if contrast(bg, muted) >= minTextContrast {
+		return muted
+	}
+	return ink
 }

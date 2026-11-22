@@ -34,7 +34,13 @@ type Scene struct {
 	// drawn until a scene without it.
 	Off        bool
 	Background string
-	Border     Border
+	// Font is the configured font path (Config.Font): a font change makes
+	// a new scene, so outputs redraw their compositor text.
+	Font string
+	// FontGen is the loaded font's generation (Config.FontGen): a font
+	// loaded again, same path, also makes a new scene.
+	FontGen uint64
+	Border  Border
 	// WorkspaceClip bounds workspace windows, their popups and separators
 	// in logical output coordinates. Zero inherits the full output. Layers
 	// remain output-wide; overview previews do not use this clip.
@@ -63,6 +69,9 @@ type Scene struct {
 	// the windows of the workspace, under the top layers. Only the output
 	// under the pointer has one, during a drag. Immutable once published.
 	DropPreview *DropPreview
+	// TabBars are the title bars of tabbed columns, drawn over the windows'
+	// separators, under the drop preview. Immutable once published.
+	TabBars []TabBar
 	// Layers are the shown layer surfaces, drawn in slice order: background
 	// and bottom before windows, top and overlay after. Core leaves out
 	// those a fullscreen window hides (all but the background and a surface
@@ -116,7 +125,7 @@ func (s Scene) SameAs(o Scene) bool {
 	if s.PositionHint != o.PositionHint || s.Security != o.Security || s.Output != o.Output ||
 		s.OutputWidth != o.OutputWidth || s.OutputHeight != o.OutputHeight ||
 		s.Scale != o.Scale || s.Transform != o.Transform || s.Off != o.Off ||
-		s.Background != o.Background || s.Border != o.Border ||
+		s.Background != o.Background || s.Font != o.Font || s.FontGen != o.FontGen || s.Border != o.Border ||
 		s.WorkspaceClip != o.WorkspaceClip || s.TileInset != o.TileInset || s.Dim != o.Dim || s.DimBehind != o.DimBehind {
 		return false
 	}
@@ -143,6 +152,7 @@ func (s Scene) SameAs(o Scene) bool {
 		}
 	}
 	return slices.Equal(s.Windows, o.Windows) && slices.Equal(s.Separators, o.Separators) &&
+		SameTabBars(s.TabBars, o.TabBars) &&
 		slices.Equal(s.Layers, o.Layers) &&
 		slices.Equal(s.CaptureIndicators, o.CaptureIndicators) &&
 		s.Physical == o.Physical && slices.Equal(s.Overlays, o.Overlays)
@@ -295,10 +305,13 @@ type DropPreview struct {
 	// Edge is the output edge of an edge anchor, DropSideCenter for any
 	// other: its label goes beyond the band, inside the output.
 	Edge DropSide
-	// Thumb is the dragged window drawn as a thumbnail at ThumbRect, 0
-	// for none.
+	// Thumb is the dragged window drawn as a thumbnail at ThumbRect with
+	// content scale ThumbZoom, 0 for none. The renderer draws it from the
+	// window's Proxy entry, or from its normal entry a second time when
+	// the output also shows it in place.
 	Thumb     WindowID
 	ThumbRect Rect
+	ThumbZoom float64
 }
 
 // Tile reports whether w is a tile: laid out in the usable area and
@@ -314,4 +327,31 @@ type ContentRoute struct {
 	Output  string
 	Gen     uint64
 	Windows []WindowID
+}
+
+// TabBar is the title bar of a tabbed column: one tab per window, in
+// column order. Rect is the bar, output-local logical.
+type TabBar struct {
+	Rect Rect
+	// Radius rounds the bar and its active tab, logical px: the window's.
+	Radius int
+	// FontPx is the title font size, logical px.
+	FontPx float64
+	Tabs   []TabTitle
+}
+
+// TabTitle is one tab of a TabBar. Active is the visible tab.
+type TabTitle struct {
+	Rect   Rect
+	Title  string
+	Active bool
+	Window WindowID
+}
+
+// SameTabBars reports whether a and b draw the same bars.
+func SameTabBars(a, b []TabBar) bool { return slices.EqualFunc(a, b, SameTabBar) }
+
+// SameTabBar reports whether x and y draw the same bar.
+func SameTabBar(x, y TabBar) bool {
+	return x.Rect == y.Rect && x.Radius == y.Radius && x.FontPx == y.FontPx && slices.Equal(x.Tabs, y.Tabs)
 }

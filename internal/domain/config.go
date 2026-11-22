@@ -123,7 +123,14 @@ type Config struct {
 	// One startup line may hold several, split by SplitCommands.
 	Startup    [][]string
 	Background struct{ Color string }
-	Floating   struct{ Dim float64 }
+	// Font is the path of a TrueType/OpenType font for all compositor-drawn
+	// text (tab titles, drop and hint labels); empty is the built-in font.
+	Font string
+	// FontGen is the generation of the font the app loaded for Font
+	// (overlaydraw.FontGen), never read from the file: a reload that
+	// loads the same path again (a retry) still changes the config.
+	FontGen  uint64
+	Floating struct{ Dim float64 }
 	// Stash is the strip of windows set aside by toggle-window-stash:
 	// Width is the width of its selected window (10 to 90) and Gap the
 	// space between it and its neighbors (0 to 10), in percent of the
@@ -403,7 +410,7 @@ func (c Config) Equal(o Config) bool {
 	}
 	// Compare scalar groups and the scalar parts of collection-bearing groups.
 	return c.Keyboard == o.Keyboard && c.Terminal.AutoOpen == o.Terminal.AutoOpen &&
-		c.Xwayland == o.Xwayland && c.Background == o.Background && c.Floating == o.Floating &&
+		c.Xwayland == o.Xwayland && c.Background == o.Background && c.Font == o.Font && c.FontGen == o.FontGen && c.Floating == o.Floating &&
 		c.Stash == o.Stash && c.Border == o.Border && c.Layout.Gaps == o.Layout.Gaps &&
 		c.Layout.LayoutRules == o.Layout.LayoutRules && c.InputDevicesConfig == o.InputDevicesConfig &&
 		c.Cursor == o.Cursor && c.Animations == o.Animations && c.Navigation == o.Navigation && c.Focus == o.Focus && c.OSD == o.OSD &&

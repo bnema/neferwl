@@ -21,7 +21,7 @@ func TestControlKeymapFanout(t *testing.T) {
 		in, out := make(chan domain.ConfigChanged, 1), make(chan domain.ConfigChanged, 1)
 		physical, control := make(chan *xkb.Keymap, 1), make(chan *xkb.Keymap, 1)
 		cfg := config.Defaults()
-		go relayConfig(ctx, cfg, in, out, physical, make(chan domain.InputDevicesConfig, 1), cursors.New(clock.System{}, 0), make(chan ports.ClientCommand, 4), logging.For(ctx, "config"), control)
+		go relayConfig(ctx, cfg, in, out, physical, make(chan domain.InputDevicesConfig, 1), cursors.New(clock.System{}, 0), make(chan ports.ClientCommand, 4), logging.For(ctx, "config"), control, fontLoader{log: logging.For(ctx, "config")})
 		cfg.Keyboard.Layout = "de"
 		in <- domain.ConfigChanged{Config: cfg}
 		<-out

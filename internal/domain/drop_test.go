@@ -40,21 +40,21 @@ func TestDropPolicyOverPerField(t *testing.T) {
 
 func TestDefaultDropPolicy(t *testing.T) {
 	p := DefaultDropPolicy()
-	if p.Window != [5]DropAction{DropSwap, DropColumn, DropColumn, DropStack, DropStack} ||
+	if p.Window != [5]DropAction{DropTab, DropColumn, DropColumn, DropStack, DropStack} ||
 		p.Gap != DropColumn || p.Edge != [5]DropAction{} {
 		t.Fatalf("defaults = %+v", p)
 	}
 }
 
 func TestDropAllowed(t *testing.T) {
-	all := []DropAction{DropAuto, DropNone, DropSwap, DropColumn, DropStack, DropScroll, DropWorkspace, DropStash, DropFloat}
+	all := []DropAction{DropAuto, DropNone, DropSwap, DropColumn, DropStack, DropScroll, DropWorkspace, DropStash, DropFloat, DropTab}
 	edge := []DropAction{DropAuto, DropScroll, DropWorkspace, DropColumn, DropStash, DropFloat, DropNone}
 	type field struct {
 		k DropZoneKind
 		s DropSide
 	}
 	table := map[field][]DropAction{
-		{DropZoneWindow, DropSideCenter}: {DropSwap, DropNone},
+		{DropZoneWindow, DropSideCenter}: {DropTab, DropSwap, DropNone},
 		{DropZoneWindow, DropSideLeft}:   {DropColumn, DropSwap, DropNone},
 		{DropZoneWindow, DropSideRight}:  {DropColumn, DropSwap, DropNone},
 		{DropZoneWindow, DropSideTop}:    {DropStack, DropSwap, DropNone},
@@ -137,7 +137,7 @@ func TestDropPolicyNoAllocs(t *testing.T) {
 		ok = DropAllowed(DropZoneEdge, DropSideTop, sink.Edge[DropSideTop])
 		label = sink.Window[DropSideCenter].Label()
 	})
-	if allocs != 0 || !ok || label != "swap" {
+	if allocs != 0 || !ok || label != "tab" {
 		t.Fatalf("allocs %.1f, ok %v, label %q", allocs, ok, label)
 	}
 }

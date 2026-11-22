@@ -148,6 +148,7 @@ func (w *Workspace) RemoveWindow(id WindowID) {
 			c := &w.Columns[i]
 			c.Windows = append(c.Windows[:j], c.Windows[j+1:]...)
 			c.Shares = nil
+			c.Normalize()
 			if len(c.Windows) == 0 {
 				w.DeleteColumn(i)
 				if len(w.Columns) == 0 {

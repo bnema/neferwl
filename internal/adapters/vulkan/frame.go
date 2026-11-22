@@ -498,6 +498,11 @@ func (r *Renderer) Render(s domain.Scene, contents map[domain.WindowID]domain.Su
 	}
 	r.dropUnused()
 	r.dropShm()
+	// Title rasters of windows no longer drawn: swept every importTTL
+	// frames, so one lives at most twice that undrawn.
+	if r.frame%importTTL == 0 {
+		r.tabTitles.Sweep(r.frame, importTTL)
+	}
 	if !r.syncFD {
 		return nil, r.waitFrame(frame)
 	}

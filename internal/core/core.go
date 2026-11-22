@@ -372,7 +372,7 @@ func validAction(a Action, modes map[string]map[string]string) error {
 	}
 	switch a {
 	case "none", ActionSpawnTerminal, ActionFocusColumnLeft, ActionFocusColumnRight, ActionFocusWindowUp, ActionFocusWindowDown, ActionMoveColumnLeft, ActionMoveColumnRight, ActionCycleColumnWidth, ActionMaximizeColumn, ActionToggleFullscreen, ActionToggleWindowStash, ActionToggleStashVisible, ActionToggleOverview, ActionCloseWindow, ActionQuit, ActionFocusWorkspacePrev, ActionFocusWorkspaceNext, ActionMoveColumnToWorkspacePrev, ActionMoveColumnToWorkspaceNext, ActionMoveWindowToWorkspacePrev, ActionMoveWindowToWorkspaceNext, ActionFocusMonitorLeft, ActionFocusMonitorRight, ActionFocusMonitorUp, ActionFocusMonitorDown, ActionMoveWorkspaceLeft, ActionMoveWorkspaceRight, ActionMoveWorkspaceToMonitorUp, ActionMoveWorkspaceToMonitorDown, ActionConsumeOrExpelLeft, ActionConsumeOrExpelRight,
-		ActionMoveWindowUp, ActionMoveWindowDown, ActionMoveWorkspacePrev, ActionMoveWorkspaceNext, ActionToggleFloating, ActionSwitchColumnNext, ActionSwitchColumnPrev, ActionHint, ActionOSDPin:
+		ActionMoveWindowUp, ActionMoveWindowDown, ActionMoveWorkspacePrev, ActionMoveWorkspaceNext, ActionToggleFloating, ActionSwitchColumnNext, ActionSwitchColumnPrev, ActionHint, ActionOSDPin, ActionToggleColumnTabbed, ActionTabWindowLeft, ActionTabWindowRight:
 	default:
 		return fmt.Errorf("invalid action %q", a)
 	}
@@ -483,7 +483,7 @@ func (c *Core) apply(cfg domain.Config) error {
 	c.toSpawn = append(c.toSpawn, c.updateSlots(specs)...)
 	c.named()
 	for _, s := range c.screens {
-		c.settings(s.mon)
+		c.settings(s)
 	}
 	c.applyOutputConfig()
 	for _, s := range c.screens {
@@ -785,7 +785,7 @@ func (c *Core) publishFrame(ctx context.Context, only *screen) error {
 	}
 	c.advanceFlash(only)
 	// Like the flash: a flip of another output leaves the preview as it is.
-	if c.drag != nil && (only == nil || only == c.drag.target.screen) {
+	if c.drag != nil && (only == nil || only == c.drag.target.screen || only == c.drag.anim.screen) {
 		c.advanceDropPreview(c.now())
 	}
 	scenes := make([]domain.Scene, 0, len(c.screens))
@@ -1177,7 +1177,13 @@ func (c *Core) hitForDevice(x, y float64, device domain.InputDeviceID) (WindowID
 	var sx, sy float64
 	blocked := false
 	view := sc.mon.viewport()
+	// A tab bar is over the demoted floats under it: they never take
+	// the bar's clicks.
+	_, overBar := tabAt(sc, lx, ly)
 	for _, p := range sc.shownLayout() {
+		if overBar && p.Below {
+			continue
+		}
 		r := c.clientRect(p)
 		// A peek is clickable wherever it shows, border included: it may
 		// be narrower than its border. The point is clamped to its client.
@@ -1202,7 +1208,9 @@ func (c *Core) hitForDevice(x, y float64, device domain.InputDeviceID) (WindowID
 		}
 	}
 	if id == 0 {
-		if blocked {
+		// A tab bar takes the pointer from what is under it: no client
+		// gets it (pointerButton handles its clicks).
+		if blocked || overBar {
 			return 0, 0, 0
 		}
 		return c.layerAt(sc, lx, ly, false)

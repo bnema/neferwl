@@ -94,7 +94,7 @@ func (w *Workspace) AnchorAt(src *Workspace, id WindowID, x, y int, prev Anchor,
 		if on&(1<<domain.DropSideCenter) == 0 && side == domain.DropSideCenter {
 			return Anchor{}
 		}
-		return Anchor{Kind: AnchorWindow, Side: side, Window: pl.ID, Action: p.Window[side], Rect: w.windowZone(pl.Rect, side, on)}
+		return Anchor{Kind: AnchorWindow, Side: side, Window: pl.ID, Action: p.Window[side], Rect: w.windowZone(pl.Rect, side, policyOn(p))}
 	}
 	return Anchor{}
 }
@@ -139,10 +139,31 @@ func (w *Workspace) valid(d dropSource, a Anchor) bool {
 	switch a.Kind {
 	case AnchorWindow:
 		ci := w.ColumnOf(a.Window)
-		if ci < 0 || a.Window == d.id {
+		if ci < 0 {
+			return false
+		}
+		if a.Window == d.id {
+			// A tile shared with others pops out of its own column
+			// through its side bands; nothing else lands on itself.
+			if !d.same || d.lone || a.Action != domain.DropColumn {
+				return false
+			}
+			switch a.Side {
+			case domain.DropSideLeft:
+				return w.columnValid(d, ci)
+			case domain.DropSideRight:
+				return w.columnValid(d, ci+1)
+			}
+			return false
+		}
+		// A tabbed column shows one window: nothing stacks above or
+		// below it.
+		if w.Columns[ci].Tabbed && (a.Side == domain.DropSideTop || a.Side == domain.DropSideBottom) {
 			return false
 		}
 		switch a.Action {
+		case domain.DropTab:
+			return a.Side == domain.DropSideCenter && !slices.Contains(w.Columns[ci].Windows, d.id)
 		case domain.DropStack:
 			row := slices.Index(w.Columns[ci].Windows, a.Window)
 			// Above the window just below it, or below the one just above: no move.
@@ -209,6 +230,20 @@ func (w *Workspace) sidesOn(d dropSource, win WindowID, p domain.DropPolicy) uin
 	return on
 }
 
+// policyOn is the zone mask of the sides policy p does not set to none.
+// The centre is drawn from it, so a band removed only because its drop
+// would change nothing leaves the centre symmetric; the pointer over that
+// band still hits the centre.
+func policyOn(p domain.DropPolicy) uint8 {
+	var on uint8
+	for s := domain.DropSideCenter; s <= domain.DropSideBottom; s++ {
+		if p.Window[s] != domain.DropNone {
+			on |= 1 << s
+		}
+	}
+	return on
+}
+
 // noColumns reports whether w shows no column id could land beside.
 func (w *Workspace) noColumns(cols []visibleColumn, id WindowID) bool {
 	return len(w.Columns) == 0 || w.ColumnOf(id) < 0 && len(cols) == 0
@@ -257,7 +292,7 @@ func (w *Workspace) zoneExists(layout []Placement, cols []visibleColumn, d dropS
 					return false
 				}
 				on := w.sidesOn(d, pl.ID, p)
-				return on&(1<<prev.Side) != 0 && w.windowZone(pl.Rect, prev.Side, on) == prev.Rect
+				return on&(1<<prev.Side) != 0 && w.windowZone(pl.Rect, prev.Side, policyOn(p)) == prev.Rect
 			}
 		}
 	case AnchorGap:
@@ -427,6 +462,18 @@ func Drop(src, w *Workspace, id WindowID, a Anchor, px, py int) {
 		w.applyColumn(src, id, at)
 	case domain.DropSwap:
 		w.applySwap(src, id, a.Window)
+	case domain.DropTab:
+		w.applyTab(src, id, a.Window)
+	}
+}
+
+// applyTab inserts id below target in target's column, which becomes
+// tabbed with id the visible tab (applyStack activates it).
+func (w *Workspace) applyTab(src *Workspace, id, target WindowID) {
+	w.applyStack(src, id, target, true)
+	if ci := w.ColumnOf(id); ci >= 0 && w.ColumnOf(target) == ci {
+		w.Columns[ci].Tabbed = true
+		w.Columns[ci].Shares = nil
 	}
 }
 

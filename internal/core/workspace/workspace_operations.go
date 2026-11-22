@@ -246,6 +246,7 @@ func NewFrom(t *Workspace, id uint64) *Workspace {
 		monitor:    t.monitor,
 		reserved:   t.reserved,
 		border:     t.border,
+		TabBar:     t.TabBar,
 		stashWidth: t.stashWidth,
 		stashGap:   t.stashGap,
 	}
@@ -258,6 +259,7 @@ func (w *Workspace) Inherit(t *Workspace) {
 	// t.Output and t.Usable are read as the monitor size and reservations: the template has no size.
 	w.Gaps = t.Gaps
 	w.border = t.border
+	w.TabBar = t.TabBar
 	w.stashWidth, w.stashGap = t.stashWidth, t.stashGap
 	w.SetOutput(t.Output.W, t.Output.H)
 	w.SetUsable(t.Usable)

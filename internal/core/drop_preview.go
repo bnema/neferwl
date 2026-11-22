@@ -9,8 +9,9 @@ import (
 )
 
 // The drop preview of a tile drag (Scene.DropPreview): the zone under the
-// pointer in Border.Active, the action's label and, on an output that does
-// not show the dragged window, a thumbnail of it by the pointer. With
+// pointer in Border.Active, the action's label and, once the pointer moved
+// past the slop, a thumbnail of the dragged window by the pointer (alone
+// when there is no zone). With
 // animations on the zone slides to a new anchor and a hover edge's fill
 // ramps up while its timer runs; off, both jump.
 const (
@@ -38,8 +39,9 @@ type dropAnim struct {
 	ramping  bool
 	// shown is the zone of the last sample.
 	shown Rect
-	// zoom is the thumbnail's content scale, 0 without one.
-	zoom float64
+	// screen shows the published preview: the target's, or with no
+	// target the one under the pointer (a thumbnail alone).
+	screen *screen
 	// layout is the dragged window's workspace layout scratch.
 	layout []Placement
 }
@@ -82,11 +84,27 @@ func (c *Core) advanceDropPreview(now time.Time) {
 	if d == nil {
 		return
 	}
-	if d.float || d.target.a.Kind == AnchorNone || d.target.screen == nil {
-		d.target.preview = nil
+	t, an := &d.target, &d.anim
+	if d.float {
+		t.preview, an.screen = nil, nil
 		return
 	}
-	t, an := &d.target, &d.anim
+	if t.a.Kind == AnchorNone || t.screen == nil {
+		// No zone: the thumbnail alone, on the output under the pointer.
+		var p domain.DropPreview
+		var sc *screen
+		if i := c.screenAt(c.cursorX, c.cursorY); d.moved && i >= 0 {
+			sc = c.screens[i]
+			p.ThumbRect, p.ThumbZoom = c.dropThumb(sc, d.id, &an.layout)
+		}
+		if p.ThumbZoom <= 0 {
+			t.preview, an.screen = nil, nil
+			return
+		}
+		p.Thumb = d.id
+		c.setDropPreview(sc, p)
+		return
+	}
 	r := an.to
 	if an.sliding {
 		dur := time.Duration(float64(dropSlide) * c.cfg.Animations.Slowdown)
@@ -113,13 +131,20 @@ func (c *Core) advanceDropPreview(now time.Time) {
 	if t.a.Kind == AnchorWindow && t.ws.Gap() > 0 {
 		p.Radius = c.cfg.Border.Radius
 	}
-	an.zoom = 0
-	if !c.dropShown(sc, d.id) {
-		p.ThumbRect, an.zoom = c.dropThumb(sc, d.id, &an.layout)
-		if an.zoom > 0 {
+	if d.moved {
+		p.ThumbRect, p.ThumbZoom = c.dropThumb(sc, d.id, &an.layout)
+		if p.ThumbZoom > 0 {
 			p.Thumb = d.id
 		}
 	}
+	c.setDropPreview(sc, p)
+}
+
+// setDropPreview publishes p on sc, keeping the published preview when
+// its content is unchanged.
+func (c *Core) setDropPreview(sc *screen, p domain.DropPreview) {
+	t := &c.drag.target
+	c.drag.anim.screen = sc
 	if old := t.preview; old != nil && *old == p {
 		return
 	}
@@ -139,9 +164,9 @@ func (c *Core) dropLabelPx(sc *screen) float64 {
 	return ports.HintFontPixels(sc.info.Width, sc.info.Height, sc.info.PhysicalW, sc.info.PhysicalH, scale, c.cfg.Hint.Size)
 }
 
-// dropShown reports whether sc draws window id at its size. The preview
-// gives a thumbnail (advanceDropPreview) and the scene a proxy (dropProxy)
-// exactly when it does not.
+// dropShown reports whether sc draws window id at its size. The scene
+// gets a proxy entry for the thumbnail (dropProxy) exactly when it does
+// not; otherwise the renderer draws the normal entry again at ThumbRect.
 func (c *Core) dropShown(sc *screen, id WindowID) bool {
 	view := sc.mon.viewport()
 	for _, pl := range sc.shown {
@@ -153,15 +178,21 @@ func (c *Core) dropShown(sc *screen, id WindowID) bool {
 }
 
 // dropThumb is the thumbnail rect of id on sc, output-local, and its
-// content scale; zero when id has no placed size. buf is layout scratch.
+// content scale; zero when id has no placed size. The size is the one
+// drawn on the screen showing id's workspace (its shown layout, built once
+// per publish); buf is layout scratch for a workspace off screen.
 func (c *Core) dropThumb(sc *screen, id WindowID, buf *[]Placement) (Rect, float64) {
-	_, w := c.screenOf(id)
+	ss, w := c.screenOf(id)
 	if w == nil {
 		return Rect{}, 0
 	}
-	*buf = w.AppendLayout((*buf)[:0])
+	layout := ss.shown
+	if layout == nil || ss.rectsOwner() != w {
+		*buf = w.AppendLayout((*buf)[:0])
+		layout = *buf
+	}
 	var nat Rect
-	for _, pl := range *buf {
+	for _, pl := range layout {
 		if pl.ID == id {
 			nat = pl.Rect
 			break
@@ -185,22 +216,26 @@ func (c *Core) dropThumb(sc *screen, id WindowID, buf *[]Placement) (Rect, float
 // dropProxy adds the thumbnail window of the drag preview of sc to ws,
 // keeping its IDs unique: it replaces the window's entry, which sc does
 // not draw (dropShown: hidden, or out of the view), else it is added.
-func (c *Core) dropProxy(ws []domain.SceneWindow, sc *screen) []domain.SceneWindow {
+// It keeps the entry's SDR expansion; an added one gets the window's on
+// sc (caps, config).
+func (c *Core) dropProxy(ws []domain.SceneWindow, sc *screen, caps domain.OutputHDRCaps, config domain.OutputConfig) []domain.SceneWindow {
 	d := c.drag
-	if d == nil || d.target.screen != sc || d.target.preview == nil || d.target.preview.Thumb == 0 || d.anim.zoom <= 0 {
+	if d == nil || d.anim.screen != sc || d.target.preview == nil || d.target.preview.Thumb == 0 || d.target.preview.ThumbZoom <= 0 {
 		return ws
 	}
 	p := d.target.preview
-	proxy := domain.SceneWindow{ID: p.Thumb, Proxy: true, Rect: p.ThumbRect, Zoom: d.anim.zoom}
+	proxy := domain.SceneWindow{ID: p.Thumb, Proxy: true, Rect: p.ThumbRect, Zoom: p.ThumbZoom}
 	if c.dropShown(sc, p.Thumb) {
 		return ws
 	}
 	for i, w := range ws {
 		if w.ID == p.Thumb && !w.Popup {
+			proxy.SDRExpansion = w.SDRExpansion
 			ws[i] = proxy
 			return ws
 		}
 	}
+	proxy.SDRExpansion, _ = c.windowSDRExpansion(p.Thumb, false, caps, config)
 	return append(ws, proxy)
 }
 

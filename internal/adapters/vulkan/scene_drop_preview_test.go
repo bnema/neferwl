@@ -162,6 +162,43 @@ func TestSceneDropPreviewProxy(t *testing.T) {
 	require.Len(t, r.draws(s, nil, newDamage(&target{}, s, bounds)), len(r.draws(bare, nil, newDamage(&target{}, bare, bounds))))
 }
 
+// A window the output draws in place keeps its one slot draw; its
+// thumbnail draws it again at ThumbRect from the same entry, with an
+// outline, also without a zone: a clean proxy, without the window's
+// border inset, lines or veil.
+func TestSceneDropPreviewThumbFromNormalEntry(t *testing.T) {
+	r := &Renderer{width: 80, height: 60}
+	bounds := image.Rect(0, 0, 80, 60)
+	thumb := domain.Rect{X: 50, Y: 30, W: 10, H: 15}
+	for _, zone := range []domain.Rect{{X: 42, Y: 2, W: 30, H: 20}, {}} {
+		s := dropScene(&domain.DropPreview{Rect: zone, Fill: 0.18, Thumb: 1, ThumbRect: thumb, ThumbZoom: 0.25})
+		s.Border.Width = 2
+		s.Windows[0].Inset, s.Windows[0].Dim = domain.SideAll, 0.5
+		s.Separators = []domain.Separator{{Window: 1, Active: true, Rect: domain.Rect{W: 2, H: 60}}}
+		got := r.draws(s, nil, newDamage(&target{}, s, bounds))
+		slot, at, lines := 0, -1, 0
+		for i, d := range got {
+			switch {
+			case d.pc.rect == [4]int32{0, 0, 2, 60}:
+				lines++
+			case d.pc.rect == [4]int32{2, 2, 38, 58}:
+				slot++
+			case d.pc.rect == [4]int32{50, 30, 60, 45} && !isRed(d):
+				require.Equal(t, -1, at, "thumbnail drawn twice")
+				at = i
+			}
+		}
+		require.Equal(t, 1, slot, "zone %v: window drawn once in its slot: %+v", zone, got)
+		require.Equal(t, 1, lines, "zone %v: the window's line drawn once: %+v", zone, got)
+		require.NotEqual(t, -1, at, "zone %v: no thumbnail: %+v", zone, got)
+		// Its 4 outline strips follow.
+		for _, d := range got[at+1 : at+5] {
+			require.True(t, isRed(d))
+		}
+		require.Len(t, got, at+5, "zone %v: no veil over the thumbnail", zone)
+	}
+}
+
 // With rounded windows the thumbnail and its outline are rounded at the
 // thumbnail's zoom, at least 3 px.
 func TestSceneDropPreviewRoundedProxy(t *testing.T) {
@@ -211,4 +248,27 @@ func TestDropPreviewAreaCoversDrawsAtScale(t *testing.T) {
 		require.True(t, rect.In(area), "draw %v outside damage %v", rect, area)
 	}
 	require.Greater(t, n, 6, "zone, ring, pill and thumbnail drawn")
+}
+
+// A thumbnail drawn from the window's normal entry keeps its SDR
+// expansion: its content draws in the window's expanded colour.
+func TestSceneDropPreviewCleanProxyKeepsSDRExpansion(t *testing.T) {
+	r := &Renderer{width: 80, height: 60, hdrNits: 203}
+	bounds := image.Rect(0, 0, 80, 60)
+	thumb := domain.Rect{X: 50, Y: 30, W: 20, H: 30}
+	s := dropScene(&domain.DropPreview{Rect: domain.Rect{X: 2, Y: 2, W: 30, H: 30}, Fill: 0.18, Thumb: 1, ThumbRect: thumb, ThumbZoom: 0.5})
+	s.Windows[0].SDRExpansion = (domain.SDRExpansion{Intensity: 0.5, PeakNits: 604, SDRWhiteNits: 203}).Curve()
+	contents := map[domain.WindowID]domain.SurfaceContent{1: {ID: 1, Width: 1, Height: 1, LogicalW: 40, LogicalH: 60,
+		Solid: &domain.SolidColor{R: 0.5, G: 0.5, B: 0.5, A: 1}, Opaque: true}}
+	colors := map[[4]int32][4]float32{}
+	for _, d := range r.draws(s, contents, newDamage(&target{}, s, bounds)) {
+		if d.pc.misc[0] == modeSolid {
+			colors[d.pc.rect] = d.pc.color
+		}
+	}
+	in, ok := colors[[4]int32{0, 0, 40, 60}]
+	require.True(t, ok, "window content drawn")
+	got, ok := colors[[4]int32{50, 30, 70, 60}]
+	require.True(t, ok, "thumbnail content drawn")
+	require.Equal(t, in, got, "thumbnail in the window's expanded colour")
 }

@@ -328,3 +328,29 @@ func TestCaptureSceneRadius(t *testing.T) {
 
 	})
 }
+
+// A steady capture frame republishes the captured tab bars as they were,
+// without allocating.
+func TestCaptureTabBarsReused(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		c, ws := hiddenCapture(t)
+		ws.TabBar = 20
+		ws.Columns[0].Windows = []WindowID{1, 2}
+		ws.Columns = ws.Columns[:1]
+		ws.Columns[0].Tabbed = true
+		cw := &c.configures.cw
+		cw.load(c.screens[0], ws)
+		view := whole(cw.frame)
+		first := c.captureTabBars(cw, view)
+		if len(first) != 1 || len(first[0].Tabs) != 2 {
+			t.Fatalf("bars %+v", first)
+		}
+		if n := testing.AllocsPerRun(50, func() {
+			if got := c.captureTabBars(cw, view); &got[0] != &first[0] {
+				t.Fatal("bars not reused")
+			}
+		}); n != 0 {
+			t.Fatalf("steady capture allocates %v", n)
+		}
+	})
+}

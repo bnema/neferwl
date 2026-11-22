@@ -143,7 +143,7 @@ func TestHoverKeyboardHoldMotion(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c, clock := indicatorCore(t)
 		c.cfg.Layout.MaxColumns = 3
-		c.settings(c.cur().mon)
+		c.settings(c.cur())
 		for id := WindowID(1); id <= 3; id++ {
 			c.windows.mapped(ports.WindowMapped{ID: id}, clock.now)
 			c.cur().mon.AddWindow(id)
@@ -225,7 +225,7 @@ func hoverEventCore(t *testing.T, n int) (*Core, *indicatorClock, chan ports.Cli
 	c.cfg.Focus.FollowMouse = true
 	c.cfg.Focus.FollowMouseDelay = 0
 	c.cfg.Layout.Overflow = "scroll"
-	c.settings(c.cur().mon)
+	c.settings(c.cur())
 	for id := WindowID(1); id <= WindowID(n); id++ {
 		c.windows.mapped(ports.WindowMapped{ID: id}, clock.now)
 		c.cur().mon.AddWindow(id)

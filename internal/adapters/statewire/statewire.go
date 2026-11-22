@@ -41,6 +41,8 @@ type Column struct {
 	Width   int    `json:"width"`
 	Height  int    `json:"height"`
 	Windows []Tile `json:"windows"`
+	Tabbed  bool   `json:"tabbed"`
+	Active  int    `json:"active"`
 }
 
 // Tile is one tiled window and its rectangle.
@@ -124,7 +126,7 @@ func FromDomain(st domain.State, ids *workspaceid.IDs) State {
 	for _, w := range st.Workspaces {
 		ws := Workspace{Focused: w.Focused, ID: ids.ID(w.ID, w.Name), Number: w.Number, Name: w.Name, Output: w.Output, Visible: w.Visible, Overflow: w.Overflow, Cover: w.Cover, Columns: make([]Column, 0, len(w.Columns))}
 		for _, c := range w.Columns {
-			col := Column{X: c.Rect.X, Y: c.Rect.Y, Width: c.Rect.W, Height: c.Rect.H, Windows: make([]Tile, 0, len(c.Windows))}
+			col := Column{X: c.Rect.X, Y: c.Rect.Y, Width: c.Rect.W, Height: c.Rect.H, Windows: make([]Tile, 0, len(c.Windows)), Tabbed: c.Tabbed, Active: c.Active}
 			for _, t := range c.Windows {
 				col.Windows = append(col.Windows, Tile{ID: uint64(t.ID), X: t.Rect.X, Y: t.Rect.Y, Width: t.Rect.W, Height: t.Rect.H})
 			}

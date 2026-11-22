@@ -20,6 +20,7 @@ layout(location = 0) in Parameters {
     flat vec4 round;
     flat vec4 roundInner;
     flat vec2 radii;
+    flat uint square;
 } d;
 
 #ifdef SINGLE_RESOURCE
@@ -144,13 +145,27 @@ vec4 sampleBuffer(vec2 src, bool exact) {
     return mix(mix(texel(i), texel(i + ivec2(1, 0)), f.x), mix(texel(i + ivec2(0, 1)), texel(i + ivec2(1, 1)), f.x), f.y);
 }
 
+// coverage of the fragment by rect with corners of radius, but the corners
+// whose bit is set in d.square (1 top-left, 2 top-right, 4 bottom-left,
+// 8 bottom-right) square. A corner's radius fits half the side it shares
+// with another rounded corner, the whole side otherwise.
 float coverage(vec4 rect, float radius) {
-    vec2 halfSize = (rect.zw - rect.xy) * 0.5;
-    radius = min(radius, min(halfSize.x, halfSize.y));
-    vec2 q = abs(gl_FragCoord.xy - (rect.xy + rect.zw) * 0.5) - halfSize + radius;
-    if ((q.x < 0.0 || q.y < 0.0) && max(q.x, q.y) <= radius - 0.5) return 1.0;
-    float sd = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - radius;
-    return clamp(0.5 - sd, 0.0, 1.0);
+    vec2 p = gl_FragCoord.xy;
+    vec2 size = rect.zw - rect.xy;
+    float edge = min(min(p.x - rect.x, rect.z - p.x), min(p.y - rect.y, rect.w - p.y));
+    float cov = clamp(edge + 0.5, 0.0, 1.0);
+    if (radius <= 0.0) return cov;
+    for (uint i = 0u; i < 4u; i++) {
+        if ((d.square & (1u << i)) != 0u) continue;
+        float capX = (d.square & (1u << (i ^ 1u))) != 0u ? size.x : size.x * 0.5;
+        float capY = (d.square & (1u << (i ^ 2u))) != 0u ? size.y : size.y * 0.5;
+        float r = min(radius, min(capX, capY));
+        bool right = (i & 1u) != 0u, bottom = (i & 2u) != 0u;
+        vec2 cc = vec2(right ? rect.z - r : rect.x + r, bottom ? rect.w - r : rect.y + r);
+        vec2 q = (p - cc) * vec2(right ? 1.0 : -1.0, bottom ? 1.0 : -1.0);
+        if (q.x > 0.0 && q.y > 0.0) cov = min(cov, clamp(0.5 - (length(q) - r), 0.0, 1.0));
+    }
+    return cov;
 }
 
 void main() {

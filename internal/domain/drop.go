@@ -14,13 +14,18 @@ const (
 	DropWorkspace
 	DropStash
 	DropFloat
+	DropTab
 )
 
 var dropActionNames = [...]string{
 	DropAuto: "auto", DropNone: "none", DropSwap: "swap", DropColumn: "column",
 	DropStack: "stack", DropScroll: "scroll", DropWorkspace: "workspace",
-	DropStash: "stash", DropFloat: "float",
+	DropStash: "stash", DropFloat: "float", DropTab: "tab",
 }
+
+// DropActionCount is the number of drop actions: DropAction(0) to
+// DropActionCount-1 are all valid.
+const DropActionCount = DropAction(len(dropActionNames))
 
 // ParseDropAction maps a config value to its action.
 func ParseDropAction(s string) (DropAction, bool) {
@@ -115,12 +120,12 @@ func (p DropPolicy) Over(base DropPolicy) DropPolicy {
 	return out
 }
 
-// DefaultDropPolicy is the built-in policy: the center swaps, left/right
+// DefaultDropPolicy is the built-in policy: the center tabs, left/right
 // insert a column, top/bottom stack, gaps insert a column and edges follow
 // the layout axes.
 func DefaultDropPolicy() DropPolicy {
 	var p DropPolicy
-	p.SetWindow(DropSideCenter, DropSwap)
+	p.SetWindow(DropSideCenter, DropTab)
 	p.SetWindow(DropSideLeft, DropColumn)
 	p.SetWindow(DropSideRight, DropColumn)
 	p.SetWindow(DropSideTop, DropStack)
@@ -149,7 +154,7 @@ func DropAllowed(k DropZoneKind, s DropSide, a DropAction) bool {
 	case DropZoneWindow:
 		switch s {
 		case DropSideCenter:
-			return a == DropSwap || a == DropNone
+			return a == DropTab || a == DropSwap || a == DropNone
 		case DropSideLeft, DropSideRight:
 			return a == DropColumn || a == DropSwap || a == DropNone
 		case DropSideTop, DropSideBottom:

@@ -30,6 +30,12 @@ const (
 	ActionCycleColumnWidth Action = "cycle-column-width"
 	// ActionMaximizeColumn is the ActionMaximizeColumn action value.
 	ActionMaximizeColumn Action = "maximize-column"
+	// ActionToggleColumnTabbed shows the focused column as tabs, or back.
+	ActionToggleColumnTabbed Action = "toggle-column-tabbed"
+	// ActionTabWindowLeft moves the focused window into the left column as a tab.
+	ActionTabWindowLeft Action = "tab-window-left"
+	// ActionTabWindowRight moves the focused window into the right column as a tab.
+	ActionTabWindowRight Action = "tab-window-right"
 	// ActionToggleFullscreen is the ActionToggleFullscreen action value.
 	ActionToggleFullscreen Action = "toggle-fullscreen"
 	// ActionToggleWindowStash is the ActionToggleWindowStash action value.
@@ -325,6 +331,12 @@ func (w *Workspace) Apply(a Action) Effect {
 		w.GrowColumn(true)
 	case ActionMaximizeColumn:
 		w.ToggleFullWidth()
+	case ActionToggleColumnTabbed:
+		w.ToggleTabbed()
+	case ActionTabWindowLeft:
+		w.TabWindow(-1)
+	case ActionTabWindowRight:
+		w.TabWindow(1)
 	case ActionToggleFullscreen:
 		w.ToggleFullscreen()
 	case ActionToggleWindowStash:
@@ -355,7 +367,7 @@ func Actions() []Action {
 		ActionMoveWorkspaceToMonitorDown, ActionScaleUp, ActionScaleDown, ActionConsumeOrExpelLeft,
 		ActionConsumeOrExpelRight, ActionMoveWindowUp, ActionMoveWindowDown, ActionMoveWorkspacePrev,
 		ActionMoveWorkspaceNext, ActionToggleFloating, ActionSwitchColumnNext, ActionSwitchColumnPrev,
-		ActionHint, ActionOSDPin,
+		ActionHint, ActionOSDPin, ActionToggleColumnTabbed, ActionTabWindowLeft, ActionTabWindowRight,
 	}
 }
 

@@ -61,7 +61,15 @@ type dragState struct {
 	float  bool
 	target dropTarget
 	anim   dropAnim
+	// moved is set once the pointer left the press by more than
+	// dragSelfSlop: a tile's own bands drop nothing before, so a click
+	// near its side does not pop it out.
+	moved bool
 }
+
+// dragSelfSlop is how far, in logical px, the pointer goes from the
+// press before a tile's own anchors take a drop.
+const dragSelfSlop = 8
 
 // dragHover is the pending hover action of a tile drag on a hover edge,
 // owned by the core event loop; a nil channel disables it.
@@ -194,9 +202,15 @@ func (c *Core) dragMotion(ctx context.Context) error {
 		c.abortDrag()
 		return c.publish(ctx)
 	}
+	was := d.moved
+	if !d.moved {
+		dx, dy := c.cursorX-d.start[0], c.cursorY-d.start[1]
+		d.moved = dx*dx+dy*dy > dragSelfSlop*dragSelfSlop
+	}
 	// A thumbnail follows the pointer; a zone only moves on a new target.
+	// Crossing the slop publishes once so the thumbnail appears.
 	thumb := d.target.preview != nil && d.target.preview.Thumb != 0
-	if !c.retarget(src) && !thumb {
+	if !c.retarget(src) && !thumb && (!d.moved || was) {
 		return nil
 	}
 	return c.publish(ctx)
@@ -406,7 +420,11 @@ func (c *Core) dropAt(src *Workspace, id WindowID, x, y float64) dropTarget {
 			p.SetEdge(side, domain.DropNone)
 		}
 	}
-	return dropTarget{a: w.AnchorAt(src, id, lx, ly, prev, p), screen: sc, ws: w}
+	a := w.AnchorAt(src, id, lx, ly, prev, p)
+	if a.Kind == AnchorWindow && a.Window == id && (c.drag == nil || !c.drag.moved) {
+		a = Anchor{}
+	}
+	return dropTarget{a: a, screen: sc, ws: w}
 }
 
 // drop moves tile id to target t, possibly on another workspace or

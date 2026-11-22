@@ -34,7 +34,12 @@ type sceneWalk struct {
 	// opaque-child culling (opaqueChildren), as the corners must show what
 	// is below.
 	rounded bool
-	bounds  image.Rectangle
+	// square is the corner mask of rounded draws (roundedDraw): the
+	// corners drawn square, e.g. a visible tab's top under its bar.
+	square uint32
+	// gen is the frame's font generation (damageRegion.fontGen).
+	gen    uint64
+	bounds image.Rectangle
 	// tileBounds is bounds cut to Scene.TileArea: where tiles and their
 	// lines draw.
 	tileBounds image.Rectangle
@@ -47,7 +52,7 @@ func (r *Renderer) draws(s domain.Scene, contents map[domain.WindowID]domain.Sur
 	// The walk stays in scene-physical space (the target's size, swapped for
 	// a rotated output); orient maps the draws to the target afterwards.
 	sw, sh := r.sceneSize(s.Transform)
-	w := &sceneWalk{r: r, s: s, contents: contents, dmg: dmg, scale: s.Scale, zoom: 1, alpha: 1, bounds: image.Rect(0, 0, sw, sh), draws: r.scratchDraws[:0]}
+	w := &sceneWalk{r: r, s: s, contents: contents, dmg: dmg, scale: s.Scale, zoom: 1, alpha: 1, gen: dmg.fontGen, bounds: image.Rect(0, 0, sw, sh), draws: r.scratchDraws[:0]}
 	w.bg, w.active, w.inactive = parseColor(s.Background), parseColor(s.Border.Active), parseColor(s.Border.Inactive)
 	r.scratchCovers = r.scratchCovers[:0]
 	if w.scale <= 0 {
@@ -86,11 +91,13 @@ func (w *sceneWalk) focusFlash() {
 	}
 	alpha := w.alpha
 	w.alpha = float32(f.Alpha)
-	b := min(f.Width, f.Rect.W/2, f.Rect.H/2)
+	// A visible tab flashes with its bar, like its ring.
+	r, _ := tabRing(w.s.TabBars, 0, f.Rect)
+	b := min(f.Width, r.W/2, r.H/2)
 	if f.Radius > 0 && b > 0 {
-		w.roundedInnerBorder(f.Rect, b, f.Radius, parseColor(f.Color))
+		w.roundedInnerBorder(r, b, f.Radius, parseColor(f.Color))
 	} else {
-		w.innerBorder(f.Rect, b, parseColor(f.Color))
+		w.innerBorder(r, b, parseColor(f.Color))
 	}
 	w.alpha = alpha
 }
@@ -156,28 +163,49 @@ const dropOutline = 2
 // dragged window's thumbnail (its Proxy window) with its outline.
 func (w *sceneWalk) dropPreview() {
 	p := w.s.DropPreview
-	if p == nil || p.Rect.W <= 0 || p.Rect.H <= 0 {
+	if p == nil {
 		return
 	}
-	alpha := w.alpha
-	w.alpha = float32(max(0, min(p.Fill, 1)))
-	radius := float32(math.Round(float64(p.Radius) * w.scale))
-	zone := w.physRect(p.Rect.X, p.Rect.Y, p.Rect.W, p.Rect.H)
-	w.fillRounded(zone, w.active, radius)
-	w.alpha = alpha
-	w.dropRing(p.Rect, p.Radius)
-	w.dropLabel(p, zone)
+	// No zone (no target): the thumbnail alone.
+	if p.Rect.W > 0 && p.Rect.H > 0 {
+		alpha := w.alpha
+		w.alpha = float32(max(0, min(p.Fill, 1)))
+		radius := float32(math.Round(float64(p.Radius) * w.scale))
+		zone := w.physRect(p.Rect.X, p.Rect.Y, p.Rect.W, p.Rect.H)
+		w.fillRounded(zone, w.active, radius)
+		w.alpha = alpha
+		w.dropRing(p.Rect, p.Radius)
+		w.dropLabel(p, zone)
+	}
 	if p.Thumb == 0 {
 		return
 	}
-	for _, win := range w.s.Windows {
-		if win.Proxy && win.ID == p.Thumb && drawsAsWindow(win) {
-			win.Radius = thumbRadius(w.s.Border.Radius, win.Zoom)
-			w.window(win)
-			w.dropRing(win.Rect, win.Radius)
-			return
+	// The Proxy entry, else the normal one drawn again at ThumbRect.
+	found := -1
+	for i, win := range w.s.Windows {
+		if win.ID != p.Thumb || !drawsAsWindow(win) {
+			continue
+		}
+		if win.Proxy {
+			found = i
+			break
+		}
+		if found < 0 && win.Preview == 0 {
+			found = i
 		}
 	}
+	if found < 0 {
+		return
+	}
+	win := w.s.Windows[found]
+	if !win.Proxy {
+		// A clean proxy of it: no border inset, ring, lines, fade,
+		// veil or overlays; its SDR expansion stays.
+		win = domain.SceneWindow{ID: win.ID, Proxy: true, Rect: p.ThumbRect, Zoom: p.ThumbZoom, SDRExpansion: win.SDRExpansion}
+	}
+	win.Radius = thumbRadius(w.s.Border.Radius, win.Zoom)
+	w.window(win)
+	w.dropRing(win.Rect, win.Radius)
 }
 
 // thumbRadius is the thumbnail's corner radius, logical px: the window
@@ -250,7 +278,7 @@ func (w *sceneWalk) dropLabel(p *domain.DropPreview, zone image.Rectangle) {
 		return
 	}
 	key := shmKey{overlay: dropLabelOverlay, scale: w.scale, style: style}
-	st := shmState{w: lw, h: lh, seq: labelSeq(p.Label)}
+	st := shmState{w: lw, h: lh, seq: labelSeq(p.Label), windowSeq: w.gen}
 	c := r.shmCached(key, st)
 	if c == nil {
 		var err error
@@ -346,7 +374,7 @@ func (w *sceneWalk) fillRounded(r image.Rectangle, c [3]uint8, radius float32) *
 		return nil
 	}
 	dr := &w.draws[n]
-	roundedDraw(dr, r, radius)
+	roundedDraw(dr, r, radius, w.square)
 	return dr
 }
 
@@ -451,21 +479,48 @@ func (w *sceneWalk) window(win domain.SceneWindow) {
 	outer := w.physRect(win.Rect.X, win.Rect.Y, win.Rect.W, win.Rect.H)
 	w.dmg.window(win.ID, content, outer.Intersect(w.bounds))
 	w.rounded = win.Radius > 0
+	// A visible tab: its ring encloses its bar, its top corners sit
+	// under it, square.
+	u, tab := tabRing(w.s.TabBars, win.ID, win.Rect)
+	tab = tab && !win.Proxy
+	w.square = 0
+	if tab {
+		w.square = cornersTop
+	}
 	var radius, innerRadius float32
 	if win.Radius > 0 {
 		radius = float32(math.Round(float64(win.Radius) * w.scale))
 		// The border's physical width, from the rects actually drawn.
-		bPhys := min(body.Min.X-outer.Min.X, body.Min.Y-outer.Min.Y, outer.Max.X-body.Max.X, outer.Max.Y-body.Max.Y)
+		// A visible tab has no top border (its bar is there): its other
+		// sides give the width.
+		bPhys := min(body.Min.X-outer.Min.X, outer.Max.X-body.Max.X, outer.Max.Y-body.Max.Y)
+		if !tab {
+			bPhys = min(bPhys, body.Min.Y-outer.Min.Y)
+		}
 		innerRadius = max(radius-float32(max(bPhys, 0)), 0)
 		if col := w.ringColor(win.ID); col != "" && b > 0 {
-			if dr := w.fillRounded(outer, parseColor(col), radius); dr != nil {
+			// A visible tab's ring encloses its bar: one rect, four
+			// rounded corners; the hole runs up to the bar's inner top.
+			ring, hole := outer, body
+			if tab {
+				ring = w.physRect(u.X, u.Y, u.W, u.H)
+				hole.Min.Y = w.phys(u.Y + min(b, u.H/2))
+			}
+			w.square = 0
+			dr := w.fillRounded(ring, parseColor(col), radius)
+			if tab {
+				w.square = cornersTop
+			}
+			if dr != nil {
 				dr.pc.misc[1] |= flagRing
 				// Opaque, the ring runs 1px under the body so no seam
 				// shows; faded, that overlap would double up: the hole
 				// is the body.
-				hole, holeRadius := body.Inset(1), max(innerRadius-1, 0)
+				holeRadius := max(innerRadius-1, 0)
 				if w.alpha < 1 {
-					hole, holeRadius = body, innerRadius
+					holeRadius = innerRadius
+				} else {
+					hole = hole.Inset(1)
 				}
 				dr.roundInner = roundRect(hole)
 				dr.radii[1] = math.Float32bits(holeRadius)
@@ -509,15 +564,17 @@ func (w *sceneWalk) window(win domain.SceneWindow) {
 	}
 	if win.Radius > 0 {
 		for j := start; j < len(w.draws); j++ {
-			roundedDraw(&w.draws[j], body, innerRadius)
+			roundedDraw(&w.draws[j], body, innerRadius, w.square)
 		}
-	} else {
+	} else if tab {
+		w.tabSeparators(win.ID, win.Rect, u)
+	} else if !win.Proxy {
 		w.separators(win.ID)
 	}
 	// Above this client's entire surface tree and border, below later
 	// windows and the separate popup pass. Overview cards and windows
 	// zooming in or out omit panels; rounded windows round them too.
-	if win.Preview == 0 && win.Zoom == 0 {
+	if win.Preview == 0 && win.Zoom == 0 && !win.Proxy {
 		outputWidth, _ := w.r.sceneSize(w.s.Transform)
 		for _, o := range w.s.Overlays {
 			if o.Window == win.ID {
@@ -525,7 +582,7 @@ func (w *sceneWalk) window(win domain.SceneWindow) {
 				w.overlay(o, body, outer.Intersect(w.bounds), outputWidth)
 				if win.Radius > 0 {
 					for j := start; j < len(w.draws); j++ {
-						roundedDraw(&w.draws[j], body, innerRadius)
+						roundedDraw(&w.draws[j], body, innerRadius, w.square)
 					}
 				}
 			}
@@ -538,10 +595,10 @@ func (w *sceneWalk) window(win domain.SceneWindow) {
 	}
 	if win.Radius > 0 {
 		for j := dimStart; j < len(w.draws); j++ {
-			roundedDraw(&w.draws[j], outer, radius)
+			roundedDraw(&w.draws[j], outer, radius, w.square)
 		}
 	}
-	w.rounded = false
+	w.rounded, w.square = false, 0
 	w.alpha, w.bounds = 1, windowBounds
 }
 
@@ -550,6 +607,7 @@ func (w *sceneWalk) tileSeparators() {
 	b := w.bounds
 	w.bounds = w.tileBounds
 	w.separators(0)
+	w.tabBars()
 	if o := w.s.Outline; o != nil {
 		w.roundedInnerBorder(o.Rect, o.Width, o.Radius, w.active)
 	}
@@ -941,10 +999,21 @@ func roundRect(r image.Rectangle) [4]float32 {
 	return [4]float32{float32(r.Min.X), float32(r.Min.Y), float32(r.Max.X), float32(r.Max.Y)}
 }
 
+// Corner bits of a rounded draw's square mask (draw.square).
+const (
+	cornerTopLeft uint32 = 1 << iota
+	cornerTopRight
+	cornerBottomLeft
+	cornerBottomRight
+	cornersTop    = cornerTopLeft | cornerTopRight
+	cornersBottom = cornerBottomLeft | cornerBottomRight
+)
+
 // roundedDraw makes d a rounded draw: the shader clips it to rect with
-// corners of radius (physical pixels).
-func roundedDraw(d *draw, rect image.Rectangle, radius float32) {
+// corners of radius (physical pixels), but the square ones.
+func roundedDraw(d *draw, rect image.Rectangle, radius float32, square uint32) {
 	d.pc.misc[1] |= flagRounded
 	d.round = roundRect(rect)
 	d.radii[0] = math.Float32bits(radius)
+	d.square = square
 }

@@ -36,6 +36,10 @@ type WorkspaceState struct {
 type ColumnState struct {
 	Rect    Rect        // column area, view offset applied (may be off-screen)
 	Windows []TileState // top to bottom
+	// Tabbed shows one window at a time; Active is the 1-based row of the
+	// visible tab, 0 when not tabbed.
+	Tabbed bool
+	Active int
 }
 
 // TileState is one tiled window and its settled rectangle.

@@ -1,6 +1,7 @@
 package overlaydraw
 
 import (
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -57,4 +58,93 @@ func TestHintLabelEmptyAndCacheBound(t *testing.T) {
 		r.Label("a", 0, 1+float64(i)/100000)
 	}
 	require.LessOrEqual(t, len(r.cache), maxEntries)
+}
+
+func TestLabelTruncatesToMaxWidth(t *testing.T) {
+	var r Raster
+	style := Style{FontPx: 13, TextOnly: true, PadX: 0.01, PadY: 0.01}
+	_, full, _ := r.Label("a rather long window title", 0, 1, style)
+	style.MaxWidth = full / 2
+	_, cut, _ := r.Label("a rather long window title", 0, 1, style)
+	require.LessOrEqual(t, cut, full/2+1, "the cut text fits (padding rounds to 0)")
+	require.Greater(t, cut, 0)
+	style.MaxWidth = full + 10
+	_, same, _ := r.Label("a rather long window title", 0, 1, style)
+	require.Equal(t, full, same, "fitting text is not cut")
+}
+
+// Widths that cut a title the same way share a cache entry; a fitting
+// title ignores MaxWidth.
+func TestLabelMaxWidthNormalised(t *testing.T) {
+	var r Raster
+	style := Style{FontPx: 13, TextOnly: true, PadX: 0.01, PadY: 0.01}
+	const title = "a rather long window title"
+	_, full, _ := r.Label(title, 0, 1, style)
+	style.MaxWidth = full + 10
+	fit, _, _ := r.Label(title, 0, 1, style)
+	style.MaxWidth = full + 11
+	fit2, _, _ := r.Label(title, 0, 1, style)
+	require.Same(t, &fit[0], &fit2[0])
+	style.MaxWidth = full / 2
+	a, _, _ := r.Label(title, 0, 1, style)
+	style.MaxWidth = full/2 + 1
+	b, _, _ := r.Label(title, 0, 1, style)
+	n := r.Len()
+	if &a[0] != &b[0] {
+		// full/2 sat on a glyph edge: one more px stays in the next one.
+		style.MaxWidth = full/2 + 2
+		c, _, _ := r.Label(title, 0, 1, style)
+		require.Same(t, &b[0], &c[0])
+		require.Equal(t, n, r.Len())
+	}
+}
+
+// A window's title is one entry, replaced when it changes.
+func TestTitlesOneEntryPerWindow(t *testing.T) {
+	var titles Titles
+	style := Style{FontPx: 13, TextOnly: true, PadX: 0.01, PadY: 0.01, MaxWidth: 200}
+	var most int
+	for i := range 500 {
+		titles.Title(1, "build "+strconv.Itoa(i)+" running", style, 0)
+		titles.Title(2, "editor", style, 0)
+		most = max(most, titles.Bytes())
+	}
+	require.Equal(t, 2, titles.Len())
+	a, _, _ := titles.Title(2, "editor", style, 0)
+	b, _, _ := titles.Title(2, "editor", style, 0)
+	require.Same(t, &a[0], &b[0])
+	one, w, h := titles.Title(1, "build 0 running", style, 0)
+	require.LessOrEqual(t, most, 2*(len(one)+w*h*4))
+	for i := range maxTitles + 10 {
+		titles.Title(uint64(10+i), "x", style, 0)
+	}
+	require.LessOrEqual(t, titles.Len(), maxTitles)
+}
+
+// A cache hit measures nothing.
+func TestCacheHitsDoNotMeasure(t *testing.T) {
+	var r Raster
+	var titles Titles
+	style := Style{FontPx: 13, TextOnly: true, PadX: 0.01, PadY: 0.01, MaxWidth: 50}
+	r.Label("a rather long label", 0, 1, style)
+	titles.Title(1, "a rather long title", style, 0)
+	n := fitCalls
+	for range 3 {
+		r.Label("a rather long label", 0, 1, style)
+		titles.Title(1, "a rather long title", style, 1)
+	}
+	require.Equal(t, n, fitCalls)
+}
+
+// Titles not drawn for more than ttl frames are swept.
+func TestTitlesSweep(t *testing.T) {
+	var titles Titles
+	style := Style{FontPx: 13, TextOnly: true, PadX: 0.01, PadY: 0.01}
+	titles.Title(1, "old", style, 0)
+	titles.Title(2, "kept", style, 0)
+	titles.Title(2, "kept", style, 100)
+	titles.Sweep(120, 100)
+	require.Equal(t, 1, titles.Len())
+	titles.Title(2, "kept", style, 120)
+	require.Equal(t, 1, titles.Len())
 }

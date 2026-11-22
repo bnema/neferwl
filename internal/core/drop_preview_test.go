@@ -52,7 +52,7 @@ func TestDropPreviewLabels(t *testing.T) {
 			radius int
 		}{
 			{"stack", three.X + three.W/2, three.Y + three.H - 40, domain.DropStack, 8},
-			{"swap", two.X + two.W/2, two.Y + two.H/2, domain.DropSwap, 8},
+			{"tab", two.X + two.W/2, two.Y + two.H/2, domain.DropTab, 8},
 			{"column", (two.X + two.W + three.X) / 2, two.Y + two.H/2, domain.DropColumn, 0},
 			{"stash", 997, 300, domain.DropStash, 0},
 		} {
@@ -65,8 +65,13 @@ func TestDropPreviewLabels(t *testing.T) {
 			if wantEdge := map[bool]domain.DropSide{true: domain.DropSideRight}[c.name == "stash"]; p.Edge != wantEdge {
 				t.Fatalf("%s: edge %v", c.name, p.Edge)
 			}
-			if p.Label != c.want.Label() || p.Label == "" || p.Radius != c.radius || p.LabelPx <= 0 || p.Fill != 0.18 || p.Thumb != 0 {
+			if p.Label != c.want.Label() || p.Label == "" || p.Radius != c.radius || p.LabelPx <= 0 || p.Fill != 0.18 {
 				t.Fatalf("%s: preview %+v", c.name, p)
+			}
+			// The output draws the tile in place: the thumbnail still
+			// follows the pointer, drawn from its normal entry.
+			if w := max(int(math.Round(float64(one.W)/4)), 96); p.Thumb != 1 || p.ThumbRect.W != w || p.ThumbZoom != float64(w)/float64(one.W) {
+				t.Fatalf("%s: thumb %+v", c.name, p)
 			}
 		}
 		if _, n := proxyIn(r.last, "A"); n != 0 {
@@ -164,7 +169,7 @@ func TestDropPreviewThumbnailAfterWorkspaceSwitch(t *testing.T) {
 		r.press(t, 0x110, domain.ModSuper)
 		r.moveTo(500, 597, 2)
 		set = r.settle(t)
-		if p := dropPreviewOf(t, set, "A"); p.Thumb != 0 || p.Label != domain.DropWorkspace.Label() {
+		if p := dropPreviewOf(t, set, "A"); p.Thumb != 1 || p.Label != domain.DropWorkspace.Label() {
 			t.Fatalf("before the switch %+v", p)
 		}
 		time.Sleep(dragHoverFirst)
@@ -281,4 +286,56 @@ func TestDropPreviewHoverFillRamp(t *testing.T) {
 			})
 		})
 	}
+}
+
+// The thumbnail follows the pointer on the output that draws the tile in
+// place, once the pointer moved past the slop, with animations on or off:
+// the scene keeps one entry per window (no proxy).
+func TestDropThumbnailOnOwnOutputAfterMotion(t *testing.T) {
+	both(t, func(t *testing.T, animated bool) {
+		r := startDragMode(t, animated, func(c *domain.Config) { c.Layout.MaxColumns = 3 }, dragOut)
+		set := dragThreeColumns(t, r)
+		one := dragRect(t, set, "A", 1)
+		x, y := one.X+one.W/2, one.Y+one.H/2
+		r.moveTo(float64(x), float64(y), 1)
+		r.settle(t)
+		r.press(t, 0x110, domain.ModSuper)
+		if p := dragScene(r.settle(t), "A").DropPreview; p != nil && p.Thumb != 0 {
+			t.Fatalf("thumb before motion: %+v", p)
+		}
+		r.moveTo(float64(x+3), float64(y+3), 2)
+		if p := dragScene(r.settle(t), "A").DropPreview; p != nil && p.Thumb != 0 {
+			t.Fatalf("thumb within the slop: %+v", p)
+		}
+		// The motion crossing the slop publishes the thumbnail itself, before
+		// any settle barrier.
+		r.moveTo(float64(x+40), float64(y), 3)
+		synctest.Wait()
+		var s domain.Scene
+		for drained := false; !drained; {
+			select {
+			case got := <-r.scenes:
+				if p := dragScene(got, "A").DropPreview; p != nil && p.Thumb != 0 {
+					s = dragScene(got, "A")
+				}
+			default:
+				drained = true
+			}
+		}
+		p := s.DropPreview
+		if p == nil || p.Thumb != 1 || p.ThumbRect.X != x+40+12 || p.ThumbZoom <= 0 {
+			t.Fatalf("thumb after motion: %+v", p)
+		}
+		n := 0
+		for _, w := range s.Windows {
+			if w.ID == 1 && !w.Popup {
+				n++
+			}
+		}
+		if _, proxies := proxyIn([]domain.Scene{s}, "A"); n != 1 || proxies != 0 {
+			t.Fatalf("window 1 entries %d, proxies %d", n, proxies)
+		}
+		r.in(ports.KeyEvent{Keysym: "Escape", Mods: domain.ModSuper, Pressed: true})
+		r.settle(t)
+	})
 }

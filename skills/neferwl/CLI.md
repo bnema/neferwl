@@ -144,7 +144,7 @@ Same names as `bind.<keys> = <action>` in the config. All need the `act` capabil
 |---|---|
 | Focus | `focus-column-left`, `focus-column-right`, `focus-window-up`, `focus-window-down`, `switch-column-next`, `switch-column-prev` |
 | Move | `move-column-left`, `move-column-right`, `move-window-up`, `move-window-down`, `consume-or-expel-window-left`, `consume-or-expel-window-right` |
-| Size and mode | `cycle-column-width`, `maximize-column`, `toggle-fullscreen`, `toggle-floating`, `set-column-width +N\|-N` (cells, 1-16), `set-window-height +N%\|-N%` (1-100) |
+| Size and mode | `cycle-column-width`, `maximize-column`, `toggle-column-tabbed`, `tab-window-left`, `tab-window-right`, `toggle-fullscreen`, `toggle-floating`, `set-column-width +N\|-N` (cells, 1-16), `set-window-height +N%\|-N%` (1-100) |
 | Workspaces | `focus-workspace-prev`, `focus-workspace-next`, `focus-workspace N`, `move-column-to-workspace-prev`, `move-column-to-workspace-next`, `move-column-to-workspace N`, `move-window-to-workspace-prev`, `move-window-to-workspace-next`, `move-window-to-workspace N`, `move-workspace-prev`, `move-workspace-next`, `workspace NAME` (toggle named) |
 | Monitors | `focus-monitor-left\|right\|up\|down`, `move-workspace-to-monitor-left\|right\|up\|down` |
 | Stash and overview | `toggle-window-stash`, `toggle-stash-visible`, `toggle-overview` |

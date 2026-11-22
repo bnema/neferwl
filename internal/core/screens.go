@@ -1,16 +1,23 @@
 package core
 
 import (
+	"math"
 	"slices"
 
 	"github.com/bnema/neferwl/internal/core/geom"
 	"github.com/bnema/neferwl/internal/domain"
+	"github.com/bnema/neferwl/internal/ports"
 )
 
 // screen is one connected output: its monitor tree, scale, layer surfaces and
 // place in the global layout (ADR 011). Outputs are ordered by config
 // (output.<name>.*), then by connection; order places them (placeOutputs).
 type screen struct {
+	// hintSize is hint.size, logical px (0 follows the output density); it
+	// sizes the tab bar (applyTabBar).
+	hintSize float64
+	// tabs is the scratch of the tab bars of the scene being built.
+	tabs             tabBarScratch
 	routeBuf, routes []WindowID
 	routeGen         uint64
 	routeSent        bool // a route was sent: Scene.Routes carries routeGen
@@ -112,7 +119,22 @@ func (s *screen) setScale(v float64) {
 	s.scale = geom.SnapScale(v)
 	w, h := s.modeSize()
 	s.mon.SetOutput(geom.Logical(w, s.scale), geom.Logical(h, s.scale))
+	s.applyTabBar()
 	s.arrange()
+}
+
+// tabPadY is the space above and below a tab title, logical px.
+const tabPadY = 3
+
+// applyTabBar sets the tab bar height of the screen's workspaces: the hint
+// font size in logical px plus the padding.
+func (s *screen) applyTabBar() {
+	scale := s.scale
+	if scale <= 0 {
+		scale = 1
+	}
+	font := ports.HintFontPixels(s.info.Width, s.info.Height, s.info.PhysicalW, s.info.PhysicalH, scale, s.hintSize) / scale
+	s.mon.SetTabBar(int(math.Round(font)) + 2*tabPadY)
 }
 
 // arrange places the layer surfaces and gives workspaces the usable area.
@@ -320,7 +342,7 @@ func (c *Core) addScreen(info domain.OutputInfo) {
 		if s.mon.Key != info.Key() {
 			// Another monitor on the same connector: key rules change.
 			s.mon.Key = info.Key()
-			c.settings(s.mon)
+			c.settings(s)
 		}
 		s.transform = c.configTransform(info.Name)
 		s.setScale(s.scale)
@@ -339,7 +361,7 @@ func (c *Core) addScreen(info domain.OutputInfo) {
 	s.off = c.offGone[info.Name]
 	delete(c.offGone, info.Name)
 	s.mon.Name, s.mon.Key = info.Name, info.Key()
-	c.settings(s.mon)
+	c.settings(s)
 	s.cfgScale = c.configScale(info.Name)
 	s.transform = c.configTransform(info.Name)
 	s.setScale(s.cfgScale)
@@ -571,7 +593,10 @@ func moveNamed(src, dst *screen, w *Workspace, home string) {
 }
 
 // settings applies output-wide config to a monitor.
-func (c *Core) settings(m *Monitor) {
+func (c *Core) settings(s *screen) {
+	m := s.mon
+	s.hintSize = c.cfg.Hint.Size
+	s.applyTabBar()
 	rules := c.cfg.Layout.LayoutRules
 	for _, o := range c.cfg.Layout.Outputs {
 		if m.matches(o.Output) {

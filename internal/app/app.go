@@ -12,6 +12,7 @@ import (
 	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/adapters/outputkit/cursors"
 	"github.com/bnema/neferwl/internal/adapters/outputkit/routing"
+	"github.com/bnema/neferwl/internal/adapters/overlaydraw"
 	"github.com/bnema/neferwl/internal/adapters/xkb"
 	"github.com/bnema/neferwl/internal/adapters/xwayland"
 	"github.com/bnema/neferwl/internal/core"
@@ -88,8 +89,9 @@ const busRetry = 2 * time.Second
 // clients. A keymap that fails to build keeps the previous layout. A touchpad
 // or mouse change goes to the input goroutine as one InputDevicesConfig; only
 // the newest one waits there. The cursor idle delay goes straight to the
-// cursor router.
-func relayConfig(ctx context.Context, cur domain.Config, in <-chan domain.ConfigChanged, out chan<- domain.ConfigChanged, keymaps chan *xkb.Keymap, deviceConfigs chan domain.InputDevicesConfig, curs *cursors.Router, commands chan<- ports.ClientCommand, log zerowrap.Logger, controlKeymaps chan *xkb.Keymap) {
+// cursor router. fonts holds the font loaded at startup; a reload loads a
+// new font path, or retries one that failed.
+func relayConfig(ctx context.Context, cur domain.Config, in <-chan domain.ConfigChanged, out chan<- domain.ConfigChanged, keymaps chan *xkb.Keymap, deviceConfigs chan domain.InputDevicesConfig, curs *cursors.Router, commands chan<- ports.ClientCommand, log zerowrap.Logger, controlKeymaps chan *xkb.Keymap, fonts fontLoader) {
 	kb := cur.Keyboard
 	devCfg := cur.InputDevicesConfig
 	for {
@@ -157,6 +159,7 @@ func relayConfig(ctx context.Context, cur domain.Config, in <-chan domain.Config
 			}
 		}
 		curs.SetHideAfter(ev.Config.Cursor.HideAfter)
+		ev.Config.FontGen = fonts.load(ev.Config.Font)
 		if ev.Config.InputDevicesConfig != devCfg {
 			devCfg = ev.Config.InputDevicesConfig
 			routing.Latest(deviceConfigs, devCfg) // this goroutine is the only sender
@@ -179,6 +182,32 @@ func relayConfig(ctx context.Context, cur domain.Config, in <-chan domain.Config
 			return
 		}
 	}
+}
+
+// fontLoader loads the font of compositor-drawn text. Its zero log-less
+// value stands for the built-in font. Owned by one goroutine at a time.
+type fontLoader struct {
+	log zerowrap.Logger
+	// path is the last path loaded; failed is set when that load failed.
+	path   string
+	failed bool
+}
+
+// load makes path the font: a new path is loaded, the same one again only
+// after a failed load. A bad file keeps the built-in font, with a warning.
+// It returns the generation of the font in place (overlaydraw.FontGen),
+// which the app forwards as Config.FontGen.
+func (f *fontLoader) load(path string) uint64 {
+	if path == f.path && !f.failed {
+		return overlaydraw.FontGen()
+	}
+	f.path = path
+	err := overlaydraw.LoadFont(path)
+	f.failed = err != nil
+	if err != nil {
+		f.log.Warn().Err(err).Msg("font not loaded; using the built-in font")
+	}
+	return overlaydraw.FontGen()
 }
 
 func consumeScenes(ctx context.Context, scenes <-chan []domain.Scene, configErrors <-chan error, binds <-chan domain.InputTrace, placements <-chan domain.PlacementTrace, tap chan<- []domain.Scene, renderScenes chan []domain.Scene) {

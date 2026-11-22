@@ -76,9 +76,12 @@ type draw struct {
 	seq               uint64
 	round, roundInner [4]float32
 	radii             [2]uint32
-	pc                drawParameters
-	shm               *shmCopy
-	im                *imported // sampled client dmabuf, for ownership barriers
+	// square is the corner mask of a rounded draw: set bits (cornerTopLeft
+	// ...) are square corners.
+	square uint32
+	pc     drawParameters
+	shm    *shmCopy
+	im     *imported // sampled client dmabuf, for ownership barriers
 	// acquire is the content's explicit-sync fence (nil: implicit).
 	acquire *os.File
 }

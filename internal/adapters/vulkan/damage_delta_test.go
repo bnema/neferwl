@@ -19,7 +19,7 @@ import (
 func TestSceneFieldCount(t *testing.T) {
 	// Routes and Animating are scheduling metadata, intentionally ignored
 	// by sceneDelta: neither draws anything.
-	const fields = 28
+	const fields = 31
 	assert.Equal(t, fields, len(reflect.VisibleFields(reflect.TypeOf(domain.Scene{}))),
 		"Scene fields changed: check sceneDelta (a field it does not compare must force a full redraw or be covered), then this count")
 }
@@ -98,6 +98,7 @@ func TestDamageDeltaFullRedraws(t *testing.T) {
 		"transform":      func(s *domain.Scene) { s.Transform = 1 },
 		"off":            func(s *domain.Scene) { s.Off = true },
 		"background":     func(s *domain.Scene) { s.Background = "#111111" },
+		"font":           func(s *domain.Scene) { s.Font = "x.ttf" },
 		"border":         func(s *domain.Scene) { s.Border.Width = 2 },
 		"workspace clip": func(s *domain.Scene) { s.WorkspaceClip = domain.Rect{W: 10, H: 10} },
 		"tile inset":     func(s *domain.Scene) { s.TileInset = domain.Insets{Bottom: 10} },
@@ -660,4 +661,50 @@ func TestDamageDeltaEdgeLabel(t *testing.T) {
 	require.False(t, d.all())
 	_, h := dropPillBound(old.DropPreview, 1)
 	assert.Equal(t, image.Rect(0, 468-dropLabelMargin-h-2, 1000, 500), d.area)
+}
+
+// A changed tab bar damages its rect only.
+func TestSceneDeltaTabBar(t *testing.T) {
+	bar := func(title string) []domain.TabBar {
+		return []domain.TabBar{{Rect: domain.Rect{X: 10, Y: 20, W: 100, H: 16}, Tabs: []domain.TabTitle{{Rect: domain.Rect{X: 10, Y: 20, W: 100, H: 16}, Title: title, Active: true, Window: 1}}}}
+	}
+	old, cur := deltaScene(1), deltaScene(2)
+	old.TabBars, cur.TabBars = bar("a"), bar("b")
+	phys := func(r domain.Rect) image.Rectangle { return image.Rect(r.X, r.Y, r.X+r.W, r.Y+r.H) }
+	area, ok := sceneDelta(old, cur, phys, 1<<30)
+	if !ok || area != image.Rect(10, 20, 110, 36) {
+		t.Fatalf("area %v ok %v", area, ok)
+	}
+	cur.TabBars = bar("a")
+	if area, ok := sceneDelta(old, cur, phys, 1<<30); !ok || !area.Empty() {
+		t.Fatalf("unchanged: area %v ok %v", area, ok)
+	}
+}
+
+// A window drawn twice (its slot, then its drag thumbnail) whose content
+// needs a full-rect redraw damages both rects; the target still holds
+// the slot.
+func TestDamageWindowDrawnTwiceCoversBoth(t *testing.T) {
+	bounds := image.Rect(0, 0, 1000, 500)
+	slot, thumb := image.Rect(0, 0, 300, 500), image.Rect(600, 300, 700, 400)
+	old := deltaScene(1, win(1, 0, 0, 300, 500))
+	tg := held(old)
+	tg.windows = map[domain.WindowID]heldWindow{1: {seq: 1, rect: slot}}
+	for name, c := range map[string]domain.SurfaceContent{
+		"children": {Seq: 2, Width: 10, Height: 10, Children: []domain.Subsurface{{}}},
+		"history":  {Seq: 2, Width: 10, Height: 10},
+	} {
+		cur := old
+		cur.Seq = 2
+		d := newDamage(tg, cur, bounds)
+		require.False(t, d.all(), name)
+		d.window(1, c, slot)
+		d.window(1, c, thumb)
+		assert.Equal(t, slot.Union(thumb), d.area, name)
+		assert.Equal(t, slot, d.drawn[1].rect, name)
+	}
+	d := newDamage(tg, deltaScene(2, win(1, 0, 0, 300, 500)), bounds)
+	d.window(2, domain.SurfaceContent{Seq: 1}, slot)
+	d.window(2, domain.SurfaceContent{Seq: 1}, thumb)
+	assert.Equal(t, slot.Union(thumb), d.area, "new window")
 }

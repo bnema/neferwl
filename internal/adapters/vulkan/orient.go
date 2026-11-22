@@ -2,6 +2,7 @@ package vulkan
 
 import (
 	"image"
+	"math"
 
 	"github.com/bnema/neferwl/internal/domain"
 )
@@ -48,6 +49,7 @@ func (r *Renderer) orient(ds []draw, t domain.BufferTransform) {
 				rect := t.RectToBuffer(image.Rect(int(bounds[0]), int(bounds[1]), int(bounds[2]), int(bounds[3])), sw, sh)
 				*bounds = roundRect(rect)
 			}
+			ds[i].square = squareTables[t&7][ds[i].square&15]
 		}
 		if pc.misc[0] == modeSolid {
 			continue
@@ -65,3 +67,21 @@ func (r *Renderer) orient(ds []draw, t domain.BufferTransform) {
 		pc.mapy[1] = float32(fyx*mxy + fyy*myy)
 	}
 }
+
+// squareTables maps a square-corner mask (draw.square) built in scene space
+// to the target under each transform: corner (cx, cy) of a rect lands on
+// corner t.ToBuffer(cx, cy) of its oriented rect.
+var squareTables = func() (tables [8][16]uint32) {
+	for t := range domain.BufferTransform(8) {
+		for mask := range uint32(16) {
+			for bit := range uint32(4) {
+				if mask&(1<<bit) == 0 {
+					continue
+				}
+				x, y := t.ToBuffer(float64(bit&1), float64(bit>>1), 1, 1)
+				tables[t][mask] |= 1 << (uint32(math.Round(x)) + 2*uint32(math.Round(y)))
+			}
+		}
+	}
+	return tables
+}()

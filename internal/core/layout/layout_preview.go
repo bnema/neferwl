@@ -3,6 +3,20 @@ package layout
 // appendPreviewColumn shares the row projection without retaining scratch or
 // reading workspace state. Each layout owns the column rectangle and span.
 func appendPreviewColumn(dst []Placement, rowBuf []Rect, r Rect, c Column, gap int, focused bool) []Placement {
+	if c.Tabbed {
+		// The overview shows the visible tab alone, at the column size.
+		// The other tabs stay as hidden placements so they keep their
+		// last configure instead of being pruned.
+		sel := c.Selected()
+		for _, id := range c.Windows {
+			if id == sel {
+				dst = append(dst, Placement{ID: id, Rect: r, Focused: focused})
+			} else {
+				dst = append(dst, Placement{ID: id, Hidden: true})
+			}
+		}
+		return dst
+	}
 	rowBuf = RowRectsInto(rowBuf[:0], r, c, gap)
 	for j, t := range rowBuf {
 		dst = append(dst, Placement{ID: c.Windows[j], Rect: t, Focused: focused && j == c.Focus})

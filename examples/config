@@ -30,6 +30,10 @@ xwayland.xsettings = on
 
 background = #111111
 
+# Font file for compositor-drawn text (tab titles, drop and hint labels);
+# unset uses the built-in Go Mono.
+# font = /usr/share/fonts/TTF/AdwaitaMonoNerdFont-Regular.ttf
+
 # Separator lines between tiled windows (tmux style), in logical pixels.
 # The lines along the focused window use active; width 0 disables them,
 # empty inactive draws only the focused lines. Floats get a full border.
@@ -56,7 +60,7 @@ layout.max-columns = 2
 layout.overflow = cascade
 
 # Dragging a tile (cmd + drag) drops it on an anchor. Window sides: center
-# (swap, none), left/right (column, swap, none), top/bottom (stack, swap,
+# (tab, swap, none), left/right (column, swap, none), top/bottom (stack, swap,
 # none). gap: column or none. Edges (left, right, top, bottom): auto,
 # scroll, workspace, column, stash, float or none; auto switches workspaces
 # on the workspace axis and scrolls on the other one when the layout
@@ -64,7 +68,7 @@ layout.overflow = cascade
 # edge, then every 250 ms; the others act on release. none removes an
 # anchor. Escape cancels the drag. Override per output with
 # drop.<output>.* and per workspace with workspace.<name>.drop.*.
-# drop.window.center = swap
+# drop.window.center = tab
 # drop.window.left = column
 # drop.window.right = column
 # drop.window.top = stack
@@ -249,6 +253,10 @@ bind.cmd+shift+space = toggle-floating
 # Grow the focused column by one cell, then back to equal shares.
 bind.cmd+r = cycle-column-width
 bind.cmd+f = maximize-column
+# Show the focused column as tabs under a title bar, or back as a stack.
+bind.cmd+t = toggle-column-tabbed
+bind.cmd+shift+bracketleft = tab-window-left
+bind.cmd+shift+bracketright = tab-window-right
 bind.cmd+shift+f = toggle-fullscreen
 bind.cmd+s = toggle-stash-visible
 bind.cmd+shift+s = toggle-window-stash

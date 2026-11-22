@@ -48,6 +48,9 @@ var defaultBinds = []struct{ combo, action string }{
 	{"cmd+bracketright", "consume-or-expel-window-right"},
 	{"cmd+r", "cycle-column-width"},
 	{"cmd+f", "maximize-column"},
+	{"cmd+t", "toggle-column-tabbed"},
+	{"cmd+shift+bracketleft", "tab-window-left"},
+	{"cmd+shift+bracketright", "tab-window-right"},
 	{"cmd+shift+f", "toggle-fullscreen"},
 	{"cmd+s", "toggle-stash-visible"},
 	{"cmd+shift+s", "toggle-window-stash"},
@@ -662,6 +665,14 @@ func parseBytes(data []byte) (domain.Config, map[string]string, []Warning, error
 			raw[fmt.Sprintf("startup.%d", len(c.Startup))] = value
 			continue
 		}
+		if key == "font" && c.Font != "" {
+			// Kept anyway: the file may appear before the next reload.
+			if fi, err := os.Stat(c.Font); err != nil {
+				warn("font: %v; the built-in font is used", err)
+			} else if !fi.Mode().IsRegular() {
+				warn("font: %s is not a regular file; the built-in font is used", c.Font)
+			}
+		}
 		override()
 	}
 	warnings = append(warnings, checkOutputAnchors(c.Outputs, relKeys, offsetLines, seen)...)
@@ -850,6 +861,9 @@ func set(c *domain.Config, key, v string) error {
 		default:
 			return fmt.Errorf("must be on or off")
 		}
+	case "font":
+		// Read when applied (overlaydraw.LoadFont): a bad file falls back.
+		c.Font = expandHome(v)
 	case "background":
 		if !color.MatchString(v) {
 			return fmt.Errorf("must be #rrggbb")
@@ -1371,7 +1385,7 @@ func setDrop(p *domain.DropPolicy, suffix, v string) error {
 	a, ok := domain.ParseDropAction(v)
 	if !ok || !domain.DropAllowed(zone, side, a) {
 		var allowed []string
-		for x := domain.DropAuto; x <= domain.DropFloat; x++ {
+		for x := range domain.DropActionCount {
 			if domain.DropAllowed(zone, side, x) {
 				allowed = append(allowed, x.String())
 			}

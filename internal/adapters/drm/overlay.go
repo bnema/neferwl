@@ -168,6 +168,12 @@ func overlayCandidate(s domain.Scene, surfaces map[domain.WindowID]domain.Surfac
 			// The content sits inside the lines, not at the window's rect.
 			return domain.SceneWindow{}, domain.SurfaceContent{}, colorBypass, "border"
 		}
+		for _, bar := range s.TabBars {
+			if bar.Rect.Overlaps(pick.Rect) {
+				// A bar over the window would go under the plane.
+				return domain.SceneWindow{}, domain.SurfaceContent{}, colorBypass, "tab_bar"
+			}
+		}
 		for _, sep := range s.Separators {
 			if sep.Rect.Overlaps(pick.Rect) && !linesUnder(s, sep, pick, pickAt) {
 				// The overlay shows the buffer alone; the lines would go

@@ -110,6 +110,7 @@ func TestDragReloadRetargetsPreview(t *testing.T) {
 		cfg := r.cfg
 		cfg.Layout.MaxColumns = 3
 		cfg.Drop.SetWindow(domain.DropSideLeft, domain.DropNone)
+		cfg.Drop.SetWindow(domain.DropSideCenter, domain.DropSwap)
 		send(r.reload, domain.ConfigChanged{Config: cfg})
 		if p := dragScene(r.settle(t), "A").DropPreview; p == nil || p.Label != domain.DropSwap.Label() {
 			t.Fatalf("preview after the reload: %+v", p)
