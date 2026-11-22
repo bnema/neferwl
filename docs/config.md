@@ -573,7 +573,7 @@ A tabbed column shows one of its windows at a time, under a title bar with one t
 - A click on a tab shows it; the window under it gets no click. `cmd` + drag on a tab drags that window, even a hidden one.
 - Dropping a window on another window's center (`drop.window.center = tab`, the default) adds it to that window's column as a new tab and makes the whole column tabbed.
 - A tabbed column has no row borders and ignores `set-window-height`.
-- A column left with one window is a normal column again.
+- A column left with one window is a normal column again. A tab sent to the stash or floated and then brought back makes its column tabbed again.
 - The overview shows only the visible tab. A fullscreen tab covers the bar.
 
 ### Column widths
