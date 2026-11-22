@@ -184,9 +184,10 @@ func targetAllowed(a Action) bool {
 
 // runTargeted runs an allowed action on id in its own workspace, without
 // moving the keyboard focus or any current workspace: it borrows the
-// workspace's focus for the action. It does nothing while the target's
-// overview is open, or when id cannot take that focus (another window
-// covers it fullscreen, or it is in a hidden stash).
+// workspace's selection for the action (Select, no scroll or unmaximize).
+// It does nothing while the target's overview is open, or when id cannot
+// take that selection (another window covers it fullscreen, or it is in a
+// hidden stash). close-window closes the target wherever it is.
 func (c *Core) runTargeted(ctx context.Context, id WindowID, a Action) error {
 	if c.ch.Binds != nil {
 		defer c.traceBind(string(a), c.bindCombo, c.bindSource)()
@@ -197,28 +198,35 @@ func (c *Core) runTargeted(ctx context.Context, id WindowID, a Action) error {
 		return nil
 	}
 	if a == ActionCloseWindow {
-		return c.layoutAction(ctx, func() Effect { return Effect{Close: id} })
+		return c.applyLayout(ctx, false, func() Effect { return Effect{Close: id} })
 	}
-	return c.layoutAction(ctx, func() Effect {
+	return c.applyLayout(ctx, false, func() Effect {
 		prev, _ := w.Focused()
-		restore := func() {
-			if prev != 0 && prev != id && w.Has(prev) {
-				w.FocusID(prev)
+		restore := func(w *Workspace, prev WindowID) {
+			if got, _ := w.Focused(); prev != 0 && prev != got && w.Has(prev) {
+				w.Select(prev)
 			}
 		}
-		w.FocusID(id)
+		w.Select(id)
 		if got, _ := w.Focused(); got != id {
-			restore()
+			restore(w, prev)
 			return Effect{}
 		}
 		if _, _, ok := WorkspaceArg(a); ok {
-			if i, _, ok := s.mon.moveDest(a); ok && s.mon.Workspaces[i] != w {
-				MoveFocused(w, s.mon.Workspaces[i], false)
+			// The window moves alone, behind no cover; the selection of its
+			// destination stays.
+			if i, _, ok := s.mon.moveDest(a); ok {
+				if dst := s.mon.Workspaces[i]; dst != w && dst.Fullscreen == 0 {
+					dstPrev, _ := dst.Focused()
+					if MoveFocused(w, dst, false) {
+						restore(dst, dstPrev)
+					}
+				}
 			}
 		} else {
 			w.Apply(a)
 		}
-		restore()
+		restore(w, prev)
 		s.mon.normalize()
 		return Effect{}
 	})

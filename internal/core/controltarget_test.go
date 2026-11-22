@@ -167,3 +167,89 @@ func TestTargetErrors(t *testing.T) {
 		}
 	})
 }
+
+// A targeted move to the workspace on screen keeps its keyboard focus; a
+// cover there refuses the move.
+func TestTargetMoveToShownWorkspace(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := runChainRig(t, "none")
+		r.mustDo(t, "mark a; move-window-to-workspace 2")
+		focus := stateFocus(r.current(t))
+		r.mustTarget(t, "a", "move-window-to-workspace 1")
+		st := r.current(t)
+		if stateWindow(t, st, 5).Workspace != 1 || stateFocus(st) != focus {
+			t.Fatalf("5 on %d, focus %d want %d", stateWindow(t, st, 5).Workspace, stateFocus(st), focus)
+		}
+		r.mustDo(t, "focus-column-left; move-window-to-workspace 2; toggle-fullscreen")
+		cover := stateFocus(r.current(t))
+		r.mustDo(t, "focus-workspace 2; mark b; focus-workspace 1")
+		r.mustTarget(t, "b", "move-window-to-workspace 1")
+		st = r.current(t)
+		held := stateWindow(t, st, cover)
+		if !held.Fullscreen || stateFocus(st) != cover {
+			t.Fatalf("cover changed: %+v", held)
+		}
+		for _, w := range st.Windows {
+			if w.Marks == "b" && w.Workspace != 2 {
+				t.Fatalf("moved behind a cover: %+v", w)
+			}
+		}
+	})
+}
+
+// The borrowed selection keeps a maximized column of a fixed layout.
+func TestTargetKeepsMaximizedColumn(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := runChainRigWith(t, "none", func(c *domain.Config) { c.Layout.Overflow = "fixed" })
+		r.mustDo(t, "focus-column-left; mark a; focus-column-right; maximize-column")
+		widths := func() []int {
+			var w []int
+			for _, col := range r.current(t).Workspaces[0].Columns {
+				w = append(w, col.Rect.W)
+			}
+			return w
+		}
+		before := widths()
+		r.mustTarget(t, "a", "toggle-floating")
+		st := r.current(t)
+		if !stateWindow(t, st, 4).Floating || stateFocus(st) != 5 {
+			t.Fatalf("4 floating %v, focus %d", stateWindow(t, st, 4).Floating, stateFocus(st))
+		}
+		after := widths()
+		if len(after) == 0 || after[len(after)-1] != before[len(before)-1] || after[len(after)-1] < 400 {
+			t.Fatalf("maximized column lost: %v -> %v", before, after)
+		}
+	})
+}
+
+// close-window closes a target in a hidden stash.
+func TestTargetCloseHiddenStash(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := runChainRig(t, "none")
+		r.mustDo(t, "mark a; toggle-window-stash; toggle-stash-visible")
+		r.drain()
+		r.mustTarget(t, "a", "close-window")
+		for _, cmd := range r.sent() {
+			if c, ok := cmd.(ports.CloseWindow); ok && c.ID == 5 {
+				return
+			}
+		}
+		t.Fatal("no CloseWindow for the stashed target")
+	})
+}
+
+// A stash shown over a cover stays shown through a targeted action.
+func TestTargetKeepsStashOverCover(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := runChainRig(t, "none")
+		r.mustDo(t, "focus-column-left; focus-column-left; mark a; focus-column-right; focus-column-right; toggle-window-stash; focus-column-left; toggle-fullscreen; toggle-stash-visible")
+		st := r.current(t)
+		if w := stateWindow(t, st, 5); w.StashIndex == 0 || w.Hidden || !w.Visible {
+			t.Fatalf("setup: stash %+v focus %d", w, stateFocus(st))
+		}
+		r.mustTarget(t, "a", "toggle-floating")
+		if w := stateWindow(t, r.current(t), 5); w.Hidden || !w.Visible {
+			t.Fatalf("stash over cover lost: %+v", w)
+		}
+	})
+}
