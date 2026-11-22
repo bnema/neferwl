@@ -249,3 +249,26 @@ func TestDropPreviewAreaCoversDrawsAtScale(t *testing.T) {
 	}
 	require.Greater(t, n, 6, "zone, ring, pill and thumbnail drawn")
 }
+
+// A thumbnail drawn from the window's normal entry keeps its SDR
+// expansion: its content draws in the window's expanded colour.
+func TestSceneDropPreviewCleanProxyKeepsSDRExpansion(t *testing.T) {
+	r := &Renderer{width: 80, height: 60, hdrNits: 203}
+	bounds := image.Rect(0, 0, 80, 60)
+	thumb := domain.Rect{X: 50, Y: 30, W: 20, H: 30}
+	s := dropScene(&domain.DropPreview{Rect: domain.Rect{X: 2, Y: 2, W: 30, H: 30}, Fill: 0.18, Thumb: 1, ThumbRect: thumb, ThumbZoom: 0.5})
+	s.Windows[0].SDRExpansion = (domain.SDRExpansion{Intensity: 0.5, PeakNits: 604, SDRWhiteNits: 203}).Curve()
+	contents := map[domain.WindowID]domain.SurfaceContent{1: {ID: 1, Width: 1, Height: 1, LogicalW: 40, LogicalH: 60,
+		Solid: &domain.SolidColor{R: 0.5, G: 0.5, B: 0.5, A: 1}, Opaque: true}}
+	colors := map[[4]int32][4]float32{}
+	for _, d := range r.draws(s, contents, newDamage(&target{}, s, bounds)) {
+		if d.pc.misc[0] == modeSolid {
+			colors[d.pc.rect] = d.pc.color
+		}
+	}
+	in, ok := colors[[4]int32{0, 0, 40, 60}]
+	require.True(t, ok, "window content drawn")
+	got, ok := colors[[4]int32{50, 30, 70, 60}]
+	require.True(t, ok, "thumbnail content drawn")
+	require.Equal(t, in, got, "thumbnail in the window's expanded colour")
+}

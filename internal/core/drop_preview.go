@@ -216,7 +216,9 @@ func (c *Core) dropThumb(sc *screen, id WindowID, buf *[]Placement) (Rect, float
 // dropProxy adds the thumbnail window of the drag preview of sc to ws,
 // keeping its IDs unique: it replaces the window's entry, which sc does
 // not draw (dropShown: hidden, or out of the view), else it is added.
-func (c *Core) dropProxy(ws []domain.SceneWindow, sc *screen) []domain.SceneWindow {
+// It keeps the entry's SDR expansion; an added one gets the window's on
+// sc (caps, config).
+func (c *Core) dropProxy(ws []domain.SceneWindow, sc *screen, caps domain.OutputHDRCaps, config domain.OutputConfig) []domain.SceneWindow {
 	d := c.drag
 	if d == nil || d.anim.screen != sc || d.target.preview == nil || d.target.preview.Thumb == 0 || d.target.preview.ThumbZoom <= 0 {
 		return ws
@@ -228,10 +230,12 @@ func (c *Core) dropProxy(ws []domain.SceneWindow, sc *screen) []domain.SceneWind
 	}
 	for i, w := range ws {
 		if w.ID == p.Thumb && !w.Popup {
+			proxy.SDRExpansion = w.SDRExpansion
 			ws[i] = proxy
 			return ws
 		}
 	}
+	proxy.SDRExpansion, _ = c.windowSDRExpansion(p.Thumb, false, caps, config)
 	return append(ws, proxy)
 }
 

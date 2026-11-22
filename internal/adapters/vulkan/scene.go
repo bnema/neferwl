@@ -200,8 +200,8 @@ func (w *sceneWalk) dropPreview() {
 	win := w.s.Windows[found]
 	if !win.Proxy {
 		// A clean proxy of it: no border inset, ring, lines, fade,
-		// veil or overlays.
-		win = domain.SceneWindow{ID: win.ID, Proxy: true, Rect: p.ThumbRect, Zoom: p.ThumbZoom}
+		// veil or overlays; its SDR expansion stays.
+		win = domain.SceneWindow{ID: win.ID, Proxy: true, Rect: p.ThumbRect, Zoom: p.ThumbZoom, SDRExpansion: win.SDRExpansion}
 	}
 	win.Radius = thumbRadius(w.s.Border.Radius, win.Zoom)
 	w.window(win)
