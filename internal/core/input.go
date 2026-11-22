@@ -592,15 +592,23 @@ func (c *Core) runAction(ctx context.Context, action Action) error {
 // switcher, takes the keyboard back, then animates, spawns, closes and
 // publishes what apply changed.
 func (c *Core) layoutAction(ctx context.Context, apply func() Effect) error {
+	return c.applyLayout(ctx, true, apply)
+}
+
+// applyLayout is layoutAction; a bind (bind set) also closes the switcher
+// and takes the keyboard back, which a targeted control action does not.
+func (c *Core) applyLayout(ctx context.Context, bind bool, apply func() Effect) error {
 	before := c.cur().mon.Current()
 	swiped := c.swipedWorkspace()
 	now := c.now()
 	// Snapshot before the switcher closes: its cards fly back to the layout.
 	shots := c.snapshot(now)
-	if c.switching() {
-		c.cancelSwitcher()
+	if bind {
+		if c.switching() {
+			c.cancelSwitcher()
+		}
+		c.keyboard.takeBack() // a bind acts on the windows
 	}
-	c.keyboard.takeBack() // a bind acts on the windows
 	effect := apply()
 	if effect.Quit {
 		return ErrQuit
