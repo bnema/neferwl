@@ -16,6 +16,7 @@ import (
 // It is not safe for concurrent use; the caller owns it.
 type Panel struct {
 	faces      map[float64]font.Face
+	gen        uint64
 	img        image.RGBA
 	foreground color.RGBA
 	ink        image.Uniform
@@ -32,6 +33,10 @@ func (p *Panel) Draw(lines [4]string, graph [64]uint16, scale float64, maxWidth 
 	}
 	if scale <= 0 || math.IsNaN(scale) || math.IsInf(scale, 0) {
 		scale = 1
+	}
+	if st := currentFont(); st.gen != p.gen {
+		closeFaces(&p.faces)
+		p.gen = st.gen
 	}
 	face := cachedFace(&p.faces, style.FontPx)
 	if face == nil {

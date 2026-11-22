@@ -101,7 +101,7 @@ func (w *sceneWalk) tabTitle(tab domain.TabTitle, rect image.Rectangle, style ov
 	keyStyle := style
 	keyStyle.MaxWidth = 0
 	key := shmKey{overlay: tabTitleOverlay | uint64(tab.Window), scale: w.scale, style: keyStyle}
-	st := shmState{w: lw, h: lh, seq: labelSeq(tab.Title)}
+	st := shmState{w: lw, h: lh, seq: labelSeq(tab.Title), windowSeq: overlaydraw.FontGen()}
 	c := r.shmCached(key, st)
 	if c == nil {
 		var err error

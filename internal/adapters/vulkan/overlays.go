@@ -94,7 +94,7 @@ func (w *sceneWalk) overlay(o domain.Overlay, anchor, clip image.Rectangle, outp
 	if rect.Intersect(clip).Empty() {
 		return
 	}
-	st := shmState{w: lw, h: lh, seq: o.Seq}
+	st := shmState{w: lw, h: lh, seq: o.Seq, windowSeq: overlaydraw.FontGen()}
 	c = r.shmCached(key, st)
 	if c == nil {
 		var err error

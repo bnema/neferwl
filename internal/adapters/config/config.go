@@ -851,6 +851,9 @@ func set(c *domain.Config, key, v string) error {
 		default:
 			return fmt.Errorf("must be on or off")
 		}
+	case "font":
+		// Read when applied (overlaydraw.LoadFont): a bad file falls back.
+		c.Font = v
 	case "background":
 		if !color.MatchString(v) {
 			return fmt.Errorf("must be #rrggbb")

@@ -1411,3 +1411,14 @@ func TestFollowMouseDelay(t *testing.T) {
 		})
 	}
 }
+
+// font takes a path as is; the adapter that draws text reads it.
+func TestParseFont(t *testing.T) {
+	c, w, err := Parse(strings.NewReader("font = /usr/share/fonts/TTF/Some Font.ttf\n"))
+	if err != nil || len(w) != 0 || c.Font != "/usr/share/fonts/TTF/Some Font.ttf" {
+		t.Fatalf("font %q, %v, %v", c.Font, w, err)
+	}
+	if c, _, _ := Parse(strings.NewReader("")); c.Font != "" {
+		t.Fatalf("default font %q", c.Font)
+	}
+}

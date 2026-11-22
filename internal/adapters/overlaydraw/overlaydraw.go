@@ -8,10 +8,8 @@ import (
 	"image/color"
 	"image/draw"
 	"math"
-	"sync"
 
 	"golang.org/x/image/font"
-	"golang.org/x/image/font/gofont/gomono"
 	"golang.org/x/image/font/opentype"
 	"golang.org/x/image/math/fixed"
 )
@@ -25,11 +23,6 @@ const (
 	maxEntries = 1024
 )
 
-var (
-	parseOnce sync.Once
-	parsed    *opentype.Font
-	parseErr  error
-)
 
 type key struct {
 	text  string
@@ -47,6 +40,7 @@ type entry struct {
 // renderer owns it.
 type Raster struct {
 	faces map[float64]font.Face
+	gen   uint64
 	cache map[key]entry
 	// raw maps a key with the caller's MaxWidth to its cache key, so a
 	// hit measures nothing. It is cleared with cache.
@@ -74,6 +68,10 @@ func (r *Raster) Label(text string, typed int, scale float64, styles ...Style) (
 	style := Style{FontPx: fontSize * scale, Background: bg, Foreground: fg}
 	if len(styles) > 0 {
 		style = styles[0]
+	}
+	if st := currentFont(); st.gen != r.gen {
+		closeFaces(&r.faces)
+		r.gen, r.cache, r.raw = st.gen, nil, nil
 	}
 	rk := key{text, typed, scale, style}
 	if k, ok := r.raw[rk]; ok {
@@ -103,13 +101,14 @@ func (r *Raster) face(scale float64) font.Face {
 	return cachedFace(&r.faces, scale)
 }
 
-// cachedFace shares font loading without sharing mutable faces between owners.
+// cachedFace shares font loading without sharing mutable faces between
+// owners. The owner drops its faces when the font changes (FontGen).
 func cachedFace(faces *map[float64]font.Face, scale float64) font.Face {
 	if f, ok := (*faces)[scale]; ok {
 		return f
 	}
-	parseOnce.Do(func() { parsed, parseErr = opentype.Parse(gomono.TTF) })
-	if parseErr != nil {
+	parsed := currentFont().font
+	if parsed == nil {
 		return nil
 	}
 	f, err := opentype.NewFace(parsed, &opentype.FaceOptions{Size: scale, DPI: 72, Hinting: font.HintingFull})
@@ -117,13 +116,18 @@ func cachedFace(faces *map[float64]font.Face, scale float64) font.Face {
 		return nil
 	}
 	if *faces == nil || len(*faces) >= 16 {
-		for _, old := range *faces {
-			_ = old.Close()
-		}
-		*faces = map[float64]font.Face{}
+		closeFaces(faces)
 	}
 	(*faces)[scale] = f
 	return f
+}
+
+// closeFaces closes and empties faces.
+func closeFaces(faces *map[float64]font.Face) {
+	for _, old := range *faces {
+		_ = old.Close()
+	}
+	*faces = map[float64]font.Face{}
 }
 
 // render draws an opaque box inside a one-physical-pixel translucent outline.
@@ -232,6 +236,7 @@ const maxTitles = 256
 // cache. It is not safe for concurrent use: the renderer owns it.
 type Titles struct {
 	faces map[float64]font.Face
+	gen   uint64
 	m     map[uint64]titleEntry
 }
 
@@ -252,6 +257,10 @@ type titleEntry struct {
 func (t *Titles) Title(id uint64, text string, style Style, frame uint64) (pix []byte, w, h int) {
 	if text == "" {
 		return nil, 0, 0
+	}
+	if st := currentFont(); st.gen != t.gen {
+		closeFaces(&t.faces)
+		t.gen, t.m = st.gen, nil
 	}
 	old, ok := t.m[id]
 	if ok && old.text == text && old.raw == style {

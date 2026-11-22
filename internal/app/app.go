@@ -12,6 +12,7 @@ import (
 	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/adapters/outputkit/cursors"
 	"github.com/bnema/neferwl/internal/adapters/outputkit/routing"
+	"github.com/bnema/neferwl/internal/adapters/overlaydraw"
 	"github.com/bnema/neferwl/internal/adapters/xkb"
 	"github.com/bnema/neferwl/internal/adapters/xwayland"
 	"github.com/bnema/neferwl/internal/core"
@@ -92,6 +93,8 @@ const busRetry = 2 * time.Second
 func relayConfig(ctx context.Context, cur domain.Config, in <-chan domain.ConfigChanged, out chan<- domain.ConfigChanged, keymaps chan *xkb.Keymap, deviceConfigs chan domain.InputDevicesConfig, curs *cursors.Router, commands chan<- ports.ClientCommand, log zerowrap.Logger, controlKeymaps chan *xkb.Keymap) {
 	kb := cur.Keyboard
 	devCfg := cur.InputDevicesConfig
+	font := cur.Font
+	loadFont(font, log)
 	for {
 		var ev domain.ConfigChanged
 		select {
@@ -157,6 +160,10 @@ func relayConfig(ctx context.Context, cur domain.Config, in <-chan domain.Config
 			}
 		}
 		curs.SetHideAfter(ev.Config.Cursor.HideAfter)
+		if ev.Config.Font != font {
+			font = ev.Config.Font
+			loadFont(font, log)
+		}
 		if ev.Config.InputDevicesConfig != devCfg {
 			devCfg = ev.Config.InputDevicesConfig
 			routing.Latest(deviceConfigs, devCfg) // this goroutine is the only sender
@@ -178,6 +185,14 @@ func relayConfig(ctx context.Context, cur domain.Config, in <-chan domain.Config
 		case <-ctx.Done():
 			return
 		}
+	}
+}
+
+// loadFont makes path the font of compositor-drawn text; a bad file keeps
+// the built-in font, with a warning.
+func loadFont(path string, log zerowrap.Logger) {
+	if err := overlaydraw.LoadFont(path); err != nil {
+		log.Warn().Err(err).Msg("font not loaded; using the built-in font")
 	}
 }
 

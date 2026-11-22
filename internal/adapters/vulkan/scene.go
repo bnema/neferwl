@@ -274,7 +274,7 @@ func (w *sceneWalk) dropLabel(p *domain.DropPreview, zone image.Rectangle) {
 		return
 	}
 	key := shmKey{overlay: dropLabelOverlay, scale: w.scale, style: style}
-	st := shmState{w: lw, h: lh, seq: labelSeq(p.Label)}
+	st := shmState{w: lw, h: lh, seq: labelSeq(p.Label), windowSeq: overlaydraw.FontGen()}
 	c := r.shmCached(key, st)
 	if c == nil {
 		var err error

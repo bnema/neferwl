@@ -30,6 +30,10 @@ xwayland.xsettings = on
 
 background = #111111
 
+# Font file for compositor-drawn text (tab titles, drop and hint labels);
+# unset uses the built-in Go Mono.
+# font = /usr/share/fonts/TTF/AdwaitaMonoNerdFont-Regular.ttf
+
 # Separator lines between tiled windows (tmux style), in logical pixels.
 # The lines along the focused window use active; width 0 disables them,
 # empty inactive draws only the focused lines. Floats get a full border.

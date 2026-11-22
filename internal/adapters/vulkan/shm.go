@@ -229,7 +229,7 @@ type shmKey struct {
 type shmState struct {
 	w, h      int
 	seq       uint64
-	windowSeq uint64 // root damage history uses window publications
+	windowSeq uint64 // root damage history uses window publications; overlaydraw.FontGen for compositor text
 }
 
 // shmCopy is one of a surface's two GPU buffers.
