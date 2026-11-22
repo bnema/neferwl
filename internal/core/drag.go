@@ -218,7 +218,7 @@ func (c *Core) retarget(src *Workspace) bool {
 	c.aimDropPreview(old)
 	if !same {
 		c.stopDragHover()
-		if t.a.Kind == AnchorEdge && t.a.Action.Hover() {
+		if hoverEdge(t.a) {
 			c.dragHover.timerC, c.dragHover.stop = newTimer(c.opts.Clock, dragHoverFirst)
 		}
 	}
@@ -243,6 +243,21 @@ func (c *Core) dragAlive(id WindowID) (*Workspace, bool) {
 
 // hoverEdge reports whether a is an edge acting while the pointer rests.
 func hoverEdge(a Anchor) bool { return a.Kind == AnchorEdge && a.Action.Hover() }
+
+// retargetDrag follows a config change under a still pointer: the tile
+// drag's preview never shows a zone the new policy removed.
+func (c *Core) retargetDrag() {
+	d := c.drag
+	if d == nil || d.float {
+		return
+	}
+	src, ok := c.dragAlive(d.id)
+	if !ok {
+		c.abortDrag()
+		return
+	}
+	c.retarget(src)
+}
 
 func (c *Core) stopDragHover() {
 	if c.dragHover.stop != nil {
@@ -280,10 +295,8 @@ func (c *Core) dragHoverTick(ctx context.Context) error {
 			return nil
 		}
 	case domain.DropWorkspace:
+		// dropAt offers no workspace edge without a workspace past it.
 		m := d.target.screen.mon
-		if m.shown != nil {
-			return nil
-		}
 		now := c.now()
 		shots := c.snapshot(now)
 		m.Focus(m.Active + a.Dir)

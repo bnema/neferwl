@@ -62,14 +62,58 @@ func TestDragHoverEmptyWorkspaceSideEdge(t *testing.T) {
 		if got := columnsOf(r.settle(t), "A"); len(got) != 0 {
 			t.Fatalf("not on the empty workspace: %v", got)
 		}
+		// Let the switch's position hint expire: its hide publishes.
+		time.Sleep(time.Second)
+		r.settle(t)
 		// Past the empty zone's hysteresis: only an edge could answer.
 		r.moveTo(1, 300, 3)
 		set := r.settle(t)
 		if p := dragScene(set, "A").DropPreview; p != nil && p.Label == domain.DropScroll.Label() {
 			t.Fatalf("scroll zone on an empty workspace: %+v", p)
 		}
+		// Nothing happens on the rest: no scene, the same workspace.
+		select {
+		case <-r.scenes:
+		default:
+		}
 		time.Sleep(time.Second)
+		synctest.Wait()
+		select {
+		case <-r.scenes:
+			t.Fatal("published on a rest with nothing to do")
+		default:
+		}
+		after := r.settle(t)
+		if got := columnsOf(after, "A"); len(got) != 0 {
+			t.Fatalf("columns %v on the empty workspace", got)
+		}
+		if _, ok := windowIn(after, "A", 2); ok {
+			t.Fatal("switched away from the empty workspace")
+		}
+		r.in(ports.KeyEvent{Keysym: "Escape", Mods: domain.ModSuper, Pressed: true})
 		r.settle(t)
+	})
+}
+
+// A reload under a still pointer retargets the drag: the preview never
+// shows a removed zone.
+func TestDragReloadRetargetsPreview(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := startDragRig(t, func(c *domain.Config) { c.Layout.MaxColumns = 3 }, dragOut)
+		set := dragThreeColumns(t, r)
+		one, three := dragRect(t, set, "A", 1), dragRect(t, set, "A", 3)
+		grabTile(t, r, three, 1)
+		r.moveTo(float64(one.X+40), float64(one.Y+one.H/2), 2)
+		if p := dragScene(r.settle(t), "A").DropPreview; p == nil || p.Label != domain.DropColumn.Label() {
+			t.Fatalf("no column zone: %+v", p)
+		}
+		cfg := r.cfg
+		cfg.Layout.MaxColumns = 3
+		cfg.Drop.SetWindow(domain.DropSideLeft, domain.DropNone)
+		send(r.reload, domain.ConfigChanged{Config: cfg})
+		if p := dragScene(r.settle(t), "A").DropPreview; p == nil || p.Label != domain.DropSwap.Label() {
+			t.Fatalf("preview after the reload: %+v", p)
+		}
 		r.in(ports.KeyEvent{Keysym: "Escape", Mods: domain.ModSuper, Pressed: true})
 		r.settle(t)
 	})

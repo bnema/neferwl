@@ -119,3 +119,24 @@ func TestDropAxisWarningSentOnApply(t *testing.T) {
 		}
 	})
 }
+
+// A layout change resets the sent warnings: scroll, fixed, scroll again
+// warns each time.
+func TestDropAxisWarningAfterLayoutChange(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		c := dragCore(t)
+		errs := make(chan error, 8)
+		c.ch.ConfigErrors = errs
+		cfg := c.cfg
+		cfg.Drop.SetEdge(domain.DropSideLeft, domain.DropWorkspace)
+		for _, overflow := range []string{"scroll", "fixed", "scroll", "scroll"} {
+			cfg.Layout.Overflow = overflow
+			if err := c.apply(cfg); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if len(errs) != 3 {
+			t.Fatalf("%d warnings, want 3 (the repeated scroll sends none)", len(errs))
+		}
+	})
+}

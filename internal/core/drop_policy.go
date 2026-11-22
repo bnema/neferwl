@@ -48,14 +48,18 @@ func (c *Core) sendDropWarnings() {
 	}
 }
 
-// sameDropConfig reports whether a and b have the same drop policies:
-// global, per output and per named workspace.
-func sameDropConfig(a, b domain.Config) bool {
-	if a.Drop.DropPolicy != b.Drop.DropPolicy || !slices.Equal(a.Drop.Outputs, b.Drop.Outputs) || len(a.Workspaces) != len(b.Workspaces) {
+// sameDropWarnConfig reports whether a and b agree on what the drop axis
+// warnings depend on: the drop policies and the layout rules, global, per
+// output and per named workspace.
+func sameDropWarnConfig(a, b domain.Config) bool {
+	if a.Drop.DropPolicy != b.Drop.DropPolicy || !slices.Equal(a.Drop.Outputs, b.Drop.Outputs) ||
+		a.Layout.LayoutRules != b.Layout.LayoutRules || !slices.Equal(a.Layout.Outputs, b.Layout.Outputs) ||
+		len(a.Workspaces) != len(b.Workspaces) {
 		return false
 	}
 	for i := range a.Workspaces {
-		if a.Workspaces[i].Name != b.Workspaces[i].Name || a.Workspaces[i].Drop != b.Workspaces[i].Drop {
+		x, y := a.Workspaces[i], b.Workspaces[i]
+		if x.Name != y.Name || x.Drop != y.Drop || x.LayoutRules != y.LayoutRules {
 			return false
 		}
 	}

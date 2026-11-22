@@ -457,7 +457,7 @@ func (c *Core) apply(cfg domain.Config) error {
 	if c.cfg.Focus.FollowMouse != cfg.Focus.FollowMouse || c.cfg.Focus.FollowMouseDelay != cfg.Focus.FollowMouseDelay {
 		c.cancelHover()
 	}
-	if !sameDropConfig(c.cfg, cfg) {
+	if !sameDropWarnConfig(c.cfg, cfg) {
 		clear(c.dropWarned)
 	}
 	c.cfg = cfg
@@ -1499,6 +1499,7 @@ func (c *Core) Run(ctx context.Context) error {
 			}
 			// A rotation can shrink the layout under a still pointer.
 			c.cursorX, c.cursorY = c.clampPointer(c.cursorX, c.cursorY, c.cursorX, c.cursorY)
+			c.retargetDrag()
 			if c.workspaceVisible(ctx, false) != nil {
 				return nil
 			}
