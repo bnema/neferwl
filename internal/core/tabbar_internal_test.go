@@ -2,13 +2,12 @@ package core
 
 import (
 	"context"
-	"testing/synctest"
-
-	"github.com/bnema/neferwl/internal/ports"
 	"testing"
+	"testing/synctest"
 
 	"github.com/bnema/neferwl/internal/core/layout"
 	"github.com/bnema/neferwl/internal/domain"
+	"github.com/bnema/neferwl/internal/ports"
 )
 
 // An unchanged rebuild publishes the previous bars: no allocation.
