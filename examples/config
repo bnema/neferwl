@@ -59,8 +59,11 @@ layout.overflow = cascade
 # (swap, none), left/right (column, swap, none), top/bottom (stack, swap,
 # none). gap: column or none. Edges (left, right, top, bottom): auto,
 # scroll, workspace, column, stash, float or none; auto switches workspaces
-# on the workspace axis and scrolls on the other one. Override per output
-# with drop.<output>.* and per workspace with workspace.<name>.drop.*.
+# on the workspace axis and scrolls on the other one. scroll and workspace
+# act after the pointer rests 400 ms on the edge, then every 250 ms; the
+# others act on release. none removes an anchor. Escape cancels the drag.
+# Override per output with drop.<output>.* and per workspace with
+# workspace.<name>.drop.*.
 # drop.window.center = swap
 # drop.window.left = column
 # drop.window.right = column
@@ -71,6 +74,7 @@ layout.overflow = cascade
 # drop.edge.right = auto
 # drop.edge.top = auto
 # drop.edge.bottom = auto
+# drop.DP-1.edge.right = stash
 
 # Touchpad. A three-finger swipe up or down slides between workspaces, left
 # or right scrolls the columns (cascade swaps the two axes). natural-scroll

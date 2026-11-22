@@ -38,6 +38,10 @@ See [examples/config](../examples/config) for every key with its default.
 | `layout.max-columns` | `2` | Columns that share the screen |
 | `layout.overflow` | `cascade` | What happens past `max-columns`: [`cascade`](#cascade) into bands below, `scroll` right, or `fixed` spiral split |
 | `layout.<output>.max-columns`, `.overflow` | layout values | Per-output layout |
+| `drop.window.<side>` | see [anchors](#moving-windows-with-the-pointer) | Drop on a window side (`center`, `left`, `right`, `top`, `bottom`) |
+| `drop.gap` | `column` | Drop between two columns: `column` or `none` |
+| `drop.edge.<side>` | `auto` | Drop on an output edge (`left`, `right`, `top`, `bottom`) |
+| `drop.<output>.<key>` | global values | Per-output drop policy, e.g. `drop.DP-1.edge.right = stash` |
 | `stash.width` | `80` | Width of the selected [stashed](#stash) window, in % of the screen (10–90) |
 | `stash.gap` | `2` | Gap around the selected stashed window, in % (0–10) |
 | `stash.dim` | `0.5` | Darkening of the stash neighbors, 0 to 1 |
@@ -79,6 +83,7 @@ See [examples/config](../examples/config) for every key with its default.
 | `workspace.<name>.size` | `inherit` | [Smaller viewport](#workspace-size), e.g. `1920x1080` |
 | `workspace.<name>.max-columns`, `.overflow` | output values | Per-workspace layout |
 | `workspace.<name>.column.<N>` | none | Column slot: `<cells>, <command>` |
+| `workspace.<name>.drop.<key>` | output values | Per-workspace drop policy |
 | `rule.<name>.*` | none | [Window rules](#window-rules) |
 | `output.<name>` | `preferred` | `WxH`, `WxH@Hz`, `preferred`, `off`, or `virtual WxH[@Hz]` (60 Hz by default; dimensions 1–16384; name uses letters, digits, `.`, `_`, `-`) |
 | `output.<name>.input` | none | Device-name glob (`path.Match` syntax); one glob per line, repeat the key to append more. Invalid globs warn without dropping earlier entries. First matching connected output in config order wins; absent targets leave devices unbound. |
@@ -576,11 +581,45 @@ The window must appear within 5 seconds, otherwise it opens normally. Apps that 
 
 ### Moving windows with the pointer
 
-- `cmd` + left drag moves a window. Drop it on the top or bottom of another window to stack it there, or in the middle to swap.
+- `cmd` + left drag moves a window. A float follows the pointer. A tile stays in its slot until the release and lands on the anchor under the pointer.
 - `cmd` + right drag resizes a floating window.
 - `cmd` + right drag on the line between two columns or two stacked windows resizes them.
 - `cmd` + double right-click on that line resets the lane's column widths or the column's row heights. Column widths reset when a column enters or leaves the lane.
 - `Escape` cancels the drag and restores the previous sizes.
+
+While a tile is dragged, the anchor under the pointer is filled in `border.active` with an outline and the name of its action. On an output or workspace that does not show the dragged window, a thumbnail of it follows the pointer. With animations on, the zone slides between anchors.
+
+**Anchors.** Each window has five zones: a band along each side and the center. The gap between two columns and the 32 px band along each output edge are anchors too. An anchor set to `none` is removed, and its neighbors take its place. A drop that would change nothing is not offered.
+
+| Key | Default | Allowed values |
+|---|---|---|
+| `drop.window.center` | `swap` | `swap`, `none` |
+| `drop.window.left`, `.right` | `column` | `column`, `swap`, `none` |
+| `drop.window.top`, `.bottom` | `stack` | `stack`, `swap`, `none` |
+| `drop.gap` | `column` | `column`, `none` |
+| `drop.edge.left`, `.right`, `.top`, `.bottom` | `auto` | `auto`, `scroll`, `workspace`, `column`, `stash`, `float`, `none` |
+
+- `swap` trades the dragged window and the target. `column` makes the dragged window a new column on that side. `stack` puts it above or below the target in its column.
+- On an edge, `column` adds a first or last column, `stash` [stashes](#stash) the window, and `float` makes it a float centered on the pointer. These act on release.
+- `scroll` and `workspace` act while the pointer rests on the edge: after 400 ms, then every 250 ms while it stays there. The drag survives a workspace switch, and a release drops the window on the workspace now shown.
+
+**Edges per layout.** `auto` switches workspaces on the edges of the workspace axis and scrolls on the other edges when the layout scrolls:
+
+| Layout | Workspace edges | Other edges with `auto` |
+|---|---|---|
+| `scroll` | top, bottom | left, right scroll the columns |
+| `cascade` | left, right | top, bottom step the bands |
+| `fixed` | top, bottom | none |
+
+An explicit `workspace` off the workspace axis, or `scroll` on a layout that does not scroll, does nothing and is reported as a config warning.
+
+**Scope.** `drop.<key>` is global. `drop.<output>.<key>` overrides it on one output, and `workspace.<name>.drop.<key>` overrides both on one workspace. The target workspace's policy decides each drop. Keys that are not set inherit.
+
+```
+drop.window.center = none
+drop.DP-1.edge.right = stash
+workspace.web.drop.edge.left = float
+```
 
 ### Overview
 

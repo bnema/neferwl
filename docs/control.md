@@ -90,6 +90,7 @@ neferwl -s demo do spawn foot --until 'window-mapped app_id=foot'
 | `press COMBO`, `release COMBO` | Hold or release keys |
 | `move X Y` | Move the pointer to global logical coordinates |
 | `click [left\|right\|middle]` | Click a button (left by default) |
+| `down [left\|right\|middle]`, `up [left\|right\|middle]` | Press or release a button (left by default), e.g. a pointer drag with `move` between them |
 | `swipe 3\|4 up\|down\|left\|right` | Touchpad swipe |
 
 Action names are the bind actions of the [configuration](config.md). Compositor
@@ -114,7 +115,7 @@ Quote an action whose arguments start with `--`: `do 'spawn --mark music foot'`.
 `--` ends flag parsing for arguments that start with a dash:
 `neferwl -s demo move -- -640 0`, `neferwl -s demo type -- -x`.
 
-There is no sleep or hold command: use the shell between `press` and `release`.
+There is no sleep command: hold keys with `press` and `release` and buttons with `down` and `up`, and wait with `--until` and `--wait`.
 
 ### Act on a marked window
 
