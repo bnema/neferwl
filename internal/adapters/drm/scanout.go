@@ -128,6 +128,10 @@ func scanoutCandidate(s domain.Scene, surfaces map[domain.WindowID]domain.Surfac
 		// The drop preview is drawn over the window.
 		return domain.SurfaceContent{}, "drop_preview"
 	}
+	if len(s.TabBars) > 0 {
+		// Core emits no bar for a fullscreen tab; any other is composited.
+		return domain.SurfaceContent{}, "tab_bar"
+	}
 	if full.Dim > 0 {
 		// Its veil is composed over it: the plane would show it bright.
 		return domain.SurfaceContent{}, "dim"

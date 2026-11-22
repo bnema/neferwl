@@ -17,6 +17,9 @@ type Style struct {
 	// TextOnly draws the glyphs on a transparent raster, without the box
 	// and its outline: the caller draws the background.
 	TextOnly bool
+	// MaxWidth, above 0, is the widest the text may draw, in physical
+	// pixels: longer text is cut and ends with an ellipsis.
+	MaxWidth int
 }
 
 // FontPixels resolves the shared physical font size.

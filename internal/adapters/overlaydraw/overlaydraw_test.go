@@ -58,3 +58,16 @@ func TestHintLabelEmptyAndCacheBound(t *testing.T) {
 	}
 	require.LessOrEqual(t, len(r.cache), maxEntries)
 }
+
+func TestLabelTruncatesToMaxWidth(t *testing.T) {
+	var r Raster
+	style := Style{FontPx: 13, TextOnly: true, PadX: 0.01, PadY: 0.01}
+	_, full, _ := r.Label("a rather long window title", 0, 1, style)
+	style.MaxWidth = full / 2
+	_, cut, _ := r.Label("a rather long window title", 0, 1, style)
+	require.LessOrEqual(t, cut, full/2+1, "the cut text fits (padding rounds to 0)")
+	require.Greater(t, cut, 0)
+	style.MaxWidth = full + 10
+	_, same, _ := r.Label("a rather long window title", 0, 1, style)
+	require.Equal(t, full, same, "fitting text is not cut")
+}

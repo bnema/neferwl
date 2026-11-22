@@ -131,6 +131,10 @@ func render(face font.Face, text string, typed int, style Style) entry {
 	if style.TextOnly {
 		border = 0
 	}
+	if style.MaxWidth > 0 {
+		text = truncate(face, text, style.MaxWidth)
+		typed = min(typed, len(text))
+	}
 	adv := font.MeasureString(face, text).Ceil()
 	w := adv + 2*px + 2*border
 	h := m.Height.Ceil() + 2*py + 2*border
@@ -151,3 +155,39 @@ func render(face font.Face, text string, typed int, style Style) entry {
 	}
 	return entry{pix: pix, w: w, h: h}
 }
+
+// ellipsis ends a truncated text.
+const ellipsis = "\u2026"
+
+// truncate cuts text at a rune boundary so that it, with the ellipsis,
+// draws at most maxWidth physical pixels wide; text that fits is returned
+// as is. Only a cache miss calls it.
+func truncate(face font.Face, text string, maxWidth int) string {
+	if font.MeasureString(face, text).Ceil() <= maxWidth {
+		return text
+	}
+	limit := fixed.I(maxWidth) - font.MeasureString(face, ellipsis)
+	var width fixed.Int26_6
+	prev := rune(-1)
+	for i, c := range text {
+		if prev >= 0 {
+			width += face.Kern(prev, c)
+		}
+		a, ok := face.GlyphAdvance(c)
+		if !ok {
+			a, _ = face.GlyphAdvance('?')
+		}
+		if width+a > limit {
+			if i == 0 {
+				return ""
+			}
+			return text[:i] + ellipsis
+		}
+		width += a
+		prev = c
+	}
+	return text
+}
+
+// Len is the number of cached labels.
+func (r *Raster) Len() int { return len(r.cache) }

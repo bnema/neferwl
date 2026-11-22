@@ -88,6 +88,10 @@ func overlayCandidate(s domain.Scene, surfaces map[domain.WindowID]domain.Surfac
 		// windows.
 		return domain.SceneWindow{}, domain.SurfaceContent{}, colorBypass, "drop_preview"
 	}
+	if len(s.TabBars) > 0 {
+		// Tab bars are composited next to their windows.
+		return domain.SceneWindow{}, domain.SurfaceContent{}, colorBypass, "tab_bar"
+	}
 	scale := s.Scale
 	if scale <= 0 {
 		scale = 1
