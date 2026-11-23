@@ -125,11 +125,20 @@ func TestStashAbsorb(t *testing.T) {
 	t.Run("keep", func(t *testing.T) {
 		dst, src := mk()
 		dst.Absorb(&src, false)
-		if dst.Len() != 4 || dst.at != 1 || dst.focus || !dst.hidden || dst.fullscreen != 0 {
+		// The pending fullscreen survives: dst had none.
+		if dst.Len() != 4 || dst.at != 1 || dst.focus || !dst.hidden || dst.fullscreen != 4 {
 			t.Fatalf("dst %+v", dst)
 		}
 		if src.Len() != 0 {
 			t.Fatalf("src %+v", src)
+		}
+	})
+	t.Run("prefer keeps dst pending fullscreen", func(t *testing.T) {
+		dst, src := mk()
+		dst.fullscreen, src.fullscreen = 2, 0
+		dst.Absorb(&src, true)
+		if dst.fullscreen != 2 {
+			t.Fatalf("dst %+v", dst)
 		}
 	})
 	t.Run("empty takes src", func(t *testing.T) {
@@ -171,5 +180,52 @@ func TestUnstashSameOrigin(t *testing.T) {
 	w.ToggleWindowStash() // 2 returns
 	if got := columnIDs(w); !slices.Equal(got, []WindowID{1, 2, 3}) || w.Focus != 1 {
 		t.Fatalf("columns %v focus %d", got, w.Focus)
+	}
+}
+
+// Giving away a stash that holds the workspace's fullscreen leaves the
+// fullscreen pending in the destination.
+func TestGiveStashFullscreenPending(t *testing.T) {
+	w := lendWorkspace(1, 1, 5)
+	w.ToggleWindowStash() // 5 in own, shown
+	w.SetFullscreen(5, true)
+	if w.Fullscreen != 5 {
+		t.Fatalf("setup: fullscreen %d", w.Fullscreen)
+	}
+	var dst Stash
+	w.GiveStash(&dst, false)
+	if w.Fullscreen != 0 || dst.fullscreen != 5 || dst.Len() != 1 || w.StashLen() != 0 || w.Has(5) {
+		t.Fatalf("fullscreen %d pending %d dst %d seen %d", w.Fullscreen, dst.fullscreen, dst.Len(), w.StashLen())
+	}
+}
+
+// A shown stash lent to a workspace under a covering window shows over it.
+func TestLendShownOverCover(t *testing.T) {
+	var s Stash
+	a := lendWorkspace(1, 1, 2)
+	a.Lend(&s)
+	a.ToggleWindowStash() // 2 shared, shown
+	a.Lend(nil)
+	b := lendWorkspace(2, 3)
+	b.SetFullscreen(3, true)
+	if b.Cover() != 3 {
+		t.Fatalf("setup: cover %d", b.Cover())
+	}
+	b.Lend(&s)
+	if !b.StashShown() || b.Fullscreen != 3 || s.hidden {
+		t.Fatalf("shown %v fullscreen %d hidden %v", b.StashShown(), b.Fullscreen, s.hidden)
+	}
+	if id, _ := b.Focused(); id != 2 {
+		t.Fatalf("focused %d", id)
+	}
+}
+
+// Absorb keeps a pending fullscreen from src when s has none.
+func TestStashAbsorbKeepsPending(t *testing.T) {
+	dst := Stash{entries: []Float{{ID: 1}}}
+	src := Stash{entries: []Float{{ID: 2}}, fullscreen: 2}
+	dst.Absorb(&src, false)
+	if dst.fullscreen != 2 || dst.at != 0 {
+		t.Fatalf("dst %+v", dst)
 	}
 }
