@@ -31,7 +31,7 @@ func requireWindowLogs(t *testing.T, out *lockedBuffer, want ...[]string) {
 		t.Fatalf("%d window entries, want %d: %q", len(logs), len(want), logs)
 	}
 	for i, parts := range want {
-		for _, p := range append([]string{`"component":"wayland"`, `"level":"info"`, `"app_id":""`}, parts...) {
+		for _, p := range append([]string{`"component":"wayland"`, `"level":"info"`}, parts...) {
 			if !strings.Contains(logs[i], p) {
 				t.Errorf("entry %d lacks %s: %s", i, p, logs[i])
 			}
@@ -43,9 +43,9 @@ func requireWindowLogs(t *testing.T, out *lockedBuffer, want ...[]string) {
 // closed" once when destroyed, telling whether the app closed it or its
 // client went away; a popup logs nothing.
 func TestWindowCloseLogs(t *testing.T) {
-	unmapped := []string{`"message":"window unmapped"`}
-	closed := []string{`"message":"window closed"`, `"reason":"closed"`}
-	gone := []string{`"message":"window closed"`, `"reason":"client_disconnected"`}
+	unmapped := []string{`"message":"window unmapped"`, `"app_id":""`}
+	closed := []string{`"message":"window closed"`, `"reason":"closed"`, `"app_id":""`}
+	gone := []string{`"message":"window closed"`, `"reason":"client_disconnected"`, `"app_id":""`}
 	for _, tc := range []struct {
 		name       string
 		nullBuffer bool
@@ -61,8 +61,8 @@ func TestWindowCloseLogs(t *testing.T) {
 			log := zerowrap.New(zerowrap.Config{Level: "info", Format: "json", Output: &out}).WithField("component", "wayland")
 			s, events, commands, _, dir := contentServerWith(t, Options{}, log)
 			c := protocolClient(t, s, dir)
-			win, surf, xdg := surfaceMapperAt(t, c, events, 4)()
-			top := xdg + 1 // allocated right after its xdg_surface
+			var top uint32
+			win, surf, xdg := surfaceMapperBeforeMap(t, c, events, 4, func(id uint32) { top = id })()
 
 			// A popup of the window maps and unmaps without a log.
 			comp := bindProtocol(t, c, "wl_compositor")
@@ -109,6 +109,31 @@ func TestWindowCloseLogs(t *testing.T) {
 				}
 			}
 			requireWindowLogs(t, &out, tc.want...)
+		})
+	}
+}
+
+// An X11 window destroyed by its client logs "window closed" reason
+// closed; one lost with Xwayland logs reason client_disconnected.
+func TestX11WindowCloseLogs(t *testing.T) {
+	for _, reason := range []string{closeClosed, closeDisconnected} {
+		t.Run(reason, func(t *testing.T) {
+			var out lockedBuffer
+			log := zerowrap.New(zerowrap.Config{Level: "info", Format: "json", Output: &out}).WithField("component", "wayland")
+			r := newX11RigLog(t, log)
+			win := uint32(x11Win)
+			r.x11Window(win)
+			r.pair(win, x11Serial)
+			m := awaitEvent[ports.WindowMapped](t, r.events)
+			if reason == closeClosed {
+				r.peer.destroyNotify(win)
+			} else {
+				_ = r.xc.Close()
+			}
+			if d := awaitEvent[ports.WindowDestroyed](t, r.events); d.ID != m.ID {
+				t.Fatalf("destroyed %+v", d)
+			}
+			requireWindowLogs(t, &out, []string{`"message":"window closed"`, `"reason":"` + reason + `"`, `"app_id":"Class"`})
 		})
 	}
 }

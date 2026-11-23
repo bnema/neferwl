@@ -224,7 +224,7 @@ func (w *window) unmap() {
 		return
 	}
 	w.mapped = false
-	if w.popup == nil && !w.closed && (w.life == nil || !w.life.gone) {
+	if w.popup == nil && !w.closed {
 		s.log.Info().Uint64("id", uint64(w.id)).Str("app_id", w.appID).Msg("window unmapped")
 	}
 	s.toplevelClosed(w.id)
@@ -568,6 +568,9 @@ const (
 
 // clientLife marks a client whose teardown has started; its windows read
 // it through a pointer since the Client handle may be reused afterwards.
+// client_disconnected relies on libwayland's wl_client_destroy order:
+// Client.OnDestroy listeners run before the client's resources are
+// destroyed, so the mark is set when its windows are torn down.
 type clientLife struct{ gone bool }
 
 // clientLife returns the client's mark, registering one teardown

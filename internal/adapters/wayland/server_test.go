@@ -1,6 +1,7 @@
 package wayland
 
 import (
+	"bnema.dev/zerowrap"
 	"bytes"
 	"context"
 	"errors"
@@ -118,14 +119,20 @@ func TestWestonFrames(t *testing.T) {
 }
 
 // lifecycleServer starts a display with buffered command and event channels.
+func lifecycleServer(t *testing.T) (*Server, chan ports.ClientEvent, chan ports.ClientCommand, string) {
+	t.Helper()
+	return lifecycleServerLog(t, logging.For(context.Background(), "wayland"))
+}
+
+// lifecycleServerLog is lifecycleServer logging to log.
 //
 //testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
-func lifecycleServer(t *testing.T) (*Server, chan ports.ClientEvent, chan ports.ClientCommand, string) {
+func lifecycleServerLog(t *testing.T, log zerowrap.Logger) (*Server, chan ports.ClientEvent, chan ports.ClientCommand, string) {
 	t.Helper()
 	dir := t.TempDir()
 	events := make(chan ports.ClientEvent, 16)
 	commands := make(chan ports.ClientCommand, 16)
-	s, err := New(Options{RuntimeDir: dir, Outputs: testOutputs, CaptureAllow: allowStore(t, "*\n")}, Channels{Events: events, Commands: commands}, logging.For(context.Background(), "wayland"))
+	s, err := New(Options{RuntimeDir: dir, Outputs: testOutputs, CaptureAllow: allowStore(t, "*\n")}, Channels{Events: events, Commands: commands}, log)
 	if err != nil {
 		t.Fatal(err)
 	}

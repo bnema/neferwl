@@ -114,6 +114,10 @@ type Channels struct {
 }
 
 type Server struct {
+	// clientLives holds the teardown mark of each client that owns a
+	// toplevel (xdg.go clientLife).
+	clientLives map[server.Client]*clientLife
+
 	processes          *peerexe.Processes
 	knownProc          map[domain.WindowID][]domain.ProcNode
 	x11Client          ports.X11Clients
@@ -175,8 +179,6 @@ type Server struct {
 	// written once at shutdown to end the listeners, securityWG waits for
 	// them, securityLive counts them.
 	sandboxed    map[server.Client]*sandbox
-	// clientLives mark the clients being torn down (xdg.go clientLife).
-	clientLives map[server.Client]*clientLife
 	securityStop int
 	securityWG   sync.WaitGroup
 	securityLive atomic.Int32
