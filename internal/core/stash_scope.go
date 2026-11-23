@@ -19,7 +19,7 @@ func (c *Core) lendStashes() {
 	for _, sc := range c.screens {
 		m := sc.mon
 		l := m.lendee
-		if l == nil || !m.holds(l) {
+		if l == nil || !m.has(l) {
 			if l != nil {
 				l.Lend(nil)
 			}
@@ -44,7 +44,7 @@ func (c *Core) lendStashes() {
 		c.stashHolder = c.cur().name()
 	}
 	hs := c.holderScreen()
-	if l := c.stashLendee; l != nil && (!global || !hs.mon.holds(l) || !hs.mon.previewing() && l != hs.mon.Current()) {
+	if l := c.stashLendee; l != nil && (!global || !hs.mon.has(l) || !hs.mon.previewing() && l != hs.mon.Current()) {
 		l.Lend(nil)
 		c.stashLendee = nil
 	}
@@ -175,21 +175,6 @@ func (c *Core) pullStash(sc *screen) bool {
 	c.stashHolder = sc.name()
 	c.lendStashes()
 	return true
-}
-
-// holds reports whether w is one of the monitor's workspaces.
-func (m *Monitor) holds(w *Workspace) bool {
-	for _, v := range m.Workspaces {
-		if v == w {
-			return true
-		}
-	}
-	for _, v := range m.hidden {
-		if v == w {
-			return true
-		}
-	}
-	return false
 }
 
 // returnStash brings back, in output scope, the stashed windows that left

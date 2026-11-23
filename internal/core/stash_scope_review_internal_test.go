@@ -133,3 +133,37 @@ func TestOutputDrainAppliesPendingFullscreen(t *testing.T) {
 		}
 	})
 }
+
+// Moving the lendee workspace to another output leaves the stash on its
+// output: no window is lost or seen twice.
+func TestOutputStashStaysOnMoveWorkspaceToMonitor(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		c, a := outputRig(t, false)
+		b := c.screens[1].mon
+		moved := a.Current()
+		c.moveWorkspace(dirRight)
+		c.lendStashes()
+		if b.Current() != moved {
+			t.Fatal("setup: workspace did not move")
+		}
+		if got := seenStash(a.Current()); !slices.Equal(got, []WindowID{2}) {
+			t.Fatalf("a %v", got)
+		}
+		if got := seenStash(moved); !slices.Equal(got, []WindowID{4, 5}) {
+			t.Fatalf("moved %v", got)
+		}
+		for _, id := range []WindowID{2, 4, 5} {
+			n := 0
+			for _, sc := range c.screens {
+				for w := range sc.mon.all() {
+					if w.StashIndex(id) >= 0 {
+						n++
+					}
+				}
+			}
+			if n != 1 {
+				t.Fatalf("window %d seen %d times", id, n)
+			}
+		}
+	})
+}
