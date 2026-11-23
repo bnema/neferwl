@@ -204,9 +204,6 @@ func (c *Core) runTargeted(ctx context.Context, id WindowID, a Action) error {
 		return c.applyLayout(ctx, false, func() Effect { return Effect{Close: id} })
 	}
 	return c.applyLayout(ctx, false, func() Effect {
-		if a == ActionToggleWindowStash {
-			c.pullStash(s)
-		}
 		prev, _ := w.Focused()
 		restore := func(w *Workspace, prev WindowID) {
 			if got, _ := w.Focused(); prev != 0 && prev != got && w.Has(prev) {

@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"slices"
 	"testing"
 	"testing/synctest"
@@ -163,4 +164,19 @@ func TestLendStashesGlobalAllocs(t *testing.T) {
 	if n := testing.AllocsPerRun(100, c.lendStashes); n != 0 {
 		t.Fatalf("%v allocs", n)
 	}
+}
+
+// A targeted toggle-window-stash moves nothing shown: the window joins the
+// session stash on its holder screen.
+func TestGlobalTargetedStashKeepsHolder(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		c, a, b := globalRig(t)
+		if err := c.runTargeted(context.Background(), 3, ActionToggleWindowStash); err != nil {
+			t.Fatal(err)
+		}
+		c.lendStashes()
+		if c.stashHolder != "A" || b.Current().StashLen() != 0 || !slices.Equal(seenStash(a.Current()), []WindowID{2, 3}) {
+			t.Fatalf("holder %q a %v b %v", c.stashHolder, seenStash(a.Current()), seenStash(b.Current()))
+		}
+	})
 }
