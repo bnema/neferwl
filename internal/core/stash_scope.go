@@ -72,14 +72,16 @@ func (c *Core) lendStashes() {
 		if m.stash.Len() > 0 {
 			c.stash.Absorb(&m.stash, setup && sc == focused)
 		}
+		// In screen then workspace order; the holder's current workspace
+		// keeps the selection.
 		for _, w := range m.Workspaces {
-			if w != c.stashLendee && w != hcur {
-				w.GiveStash(&c.stash, prefer)
+			if w != c.stashLendee {
+				w.GiveStash(&c.stash, prefer || w == hcur)
 			}
 		}
 		for _, w := range m.hidden {
-			if w != c.stashLendee && w != hcur {
-				w.GiveStash(&c.stash, prefer)
+			if w != c.stashLendee {
+				w.GiveStash(&c.stash, prefer || w == hcur)
 			}
 		}
 	}
@@ -164,4 +166,24 @@ func (m *Monitor) holds(w *Workspace) bool {
 		}
 	}
 	return false
+}
+
+// returnStash brings back, in output scope, the stashed windows that left
+// with s's monitor when it was unplugged (removeScreen tags them home).
+// The monitors holding them give their stash back first, so no workspace
+// keeps a stale view; lendStashes lends them again.
+func (c *Core) returnStash(s *screen) {
+	if c.cfg.Stash.Scope != domain.StashScopeOutput {
+		return
+	}
+	for _, o := range c.screens {
+		if o == s {
+			continue
+		}
+		if l := o.mon.lendee; l != nil {
+			l.Lend(nil)
+			o.mon.lendee = nil
+		}
+		o.mon.stash.TakeHome(&s.mon.stash, s.mon.matches)
+	}
 }

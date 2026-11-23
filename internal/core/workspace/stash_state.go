@@ -143,3 +143,58 @@ func (w *Workspace) detachStash(s *Stash) {
 	}
 	w.stashOver = 0
 }
+
+// TagHome marks every window of s without a home as coming from the
+// monitor key.
+func (s *Stash) TagHome(key string) {
+	for i := range s.entries {
+		if s.entries[i].home == "" {
+			s.entries[i].home = key
+		}
+	}
+}
+
+// TakeHome moves the windows of s whose home matches into dst, in order,
+// home cleared, and keeps the selection of s on the same window, else the
+// nearest one. A pending fullscreen moves with its window. An empty dst
+// that receives windows starts hidden: they return without covering the
+// screen. Rare (replug): it may allocate.
+func (s *Stash) TakeHome(dst *Stash, matches func(home string) bool) {
+	if s == dst {
+		return
+	}
+	empty := len(dst.entries) == 0
+	var sel WindowID
+	if s.at < len(s.entries) {
+		sel = s.entries[s.at].ID
+	}
+	kept, moved := s.entries[:0], false
+	for _, f := range s.entries {
+		if f.home == "" || !matches(f.home) {
+			kept = append(kept, f)
+			continue
+		}
+		f.home = ""
+		if f.ID == s.fullscreen {
+			dst.fullscreen, s.fullscreen = f.ID, 0
+		}
+		dst.entries = append(dst.entries, f)
+		moved = true
+	}
+	clear(s.entries[len(kept):])
+	s.entries = kept
+	if !moved {
+		return
+	}
+	at := slices.IndexFunc(kept, func(f Float) bool { return f.ID == sel })
+	if at < 0 {
+		at = min(s.at, max(len(kept)-1, 0))
+	}
+	s.at, s.view = at, motion.Slide{}
+	if len(kept) == 0 {
+		*s = Stash{}
+	}
+	if empty {
+		dst.at, dst.hidden, dst.focus = 0, true, false
+	}
+}
