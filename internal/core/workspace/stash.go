@@ -48,7 +48,7 @@ func (w *Workspace) OnFloat() bool { return w.floatFocus || w.stashFocused() }
 func (w *Workspace) stashWindow(id WindowID) {
 	back := w.tilePlace(id)
 	w.RemoveWindow(id)
-	w.addStash(Float{ID: id, back: back})
+	w.addStash(Float{ID: id, back: back, origin: w.ID})
 }
 
 // tilePlace is where the focused tile id is in its column, for restore.
@@ -127,6 +127,19 @@ func (w *Workspace) unstash(i int) {
 		w.floatFocus, w.st().focus = true, false
 		return
 	}
+	if f.origin != 0 && f.origin != w.ID {
+		// Stashed on another workspace: its former place is not here. It
+		// tiles right of the focused column, at its width.
+		place := &origPlace{}
+		if len(w.Columns) > 0 {
+			place.col = w.Focus + 1
+		}
+		if f.back != nil {
+			place.cells = f.back.cells
+		}
+		w.restore(f.ID, place)
+		return
+	}
 	w.restore(f.ID, f.back)
 }
 
@@ -184,7 +197,7 @@ func (f Float) rehome() Float {
 	if f.back != nil {
 		back.cells = f.back.cells
 	}
-	f.back = back
+	f.back, f.origin = back, 0
 	return f
 }
 

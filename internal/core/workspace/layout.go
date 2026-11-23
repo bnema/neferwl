@@ -119,6 +119,9 @@ type Float struct {
 	// back records the former column of a stashed window or a free float;
 	// nil for native floats.
 	back *origPlace
+	// origin is the ID of the workspace the window was stashed from; 0
+	// once rehomed or unknown. Elsewhere, back does not apply (unstash).
+	origin uint64
 	// free marks a window the user floated (toggle-floating) or dragged:
 	// core owns its size and its centre is at cx, cy, fractions of the
 	// usable area, so it keeps its place on any output.
@@ -132,9 +135,10 @@ type Float struct {
 	modal bool
 }
 
-// Empty reports that columns, native floats and stash are all empty.
+// Empty reports that columns, native floats and its own stash are all
+// empty; a lent stash is not the workspace's.
 func (w *Workspace) Empty() bool {
-	return len(w.Columns) == 0 && len(w.Floats) == 0 && len(w.st().entries) == 0
+	return len(w.Columns) == 0 && len(w.Floats) == 0 && len(w.own.entries) == 0
 }
 
 // columnWindows counts the windows in the columns.
@@ -732,6 +736,7 @@ func (w *Workspace) ToggleWindowStash() {
 	case w.floatIndex(id) >= 0 && w.Floats[w.floatIndex(id)].free:
 		// A free float keeps its place and size in the stash.
 		f := w.Floats[w.floatIndex(id)]
+		f.origin = w.ID
 		w.RemoveWindow(id)
 		w.addStash(f)
 	case w.floatIndex(id) >= 0:
