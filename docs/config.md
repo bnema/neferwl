@@ -613,7 +613,7 @@ The window must appear within 5 seconds, otherwise it opens normally. Apps that 
 - With `global`, the stash changes output only when you act on it from another output: `toggle-stash-visible` or the four-finger swipe, `toggle-window-stash`, a drop on the stash edge, or `stash <command>`. A stash shown elsewhere comes over shown; press again to hide it. A window sent to a stash by any other path, such as a rule, joins the stash where it is.
 - A window taken out of the stash on another workspace than the one it was stashed from becomes a new column right of the focused one.
 - Changing the scope on reload merges the stashes, output by output then workspace by workspace; the stash of the focused output keeps its selection.
-- With `output`, an unplugged output's stash joins the focused output's stash, and returns when the output is plugged in again. Windows taken out of it meanwhile stay where they are.
+- With `output`, an unplugged output's stash joins the focused output's stash, and returns, hidden, when the output is plugged in again. Windows taken out of it meanwhile stay where they are.
 
 ### Free floating windows
 
