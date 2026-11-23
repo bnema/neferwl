@@ -14,7 +14,7 @@ type State struct {
 	// Mode is the active bind mode, empty for default.
 	Mode string
 	// StashScope is stash.scope: workspace, output or global.
-	StashScope string
+	StashScope StashScope
 }
 
 // WorkspaceState is one workspace and its tiled columns, left to right in

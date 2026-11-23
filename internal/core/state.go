@@ -32,7 +32,7 @@ func (c *Core) state() domain.State { return cloneState(c.stateInto(domain.State
 // its Window points into its Windows. The placeholder screen is not an
 // output.
 func (c *Core) stateInto(st domain.State) domain.State {
-	st.Output, st.Window, st.Mode, st.StashScope = c.cur().name(), nil, c.mode, c.cfg.Stash.Scope.String()
+	st.Output, st.Window, st.Mode, st.StashScope = c.cur().name(), nil, c.mode, c.cfg.Stash.Scope
 	st.Outputs, st.Windows = st.Outputs[:0], st.Windows[:0]
 	// Workspaces keep their Columns storage across calls (see workspaceInto).
 	nws := 0

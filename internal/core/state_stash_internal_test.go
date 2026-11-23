@@ -22,8 +22,8 @@ func TestStateSharedStash(t *testing.T) {
 		ws2 := m.Current()
 		c.lendStashes()
 		st := c.state()
-		if st.StashScope != "output" {
-			t.Fatalf("scope %q", st.StashScope)
+		if st.StashScope != domain.StashScopeOutput {
+			t.Fatalf("scope %v", st.StashScope)
 		}
 		holders := 0
 		for _, w := range st.Workspaces {

@@ -71,7 +71,7 @@ func TestWorkspaceGeometryFields(t *testing.T) {
 			{Rect: domain.Rect{X: 10, Y: 20, W: 300, H: 400}, Windows: []domain.TileState{{ID: 5, Rect: domain.Rect{X: 11, Y: 21, W: 298, H: 198}}}},
 		}, Stash: []domain.WindowID{9, 4}, StashShown: true},
 		{ID: 8, Output: "DP-2"},
-	}, StashScope: "output"}, ids)
+	}, StashScope: domain.StashScopeOutput}, ids)
 	want := []Workspace{
 		{ID: "name:web", Number: 2, Name: "web", Output: "DP-2", Visible: true, Overflow: "fixed", Columns: []Column{
 			{X: 10, Y: 20, Width: 300, Height: 400, Windows: []Tile{{ID: 5, X: 11, Y: 21, Width: 298, Height: 198}}},
