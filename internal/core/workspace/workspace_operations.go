@@ -161,9 +161,13 @@ func Merge(dst, src *Workspace) {
 		dst.Floats[len(dst.Floats)-1] = f
 	}
 	dst.reconcileFloats()
-	// A lent stash stays with its owner, which lends it again; src's own
-	// windows move once, through the stash handoff.
-	src.Lend(nil)
+	// A lent stash goes on being lent, to dst, so it is never unlent
+	// between the merge and the owner's next lend; src's own windows move
+	// once, through the stash handoff.
+	if s := src.lent; s != nil {
+		src.Lend(nil)
+		dst.Lend(s)
+	}
 	for i := range src.own.entries {
 		src.own.entries[i] = src.own.entries[i].rehome()
 	}

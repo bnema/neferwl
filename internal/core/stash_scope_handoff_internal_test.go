@@ -25,9 +25,13 @@ func TestSharedStashMergeNoDuplicate(t *testing.T) {
 				stashTile(m.Current(), 2)
 				c.lendStashes()
 				m.SetNamed(nil)
-				c.lendStashes()
-				if got := seenStash(m.Current()); !slices.Equal(got, []WindowID{2}) {
-					t.Fatalf("stash %v", got)
+				// Seen at once, before the next lend, and again after it.
+				for _, pass := range []string{"merged", "lent"} {
+					w := m.Current()
+					if got := seenStash(w); !slices.Equal(got, []WindowID{2}) || w.StashAt() != 0 || !w.StashShown() {
+						t.Fatalf("%s: stash %v at %d shown %v", pass, got, w.StashAt(), w.StashShown())
+					}
+					c.lendStashes()
 				}
 				n := 0
 				for w := range m.all() {
@@ -120,25 +124,29 @@ func TestOutputUnplugKeepsStashFullscreen(t *testing.T) {
 
 // A background workspace handing a pending fullscreen to the lent stash
 // makes it fullscreen on the lendee.
-func TestOutputDrainAppliesPendingFullscreen(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		c := scopeCore(t, domain.StashScopeOutput, "A")
-		m := c.cur().mon
-		m.AddWindow(1)
-		stashTile(m.Current(), 2)
-		c.lendStashes()
-		ws1 := m.Current()
-		m.Focus(1)
-		m.AddWindow(3)
-		c.lendStashes()
-		ws1.StashSpawned(5) // in ws1's own stash, shown
-		ws1.SetFullscreen(5, true)
-		c.lendStashes()
-		w := m.Current()
-		if in := w.Inspect(); w.Fullscreen != 5 || in.HiddenFullscreen != 0 {
-			t.Fatalf("fullscreen %d pending %d stash %v", w.Fullscreen, in.HiddenFullscreen, seenStash(w))
-		}
-	})
+func TestSharedDrainAppliesPendingFullscreen(t *testing.T) {
+	for _, scope := range []domain.StashScope{domain.StashScopeOutput, domain.StashScopeGlobal} {
+		t.Run(scope.String(), func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				c := scopeCore(t, scope, "A")
+				m := c.cur().mon
+				m.AddWindow(1)
+				stashTile(m.Current(), 2)
+				c.lendStashes()
+				ws1 := m.Current()
+				m.Focus(1)
+				m.AddWindow(3)
+				c.lendStashes()
+				ws1.StashSpawned(5) // in ws1's own stash, shown
+				ws1.SetFullscreen(5, true)
+				c.lendStashes()
+				w := m.Current()
+				if in := w.Inspect(); w.Fullscreen != 5 || in.HiddenFullscreen != 0 {
+					t.Fatalf("fullscreen %d pending %d stash %v", w.Fullscreen, in.HiddenFullscreen, seenStash(w))
+				}
+			})
+		})
+	}
 }
 
 // Moving the lendee workspace to another output leaves the stash on its
