@@ -42,6 +42,7 @@ func (c *Core) applyAction(a Action) Effect {
 	switch a {
 	case ActionFocusWindowUp, ActionFocusWindowDown, ActionMoveWindowUp, ActionMoveWindowDown,
 		ActionConsumeOrExpelLeft, ActionConsumeOrExpelRight, ActionTabWindowLeft, ActionTabWindowRight, ActionToggleFloating,
+		ActionFocusTabNext, ActionFocusTabPrev, ActionMoveTabNext, ActionMoveTabPrev,
 		ActionToggleWindowStash, ActionToggleStashVisible, ActionToggleOverview,
 		ActionFocusColumnLeft, ActionFocusColumnRight, ActionMoveColumnLeft, ActionMoveColumnRight,
 		ActionFocusMonitorLeft, ActionFocusMonitorRight, ActionFocusMonitorUp, ActionFocusMonitorDown,
@@ -99,7 +100,8 @@ func (c *Core) applyAction(a Action) Effect {
 		level := flashWindow
 		switch a {
 		case ActionFocusWindowUp, ActionFocusWindowDown, ActionMoveWindowUp, ActionMoveWindowDown,
-			ActionConsumeOrExpelLeft, ActionConsumeOrExpelRight, ActionTabWindowLeft, ActionTabWindowRight, ActionToggleFloating:
+			ActionConsumeOrExpelLeft, ActionConsumeOrExpelRight, ActionTabWindowLeft, ActionTabWindowRight, ActionToggleFloating,
+			ActionFocusTabNext, ActionFocusTabPrev, ActionMoveTabNext, ActionMoveTabPrev:
 		case ActionToggleWindowStash:
 			if !wasStashed {
 				return

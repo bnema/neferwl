@@ -100,7 +100,7 @@ func TestHeldToggleDoesNotRepeat(t *testing.T) {
 				t.Errorf("%s repeats", a)
 			}
 		}
-		for _, a := range []Action{ActionFocusColumnLeft, ActionMoveColumnRight, ActionFocusWorkspaceNext, ActionMoveWindowToWorkspacePrev, "set-column-width +1"} {
+		for _, a := range []Action{ActionFocusColumnLeft, ActionMoveColumnRight, ActionFocusWorkspaceNext, ActionMoveWindowToWorkspacePrev, ActionFocusTabNext, ActionFocusTabPrev, ActionMoveTabNext, ActionMoveTabPrev, "set-column-width +1"} {
 			if !repeats(a) {
 				t.Errorf("%s does not repeat", a)
 			}

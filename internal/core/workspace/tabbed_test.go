@@ -404,3 +404,130 @@ func TestTabWindowNoOp(t *testing.T) {
 		t.Fatalf("fullscreen target: %v fullscreen %d", got, w.Fullscreen)
 	}
 }
+
+func TestTabActions(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		windows []WindowID
+		tabbed  bool
+		focus   int
+		action  Action
+		want    []WindowID
+		wantID  WindowID
+	}{
+		{"focus next", []WindowID{1, 2, 3}, true, 0, ActionFocusTabNext, []WindowID{1, 2, 3}, 2},
+		{"focus next wraps", []WindowID{1, 2, 3}, true, 2, ActionFocusTabNext, []WindowID{1, 2, 3}, 1},
+		{"focus prev", []WindowID{1, 2, 3}, true, 2, ActionFocusTabPrev, []WindowID{1, 2, 3}, 2},
+		{"focus prev wraps", []WindowID{1, 2, 3}, true, 0, ActionFocusTabPrev, []WindowID{1, 2, 3}, 3},
+		{"move next", []WindowID{1, 2, 3}, true, 0, ActionMoveTabNext, []WindowID{2, 1, 3}, 1},
+		{"move next wraps", []WindowID{1, 2, 3}, true, 2, ActionMoveTabNext, []WindowID{3, 1, 2}, 3},
+		{"move prev", []WindowID{1, 2, 3}, true, 2, ActionMoveTabPrev, []WindowID{1, 3, 2}, 3},
+		{"move prev wraps", []WindowID{1, 2, 3}, true, 0, ActionMoveTabPrev, []WindowID{2, 3, 1}, 1},
+		{"focus not tabbed", []WindowID{1, 2, 3}, false, 2, ActionFocusTabNext, []WindowID{1, 2, 3}, 3},
+		{"move not tabbed", []WindowID{1, 2, 3}, false, 2, ActionMoveTabNext, []WindowID{1, 2, 3}, 3},
+		{"focus one window", []WindowID{1}, true, 0, ActionFocusTabNext, []WindowID{1}, 1},
+		{"move one window", []WindowID{1}, true, 0, ActionMoveTabPrev, []WindowID{1}, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := cols(OverflowScroll, 2, 0, tc.windows, []WindowID{9})
+			w.Columns[0].Tabbed = tc.tabbed
+			w.Columns[0].Focus = tc.focus
+			w.Apply(tc.action)
+			if w.Focus != 0 {
+				t.Fatalf("left the column: focus %d", w.Focus)
+			}
+			if got := w.Columns[0].Windows; !slices.Equal(got, tc.want) {
+				t.Fatalf("windows %v, want %v", got, tc.want)
+			}
+			if id, _ := w.Focused(); id != tc.wantID {
+				t.Fatalf("focused %d, want %d", id, tc.wantID)
+			}
+		})
+	}
+}
+
+// Tab actions do nothing when the focus is not on a tile of the column.
+func TestTabActionsNoOp(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		setup func(*Workspace)
+	}{
+		{"float", func(w *Workspace) { w.AddFloating(3, 50, 50) }},
+		{"fullscreen float cover", func(w *Workspace) { w.AddFloating(5, 50, 50); w.SetFullscreen(5, true) }},
+		{"stash window", func(w *Workspace) { w.Focus = 1; w.ToggleWindowStash() }},
+	} {
+		for _, a := range []Action{ActionFocusTabNext, ActionFocusTabPrev, ActionMoveTabNext, ActionMoveTabPrev} {
+			t.Run(tc.name+"/"+string(a), func(t *testing.T) {
+				w := cols(OverflowScroll, 2, 0, []WindowID{1, 2}, []WindowID{9})
+				w.Columns[0].Tabbed = true
+				w.Columns[0].Focus = 0
+				tc.setup(w)
+				if !w.OnFloat() && w.Cover() == 0 {
+					t.Fatal("setup left the focus on a tile")
+				}
+				before, _ := w.Focused()
+				w.Apply(a)
+				if c := w.Columns[0]; !slices.Equal(c.Windows, []WindowID{1, 2}) || c.Focus != 0 {
+					t.Fatalf("column changed: %v focus %d", c.Windows, c.Focus)
+				}
+				if id, _ := w.Focused(); id != before {
+					t.Fatalf("focus %d, want %d", id, before)
+				}
+			})
+		}
+	}
+}
+
+// A modal dialog of the shown tab takes the focus.
+func TestFocusTabModal(t *testing.T) {
+	w := cols(OverflowScroll, 2, 0, []WindowID{1, 2})
+	w.Columns[0].Tabbed = true
+	w.AddDialog(3, 1, 20, 10)
+	w.SetModal(3, true)
+	w.Columns[0].Focus = 1
+	w.floatFocus = false
+	if id, _ := w.Focused(); id != 2 {
+		t.Fatalf("setup focus %d, want 2", id)
+	}
+	w.Apply(ActionFocusTabPrev)
+	if id, _ := w.Focused(); id != 3 {
+		t.Fatalf("focus %d, want modal 3", id)
+	}
+}
+
+func TestMoveTabSlotAndShares(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		focus      int
+		action     Action
+		shares     []int
+		wantShares []int
+		wantSlot   int
+	}{
+		{"slot released from first", 0, ActionMoveTabNext, nil, nil, 0},
+		{"slot released on wrap", 2, ActionMoveTabNext, nil, nil, 0},
+		{"slot kept inside", 1, ActionMoveTabNext, nil, nil, 1},
+		{"shares rotate", 2, ActionMoveTabNext, []int{2000, 3000, 5000}, []int{5000, 2000, 3000}, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := cols(OverflowScroll, 2, 0, []WindowID{1, 2, 3})
+			c := &w.Columns[0]
+			c.Tabbed = true
+			c.Focus = tc.focus
+			c.Shares = tc.shares
+			if tc.shares == nil {
+				c.Slot = 1
+			}
+			w.Apply(tc.action)
+			if tc.shares != nil {
+				if !slices.Equal(c.Shares, tc.wantShares) {
+					t.Fatalf("shares %v, want %v", c.Shares, tc.wantShares)
+				}
+				return
+			}
+			if c.Slot != tc.wantSlot {
+				t.Fatalf("slot %d, want %d", c.Slot, tc.wantSlot)
+			}
+		})
+	}
+}

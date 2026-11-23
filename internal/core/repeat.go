@@ -46,6 +46,7 @@ func repeats(a Action) bool {
 		ActionFocusWindowUp, ActionFocusWindowDown,
 		ActionMoveColumnLeft, ActionMoveColumnRight,
 		ActionMoveWindowUp, ActionMoveWindowDown,
+		ActionFocusTabNext, ActionFocusTabPrev, ActionMoveTabNext, ActionMoveTabPrev,
 		ActionConsumeOrExpelLeft, ActionConsumeOrExpelRight,
 		ActionFocusWorkspacePrev, ActionFocusWorkspaceNext,
 		ActionMoveWorkspacePrev, ActionMoveWorkspaceNext,
