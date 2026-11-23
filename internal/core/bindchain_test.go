@@ -83,3 +83,59 @@ func TestBindChainDoesNotRepeat(t *testing.T) {
 		}
 	})
 }
+
+func TestBindTraceNotable(t *testing.T) {
+	for _, tc := range []struct {
+		action  string
+		notable bool
+	}{
+		{"move-column-left", true},
+		{"set-column-width +1", true},
+		{"move-column-to-workspace 2", true},
+		{"focus-column-left", false},
+		{"focus-workspace 2", false},
+		{"toggle-overview", false},
+	} {
+		t.Run(tc.action, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				r := runChainRig(t, tc.action)
+				r.send(cmdX)
+				synctest.Wait()
+				b := firstBindTrace(t, r)
+				if b.Action != tc.action || b.Notable != tc.notable || b.Window != 5 {
+					t.Fatalf("trace %+v, want action %q notable %v window 5", b, tc.action, tc.notable)
+				}
+			})
+		})
+	}
+}
+
+func TestBindTraceRepeatNotNotable(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := runChainRig(t, "move-column-left")
+		r.send(cmdX)
+		synctest.Wait()
+		if b := firstBindTrace(t, r); !b.Notable || b.Source != domain.BindSourceKey {
+			t.Fatalf("press trace %+v, want notable key", b)
+		}
+		r.drain()
+		time.Sleep(time.Second)
+		synctest.Wait()
+		b := firstBindTrace(t, r)
+		if b.Source != domain.BindSourceRepeat || b.Notable {
+			t.Fatalf("repeat trace %+v, want a debug repeat", b)
+		}
+	})
+}
+
+// firstBindTrace returns the first bind trace sent since the last drain.
+func firstBindTrace(t *testing.T, r chainRig) domain.BindDispatched {
+	t.Helper()
+	for len(r.binds) > 0 {
+		if b, ok := (<-r.binds).(domain.BindDispatched); ok {
+			return b
+		}
+	}
+	t.Fatal("no bind trace")
+	return domain.BindDispatched{}
+}

@@ -115,6 +115,7 @@ type bindMark struct {
 	sc  *screen
 	ws  int
 	out string
+	win WindowID
 }
 
 func (c *Core) markBind() bindMark {
@@ -122,7 +123,8 @@ func (c *Core) markBind() bindMark {
 		return bindMark{}
 	}
 	sc := c.cur()
-	return bindMark{sc: sc, ws: sc.mon.Active + 1, out: sc.name()}
+	win, _ := sc.mon.Focused()
+	return bindMark{sc: sc, ws: sc.mon.Active + 1, out: sc.name(), win: win}
 }
 
 // emitBind sends the trace of an action started at m.
@@ -135,7 +137,8 @@ func (c *Core) emitBind(m bindMark, combo, action string, source domain.BindSour
 		after = c.cur().name()
 	}
 	c.traceInput(domain.BindDispatched{Combo: combo, Action: action, Output: m.out, OutputAfter: after,
-		WorkspaceBefore: m.ws, WorkspaceAfter: m.sc.mon.Active + 1, Source: source})
+		WorkspaceBefore: m.ws, WorkspaceAfter: m.sc.mon.Active + 1, Source: source,
+		Window: domain.WindowID(m.win), Notable: source != domain.BindSourceRepeat && !focusOnly(Action(action))})
 }
 
 // traceBind returns the func to defer once the action ran.

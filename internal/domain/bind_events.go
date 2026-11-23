@@ -19,7 +19,10 @@ type InputTrace interface{ inputTrace() }
 // (never typed text), or the gesture, that triggered it. WorkspaceBefore and
 // WorkspaceAfter are the 1-based position of the active workspace on Output
 // (the focused output when the action began) before and after the action;
-// OutputAfter is the focused output once it ran.
+// OutputAfter is the focused output once it ran. Window is the focused window
+// on Output when the action began, 0 if none. Notable reports that the action
+// changes windows or layout, not only focus or view, and was not a key
+// repeat; the app logs notable dispatches at info.
 type BindDispatched struct {
 	Combo           string
 	Action          string
@@ -28,6 +31,8 @@ type BindDispatched struct {
 	WorkspaceBefore int
 	WorkspaceAfter  int
 	Source          BindSource
+	Window          WindowID
+	Notable         bool
 }
 
 func (BindDispatched) inputTrace() {}
