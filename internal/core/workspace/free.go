@@ -39,7 +39,7 @@ func (w *Workspace) ToggleFloating() {
 		ID: id, W: max(r.W-2*w.border, 1), H: max(r.H-2*w.border, 1),
 		free: true, cx: 0.5, cy: 0.5, back: back,
 	})
-	w.floatFocus, w.stashFocus = true, false
+	w.floatFocus, w.st().focus = true, false
 }
 
 // placed is the rect of window id in the current layout.

@@ -44,8 +44,8 @@ type FloatInspection struct {
 // are copied, and slide motions are values, never mutable model accessors.
 func (w *Workspace) Inspect() Inspection {
 	s := Inspection{Recent: slices.Clone(w.recent), Left: w.left, FloatFocus: w.floatFocus,
-		StashFocus: w.stashFocus, StashHidden: w.stashHidden, StashOver: w.stashOver,
-		HiddenFullscreen: w.hiddenFullscreen, ColumnsSlide: w.view, StashSlide: w.stashView}
+		StashFocus: w.st().focus, StashHidden: w.st().hidden, StashOver: w.stashOver,
+		HiddenFullscreen: w.st().fullscreen, ColumnsSlide: w.view, StashSlide: w.st().view}
 	if w.Floats != nil {
 		s.Floats = make([]FloatInspection, len(w.Floats))
 		for i, f := range w.Floats {

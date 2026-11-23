@@ -42,7 +42,7 @@ type layoutSnap struct {
 }
 
 func snap(w *Workspace) layoutSnap {
-	s := layoutSnap{floats: slices.Clone(w.Floats), stash: slices.Clone(w.Stash)}
+	s := layoutSnap{floats: slices.Clone(w.Floats), stash: slices.Clone(w.st().entries)}
 	for _, c := range w.Columns {
 		s.cols = append(s.cols, slices.Clone(c.Windows))
 	}
@@ -85,7 +85,7 @@ func TestSwapWindowsRefused(t *testing.T) {
 	build := func() *Workspace {
 		w := cols(OverflowScroll, 4, 0, []WindowID{1}, []WindowID{2}, []WindowID{3}, []WindowID{4})
 		w.Floats = []Float{{ID: 5, W: 10, H: 10}, {ID: 6, W: 10, H: 10, over: 4}, {ID: 8, W: 10, H: 10}}
-		w.Stash = []Float{{ID: 7}}
+		w.st().entries = []Float{{ID: 7}}
 		w.Fullscreen = 3
 		return w
 	}
@@ -192,7 +192,7 @@ func TestSwapWindowsRefusesHeld(t *testing.T) {
 func TestMoveTileBelowRefused(t *testing.T) {
 	build := func() *Workspace {
 		w := cols(OverflowScroll, 4, 0, []WindowID{1}, []WindowID{2}, []WindowID{3})
-		w.Stash = []Float{{ID: 7}}
+		w.st().entries = []Float{{ID: 7}}
 		w.Floats = []Float{{ID: 8, W: 10, H: 10}}
 		return w
 	}

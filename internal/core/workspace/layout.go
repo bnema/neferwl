@@ -56,24 +56,14 @@ type Workspace struct {
 	// below/above and dialog groups determine their layout order.
 	Floats     []Float
 	floatFocus bool
-	// Stash holds the windows set aside by toggle-window-stash, left to
-	// right (stash.go); stashAt is the selected one. stashFocus is set
-	// while it has the focus, under a focused native float.
-	Stash   []Float
-	stashAt int
-	// stashView slides the stash: the selected window is drawn at
-	// stashAt+stashView.off, in stash windows. Pure presentation over
-	// stashAt.
-	stashView   motion.Slide
-	stashFocus  bool
-	stashHidden bool
+	// own is this workspace's stash (stash_state.go); lent is a shared
+	// stash lent by the monitor or core; nil uses own. Read through st.
+	own  Stash
+	lent *Stash
 	// stashWidth is the width of a stashed window (0: the default) and
 	// stashGap the space between it and its neighbors, in percent of the
 	// usable width.
 	stashWidth, stashGap int
-	// hiddenFullscreen holds a stashed window's fullscreen while the stash
-	// is hidden, restored when shown.
-	hiddenFullscreen WindowID
 	// stashOver is the covering fullscreen window the stash shows over, a
 	// user override (ToggleStashVisible) or a stashed window's activation
 	// (Activate); 0 without. Bound to that window,
@@ -144,7 +134,7 @@ type Float struct {
 
 // Empty reports that columns, native floats and stash are all empty.
 func (w *Workspace) Empty() bool {
-	return len(w.Columns) == 0 && len(w.Floats) == 0 && len(w.Stash) == 0
+	return len(w.Columns) == 0 && len(w.Floats) == 0 && len(w.st().entries) == 0
 }
 
 // columnWindows counts the windows in the columns.
@@ -165,7 +155,7 @@ func (w *Workspace) AppendHidden(dst []Placement, floats bool) []Placement {
 			dst = append(dst, Placement{ID: id, Hidden: true})
 		}
 	}
-	for _, f := range w.Stash {
+	for _, f := range w.st().entries {
 		dst = append(dst, Placement{ID: f.ID, Hidden: true})
 	}
 	if floats {
@@ -181,7 +171,7 @@ func (w *Workspace) AppendWindows(dst []WindowID) []WindowID {
 	for _, c := range w.Columns {
 		dst = append(dst, c.Windows...)
 	}
-	for _, f := range w.Stash {
+	for _, f := range w.st().entries {
 		dst = append(dst, f.ID)
 	}
 	for _, f := range w.Floats {
@@ -220,7 +210,7 @@ func (w *Workspace) reconcileFloats() {
 
 // canLeaveFloat reports whether columns or a shown stash can receive focus.
 func (w *Workspace) canLeaveFloat() bool {
-	return len(w.Columns) > 0 || !w.stashHidden && len(w.Stash) > 0
+	return len(w.Columns) > 0 || !w.st().hidden && len(w.st().entries) > 0
 }
 
 // leaveFloat moves focus to the columns or shown stash under the float.
@@ -415,7 +405,7 @@ func (w *Workspace) Focused() (WindowID, bool) {
 			return d, true
 		}
 		if w.stashOverCover() {
-			return w.Stash[w.stashAt].ID, true
+			return w.st().entries[w.st().at].ID, true
 		}
 		return full, true
 	}
@@ -423,7 +413,7 @@ func (w *Workspace) Focused() (WindowID, bool) {
 		return w.Floats[len(w.Floats)-1].ID, true
 	}
 	if w.stashFocused() {
-		return w.Stash[w.stashAt].ID, true
+		return w.st().entries[w.st().at].ID, true
 	}
 	if w.Focus < 0 || w.Focus >= len(w.Columns) {
 		return 0, false

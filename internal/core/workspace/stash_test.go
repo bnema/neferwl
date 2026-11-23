@@ -24,8 +24,8 @@ func TestStashPendingFullscreenOverTile(t *testing.T) {
 			t.Fatal("tile still covers")
 		}
 		w.ToggleStashVisible()
-		if w.Fullscreen != 3 || w.hiddenFullscreen != 0 {
-			t.Fatalf("fullscreen %d pending %d", w.Fullscreen, w.hiddenFullscreen)
+		if w.Fullscreen != 3 || w.st().fullscreen != 0 {
+			t.Fatalf("fullscreen %d pending %d", w.Fullscreen, w.st().fullscreen)
 		}
 		if id, _ := w.Focused(); id != 3 {
 			t.Fatalf("focused %d", id)
@@ -83,7 +83,7 @@ func TestFullscreenStashMemberReturns(t *testing.T) {
 					t.Fatal("setup has no cover")
 				}
 				w.ToggleWindowStash()
-				if w.StashIndex(2) >= 0 || w.Fullscreen != 2 || w.Cover() != 2 || w.stashFocus || w.hiddenFullscreen != 0 || w.stashOver != 0 {
+				if w.StashIndex(2) >= 0 || w.Fullscreen != 2 || w.Cover() != 2 || w.st().focus || w.st().fullscreen != 0 || w.stashOver != 0 {
 					t.Fatalf("bad restored state: %+v", w)
 				}
 				if id, _ := w.Focused(); id != 2 {

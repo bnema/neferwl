@@ -113,7 +113,7 @@ func MoveFocused(from, to *Workspace, column bool) bool {
 		to.Floats[len(to.Floats)-1] = f
 		to.Activate(id)
 	} else if i := from.StashIndex(id); i >= 0 {
-		f := from.Stash[i].rehome()
+		f := from.st().entries[i].rehome()
 		from.RemoveWindow(id)
 		to.addStash(f)
 		to.Activate(id)
@@ -161,8 +161,8 @@ func Merge(dst, src *Workspace) {
 		dst.Floats[len(dst.Floats)-1] = f
 	}
 	dst.reconcileFloats()
-	for _, f := range src.Stash {
-		dst.Stash = append(dst.Stash, f.rehome())
+	for _, f := range src.st().entries {
+		dst.st().entries = append(dst.st().entries, f.rehome())
 	}
 	// Held members stay held where the layout scrolls (hold refuses
 	// elsewhere): in a column or band of their own, off screen.
@@ -281,17 +281,17 @@ func (w *Workspace) SetStash(width, gap int) {
 func (w *Workspace) StashSwipeable() bool { return w.stashFocused() && !w.floatFocus && w.StashShown() }
 
 // StashVisibility returns the hidden state and covering-window override.
-func (w *Workspace) StashVisibility() (bool, WindowID) { return w.stashHidden, w.stashOver }
+func (w *Workspace) StashVisibility() (bool, WindowID) { return w.st().hidden, w.stashOver }
 
 // StashAt returns the settled stash selection index.
-func (w *Workspace) StashAt() int { return w.stashAt }
+func (w *Workspace) StashAt() int { return w.st().at }
 
 // ShowStashAt commits an overview stash selection, dropping another hidden cover.
 func (w *Workspace) ShowStashAt(i int) {
-	if w.hiddenFullscreen != w.Stash[i].ID {
-		w.hiddenFullscreen = 0
+	if w.st().fullscreen != w.st().entries[i].ID {
+		w.st().fullscreen = 0
 	}
-	w.stashAt = i
+	w.st().at = i
 	w.showStash()
 }
 
@@ -386,8 +386,8 @@ func (w *Workspace) EnterOverview() int {
 	if w.floatFocus && len(w.Columns) > 0 && (n < 2 || front.Kind == StackColumns) {
 		w.floatFocus = false
 	}
-	if len(w.Stash) > 0 && (n == 0 || w.stashFocused() && !w.floatFocus) {
-		return w.stashAt
+	if len(w.st().entries) > 0 && (n == 0 || w.stashFocused() && !w.floatFocus) {
+		return w.st().at
 	}
 	return -1
 }

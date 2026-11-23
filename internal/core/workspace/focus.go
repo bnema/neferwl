@@ -26,17 +26,17 @@ func (w *Workspace) FocusID(id WindowID) bool {
 		return true
 	}
 	if i := w.StashIndex(id); i >= 0 {
-		if w.stashHidden {
+		if w.st().hidden {
 			return false
 		}
-		w.stashAt, w.stashFocus, w.floatFocus = i, true, false
+		w.st().at, w.st().focus, w.floatFocus = i, true, false
 		return true
 	}
 	for i := range w.Columns {
 		for j, v := range w.Columns[i].Windows {
 			if v == id {
 				w.dropStashOver()
-				w.floatFocus, w.stashFocus = false, false
+				w.floatFocus, w.st().focus = false, false
 				w.raiseColumns()
 				if w.Engine().MaximizeHides() && w.Focus != i && w.Focus < len(w.Columns) && !w.Columns[i].FullWidth {
 					w.Unmaximize()
@@ -71,7 +71,7 @@ func (w *Workspace) Select(id WindowID) bool {
 	}
 	for i := range w.Columns {
 		if j := slices.Index(w.Columns[i].Windows, id); j >= 0 {
-			w.floatFocus, w.stashFocus = false, false
+			w.floatFocus, w.st().focus = false, false
 			w.raiseColumns()
 			w.Focus = i
 			w.Columns[i].Focus = j
@@ -91,7 +91,7 @@ func (w *Workspace) HoverFocusable(id WindowID) bool {
 		return !w.stashOverCover() || w.overCover(w.Floats[i])
 	}
 	if w.StashIndex(id) >= 0 {
-		return !w.stashHidden
+		return !w.st().hidden
 	}
 	if w.ColumnOf(id) < 0 {
 		return false
@@ -135,8 +135,8 @@ func (w *Workspace) focusColumn(dir int) {
 	}
 	if w.stashFocused() {
 		// Inside the stash, stopping at its ends: only hiding it leaves.
-		if (dir == -1 || dir == 1) && w.stashAt+dir >= 0 && w.stashAt+dir < len(w.Stash) {
-			w.stashAt += dir
+		if (dir == -1 || dir == 1) && w.st().at+dir >= 0 && w.st().at+dir < len(w.st().entries) {
+			w.st().at += dir
 		}
 		return
 	}

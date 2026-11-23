@@ -88,7 +88,7 @@ func TestToggleFloatingNativeAndNoops(t *testing.T) {
 		id, _ := w.Focused()
 		w.Apply(ActionToggleFloating)
 		if w.StashIndex(id) < 0 {
-			t.Fatal(w.Stash)
+			t.Fatal(w.st().entries)
 		}
 		// Fullscreen: no-op.
 		w = freeWorkspace()
@@ -124,7 +124,7 @@ func TestFreeFloatStash(t *testing.T) {
 		want := w.Floats[i]
 		w.Apply(ActionToggleWindowStash)
 		if w.StashIndex(2) < 0 || w.floatIndex(2) >= 0 {
-			t.Fatal(w.Stash, w.Floats)
+			t.Fatal(w.st().entries, w.Floats)
 		}
 		w.Apply(ActionToggleWindowStash)
 		if i := w.floatIndex(2); i < 0 || w.Floats[i].cx != 0.3 || w.Floats[i].cy != 0.6 || w.Floats[i].W != want.W || !w.floatFocus {

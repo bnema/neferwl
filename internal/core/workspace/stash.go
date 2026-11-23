@@ -23,20 +23,20 @@ import (
 const stashWidth, stashHeight = 80, 80
 
 // StashLen returns the number of stashed windows.
-func (w *Workspace) StashLen() int { return len(w.Stash) }
+func (w *Workspace) StashLen() int { return len(w.st().entries) }
 
 // StashID returns the window at stash index i.
-func (w *Workspace) StashID(i int) WindowID { return w.Stash[i].ID }
+func (w *Workspace) StashID(i int) WindowID { return w.st().entries[i].ID }
 
 // StashIndex returns the stash index of id, or -1.
 func (w *Workspace) StashIndex(id WindowID) int {
-	return slices.IndexFunc(w.Stash, func(f Float) bool { return f.ID == id })
+	return slices.IndexFunc(w.st().entries, func(f Float) bool { return f.ID == id })
 }
 
 // stashFocused reports whether the stash has the focus, under any native
 // float that has it. A shown stash without tiles always has it.
 func (w *Workspace) stashFocused() bool {
-	return (w.stashFocus || len(w.Columns) == 0) && !w.stashHidden && len(w.Stash) > 0
+	return (w.st().focus || len(w.Columns) == 0) && !w.st().hidden && len(w.st().entries) > 0
 }
 
 // OnFloat reports whether the focus is on a floating window: column
@@ -66,8 +66,8 @@ func (w *Workspace) tilePlace(id WindowID) *origPlace {
 
 // addStash appends a window to the stash, shows the stash and selects it.
 func (w *Workspace) addStash(f Float) {
-	w.Stash = append(w.Stash, f)
-	w.stashAt = len(w.Stash) - 1
+	w.st().entries = append(w.st().entries, f)
+	w.st().at = len(w.st().entries) - 1
 	w.showStash()
 }
 
@@ -80,8 +80,8 @@ func (w *Workspace) CaptureStash(id WindowID) bool {
 		return false
 	}
 	// No former column: toggle-window-stash tiles it as a new column.
-	w.Stash = append(w.Stash, Float{ID: id})
-	w.stashAt, w.stashFocus = len(w.Stash)-1, true
+	w.st().entries = append(w.st().entries, Float{ID: id})
+	w.st().at, w.st().focus = len(w.st().entries)-1, true
 	return true
 }
 
@@ -99,7 +99,7 @@ func (w *Workspace) StashSpawned(id WindowID) {
 	if w.Fullscreen != 0 && w.StashIndex(w.Fullscreen) >= 0 {
 		w.endFullscreen()
 	}
-	w.hiddenFullscreen = 0
+	w.st().fullscreen = 0
 	w.addStash(Float{ID: id})
 	if w.Cover() != 0 {
 		w.showStashOver()
@@ -110,21 +110,21 @@ func (w *Workspace) StashSpawned(id WindowID) {
 // fullscreen waited while hidden is fullscreen again, selected, as if it
 // asked now.
 func (w *Workspace) showStash() {
-	w.stashHidden, w.stashFocus, w.floatFocus = false, true, false
-	if i := w.StashIndex(w.hiddenFullscreen); i >= 0 {
-		w.Fullscreen, w.stashAt = w.hiddenFullscreen, i
+	w.st().hidden, w.st().focus, w.floatFocus = false, true, false
+	if i := w.StashIndex(w.st().fullscreen); i >= 0 {
+		w.Fullscreen, w.st().at = w.st().fullscreen, i
 	}
-	w.hiddenFullscreen = 0
+	w.st().fullscreen = 0
 }
 
 // unstash returns stash entry i to its former column, focused; a free
 // float floats again where it was.
 func (w *Workspace) unstash(i int) {
-	f := w.Stash[i]
+	f := w.st().entries[i]
 	w.RemoveWindow(f.ID)
 	if f.free {
 		w.Floats = append(w.Floats, f)
-		w.floatFocus, w.stashFocus = true, false
+		w.floatFocus, w.st().focus = true, false
 		return
 	}
 	w.restore(f.ID, f.back)
@@ -140,7 +140,7 @@ func (p origPlace) holdsStack(c layout.Column) bool {
 // index. It takes the focus.
 func (w *Workspace) restore(id WindowID, back *origPlace) {
 	w.dropStashOver()
-	w.floatFocus, w.stashFocus = false, false
+	w.floatFocus, w.st().focus = false, false
 	w.raiseColumns()
 	if back == nil {
 		w.addColumn(layout.Column{Windows: []WindowID{id}})
@@ -194,7 +194,7 @@ func (f Float) rehome() Float {
 // fullscreen behind (composed, no scanout) and returns when the stash
 // hides. A stashed fullscreen window is the stash on screen: no-op.
 func (w *Workspace) ToggleStashVisible() {
-	if len(w.Stash) == 0 {
+	if len(w.st().entries) == 0 {
 		return
 	}
 	if c := w.Cover(); c != 0 {
@@ -208,37 +208,37 @@ func (w *Workspace) ToggleStashVisible() {
 		w.showStashOver()
 		return
 	}
-	if w.stashHidden {
+	if w.st().hidden {
 		w.showStash()
 		return
 	}
-	w.stashHidden, w.stashFocus = true, false
+	w.st().hidden, w.st().focus = true, false
 }
 
 // showStashOver shows the stash over the covering fullscreen window,
 // focused. Not showStash: a pending stashed fullscreen must not replace
 // the covering window.
 func (w *Workspace) showStashOver() {
-	w.stashOver, w.stashHidden, w.stashFocus, w.floatFocus = w.Cover(), false, true, false
+	w.stashOver, w.st().hidden, w.st().focus, w.floatFocus = w.Cover(), false, true, false
 }
 
 // stashOverCover reports whether the stash shows over the covering
 // fullscreen window (ToggleStashVisible, Activate).
 func (w *Workspace) stashOverCover() bool {
-	return w.stashOver != 0 && w.stashOver == w.Cover() && !w.stashHidden && len(w.Stash) > 0
+	return w.stashOver != 0 && w.stashOver == w.Cover() && !w.st().hidden && len(w.st().entries) > 0
 }
 
 // StashShown reports whether the stash is on screen: it holds windows, is
 // not hidden, and no covering fullscreen window hides it.
 func (w *Workspace) StashShown() bool {
-	return len(w.Stash) > 0 && !w.stashHidden && (w.Cover() == 0 || w.stashOverCover())
+	return len(w.st().entries) > 0 && !w.st().hidden && (w.Cover() == 0 || w.stashOverCover())
 }
 
 // dropStashOver ends the stash override when the focus leaves it: the
 // stash hides again under the covering window, as it was.
 func (w *Workspace) dropStashOver() {
 	if w.stashOverCover() {
-		w.stashHidden, w.stashFocus = true, false
+		w.st().hidden, w.st().focus = true, false
 	}
 	w.stashOver = 0
 }
@@ -275,18 +275,18 @@ func (w *Workspace) appendStash(out []Placement, focusedID, cover WindowID) []Pl
 	// Neighbors rest in the margins, never over the selected window: the
 	// side with the least room says whether there is one.
 	margin := (u.W-fw)/2 - w.stashGapPx()
-	// The view is moved by stashView.off pitches, rounded once so every
+	// The view is moved by view.Off pitches, rounded once so every
 	// window shares the offset.
 	pitch := w.stashPitch(fw)
-	shift := int(math.Round(w.stashView.Off * float64(pitch)))
-	for i, f := range w.Stash {
+	shift := int(math.Round(w.st().view.Off * float64(pitch)))
+	for i, f := range w.st().entries {
 		p := Placement{ID: f.ID, Floating: true, Focused: f.ID == focusedID, Inset: domain.SideAll}
-		d := i - w.stashAt
+		d := i - w.st().at
 		r := Rect{X: center.X + d*pitch - shift, Y: center.Y, W: fw, H: fh}
 		switch {
 		case f.ID == cover:
 			p.Rect, p.Fullscreen, p.Inset = w.Output, true, 0
-		case w.stashHidden || cover != 0 && !w.stashOverCover():
+		case w.st().hidden || cover != 0 && !w.stashOverCover():
 			p.Hidden = true
 		case d == 0:
 			// The selection is no peek, but its veil grows as it slides.
@@ -321,8 +321,8 @@ func (w *Workspace) StashSpring(off, velocity float64) motion.Spring {
 }
 
 // stashVeil is how much of the peek veil the stash window d places away
-// from stashAt draws: none at the centre of the view, all of it one window
-// away or more.
+// from the selected one draws: none at the centre of the view, all of it
+// one window away or more.
 func (w *Workspace) stashVeil(d int) float64 {
-	return min(math.Abs(float64(d)-w.stashView.Off), 1)
+	return min(math.Abs(float64(d)-w.st().view.Off), 1)
 }

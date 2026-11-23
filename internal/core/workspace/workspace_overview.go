@@ -15,19 +15,19 @@ import (
 // (cascade) or stops (a vertical overview).
 func (w *Workspace) WrapsCards() bool {
 	_, k := w.StackHead()
-	return k > 0 && len(w.Stash) >= 3
+	return k > 0 && len(w.st().entries) >= 3
 }
 
 // pileWidth is the room the stash pile of w takes on the left of its row in
 // a vertical overview, its margin included; 0 without a stash.
 func (w *Workspace) pileWidth() int {
-	if len(w.Stash) == 0 {
+	if len(w.st().entries) == 0 {
 		return 0
 	}
 	card, _ := w.cardSize()
 	// Never more than a third of the width: the columns keep the rest.
 	a := w.OverviewArea()
-	return min(card+(min(len(w.Stash), overviewCards)-1)*w.cardStep()+a.W*2/100, a.W/3)
+	return min(card+(min(len(w.st().entries), overviewCards)-1)*w.cardStep()+a.W*2/100, a.W/3)
 }
 
 // cardSize is the size of a stash card in the overview.
@@ -41,11 +41,11 @@ func (w *Workspace) cardSize() (int, int) {
 // behind. 0 without a stash, or in a vertical overview, where the pile
 // sits left of the row. The lane and the band are centred together.
 func (w *Workspace) pileBand(axis layout.Axis) int {
-	if axis != layout.Horizontal || len(w.Stash) == 0 {
+	if axis != layout.Horizontal || len(w.st().entries) == 0 {
 		return 0
 	}
 	_, ch := w.cardSize()
-	return max(1, w.OverviewArea().H*3/100) + ch + (min(len(w.Stash), overviewCards)-1)*w.cardStep()
+	return max(1, w.OverviewArea().H*3/100) + ch + (min(len(w.st().entries), overviewCards)-1)*w.cardStep()
 }
 
 // cardStep is the offset between stacked cards, smaller on tiny outputs.
@@ -60,7 +60,7 @@ func (w *Workspace) cardStep() int {
 // selection in front, painted last, up to overviewCards-1 next ones
 // (wrapping round) behind it, farthest first, dimmed; the rest hidden.
 func (w *Workspace) pile(dst []Placement, axis layout.Axis, slot Rect, dim bool, at int) []Placement {
-	n := len(w.Stash)
+	n := len(w.st().entries)
 	if n == 0 {
 		return dst
 	}
@@ -87,9 +87,9 @@ func (w *Workspace) pile(dst []Placement, axis layout.Axis, slot Rect, dim bool,
 	if at >= 0 && !dim {
 		return w.unfold(dst, axis, folded, min(at, n-1))
 	}
-	front, behind, step := min(max(w.stashAt, 0), n-1), min(n, overviewCards)-1, w.cardStep()
+	front, behind, step := min(max(w.st().at, 0), n-1), min(n, overviewCards)-1, w.cardStep()
 	card := func(i, d int) Placement {
-		p := Placement{ID: w.Stash[i].ID, Rect: folded, Preview: overviewCardZoom, Card: true}
+		p := Placement{ID: w.st().entries[i].ID, Rect: folded, Preview: overviewCardZoom, Card: true}
 		p.Rect.X, p.Rect.Y = p.Rect.X+d*step, p.Rect.Y-d*step
 		if d > 0 || dim {
 			p.Peeking(1)
@@ -99,11 +99,11 @@ func (w *Workspace) pile(dst []Placement, axis layout.Axis, slot Rect, dim bool,
 	for d := behind; d >= 0; d-- {
 		dst = append(dst, card((front+d)%n, d))
 	}
-	for i := range w.Stash {
+	for i := range w.st().entries {
 		// The cards neither in front nor behind it: hidden, so their
 		// clients are not left showing.
 		if (i-front+n)%n > behind {
-			dst = append(dst, Placement{ID: w.Stash[i].ID, Rect: folded, Card: true, Hidden: true})
+			dst = append(dst, Placement{ID: w.st().entries[i].ID, Rect: folded, Card: true, Hidden: true})
 		}
 	}
 	return dst
@@ -120,7 +120,7 @@ func (w *Workspace) pile(dst []Placement, axis layout.Axis, slot Rect, dim bool,
 // the area's edges, like a wide row. The cards past the area are hidden,
 // the ones other than at dimmed. The cards are appended to dst.
 func (w *Workspace) unfold(dst []Placement, axis layout.Axis, folded Rect, at int) []Placement {
-	n := len(w.Stash)
+	n := len(w.st().entries)
 	u := w.OverviewArea()
 	size, origin, lo, room := folded.W, folded.X, u.X, u.W
 	if axis == layout.Vertical {
@@ -153,7 +153,7 @@ func (w *Workspace) unfold(dst []Placement, axis layout.Axis, folded Rect, at in
 	case !wraps:
 		shift = min(max(first, lo+room-total), lo) - first
 	}
-	for i := range w.Stash {
+	for i := range w.st().entries {
 		r := folded
 		if p := pos(CarouselSlot(i, at, n, wraps)) + shift; axis == layout.Vertical {
 			r.Y = p
@@ -168,7 +168,7 @@ func (w *Workspace) unfold(dst []Placement, axis layout.Axis, folded Rect, at in
 // unfoldedCard appends stash card i of an unfolded pile at r to dst: framed
 // when it is the selected one at, dimmed otherwise, hidden out of the area u.
 func (w *Workspace) unfoldedCard(dst []Placement, i int, r Rect, at int, u Rect) []Placement {
-	p := Placement{ID: w.Stash[i].ID, Rect: r, Preview: overviewCardZoom, Card: true, Focused: i == at}
+	p := Placement{ID: w.st().entries[i].ID, Rect: r, Preview: overviewCardZoom, Card: true, Focused: i == at}
 	if i != at {
 		p.Peeking(1)
 	}
@@ -382,7 +382,7 @@ func restoreRow(w *Workspace, s RowSnapshot) {
 	if s.Focus != 0 {
 		w.FocusID(s.Focus)
 	} else {
-		w.floatFocus, w.stashFocus = false, false
+		w.floatFocus, w.st().focus = false, false
 	}
 	// FocusID on a float raises it; restore the initial order and below
 	// flags for floats still present, leaving new floats in their order.

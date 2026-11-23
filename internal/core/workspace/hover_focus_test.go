@@ -22,16 +22,16 @@ func TestHoverFocusable(t *testing.T) {
 	}{
 		{"float", func(*Workspace) {}, 4, true},
 		{"shown stash member", func(*Workspace) {}, 3, true},
-		{"hidden stash member", func(w *Workspace) { w.stashHidden = true }, 3, false},
-		{"tile without stash or floats", func(w *Workspace) { w.Stash, w.Floats = nil, nil }, 1, true},
+		{"hidden stash member", func(w *Workspace) { w.st().hidden = true }, 3, false},
+		{"tile without stash or floats", func(w *Workspace) { w.st().entries, w.Floats = nil, nil }, 1, true},
 		{"tile while stash shown", func(*Workspace) {}, 1, false},
-		{"tile while stash hidden", func(w *Workspace) { w.stashHidden = true }, 1, true},
+		{"tile while stash hidden", func(w *Workspace) { w.st().hidden = true }, 1, true},
 		{"tile with covering float", func(w *Workspace) {
-			w.Stash = nil
+			w.st().entries = nil
 			w.Floats[0].W, w.Floats[0].H = w.Usable.W, w.Usable.H
 		}, 1, false},
 		{"tile with covering float below", func(w *Workspace) {
-			w.Stash = nil
+			w.st().entries = nil
 			w.Floats[0].W, w.Floats[0].H = w.Usable.W, w.Usable.H
 			w.Floats[0].below = true
 		}, 1, true},

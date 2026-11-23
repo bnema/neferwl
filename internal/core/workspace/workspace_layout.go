@@ -97,7 +97,7 @@ func (w *Workspace) adoptFloat(id WindowID, cover bool) {
 		if adopted {
 			w.Floats = slices.Delete(w.Floats, i, i+1)
 			if e.Focused == id {
-				w.floatFocus, w.stashFocus = false, false
+				w.floatFocus, w.st().focus = false, false
 			}
 		}
 	}

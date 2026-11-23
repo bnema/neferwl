@@ -23,8 +23,8 @@ func TestSelectKeepsMaximizeAndView(t *testing.T) {
 func TestSelectStashAndFloat(t *testing.T) {
 	w := cols(OverflowScroll, 3, 0, []WindowID{1})
 	w.Floats = []Float{{ID: 5, W: 10, H: 10}}
-	w.Stash = []Float{{ID: 7}}
-	w.stashHidden = true
+	w.st().entries = []Float{{ID: 7}}
+	w.st().hidden = true
 	if w.Select(7) || w.Select(99) {
 		t.Fatal("selected a hidden or missing window")
 	}
@@ -47,7 +47,7 @@ func TestSelectStashAndFloat(t *testing.T) {
 func TestSelectFloatIsQuiet(t *testing.T) {
 	w := cols(OverflowScroll, 3, 0, []WindowID{1})
 	w.Floats = []Float{{ID: 5, W: 10, H: 10, below: true}, {ID: 6, W: 10, H: 10}}
-	w.Stash = []Float{{ID: 7}}
+	w.st().entries = []Float{{ID: 7}}
 	w.stashOver = 1
 	if !w.Select(5) || w.stashOver != 1 {
 		t.Fatalf("stashOver %d", w.stashOver)

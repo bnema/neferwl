@@ -10,7 +10,7 @@ import (
 func (w *Workspace) ColumnsPosition() float64 { return float64(w.View) + w.view.Off }
 
 // StashPosition is the last drawn stash selection, in stash windows.
-func (w *Workspace) StashPosition() float64 { return float64(w.stashAt) + w.stashView.Off }
+func (w *Workspace) StashPosition() float64 { return float64(w.st().at) + w.st().view.Off }
 
 // SampleColumns returns the last drawn view and its velocity at now without
 // advancing presentation or changing the motion's bookkeeping.
@@ -26,8 +26,8 @@ func (w *Workspace) SampleColumns(now time.Time) (pos, velocity float64) {
 // advancing presentation or changing the motion's bookkeeping.
 func (w *Workspace) SampleStash(now time.Time) (pos, velocity float64) {
 	pos = w.StashPosition()
-	if w.stashView.Motion.On {
-		_, velocity = w.stashView.Motion.SampleAt(now)
+	if w.st().view.Motion.On {
+		_, velocity = w.st().view.Motion.SampleAt(now)
 	}
 	return
 }
@@ -38,7 +38,7 @@ func (w *Workspace) DragColumns(pos float64) { w.view.Off = pos - float64(w.View
 
 // DragStash places the drawn selection at pos relative to the settled selection.
 // It preserves any landing motion; BeginStashDrag takes over that motion.
-func (w *Workspace) DragStash(pos float64) { w.stashView.Off = pos - float64(w.stashAt) }
+func (w *Workspace) DragStash(pos float64) { w.st().view.Off = pos - float64(w.st().at) }
 
 // BeginColumnsDrag drops the landing motion, keeping the last drawn view.
 func (w *Workspace) BeginColumnsDrag() float64 {
@@ -48,7 +48,7 @@ func (w *Workspace) BeginColumnsDrag() float64 {
 
 // BeginStashDrag drops the landing motion, keeping the last drawn selection.
 func (w *Workspace) BeginStashDrag() float64 {
-	w.stashView.Motion = motion.Motion{}
+	w.st().view.Motion = motion.Motion{}
 	return w.StashPosition()
 }
 
@@ -56,7 +56,7 @@ func (w *Workspace) BeginStashDrag() float64 {
 func (w *Workspace) LandColumns(m motion.Motion) { w.view.Motion = m }
 
 // LandStash starts a core-built landing motion over the current drag offset.
-func (w *Workspace) LandStash(m motion.Motion) { w.stashView.Motion = m }
+func (w *Workspace) LandStash(m motion.Motion) { w.st().view.Motion = m }
 
 // StopColumns settles the drawn columns at the workspace's view.
 func (w *Workspace) StopColumns() { w.view.Stop() }
@@ -66,23 +66,23 @@ func (w *Workspace) StopColumns() { w.view.Stop() }
 func (w *Workspace) ResetView() { w.View = 0 }
 
 // StopStash settles the drawn stash at the selected window.
-func (w *Workspace) StopStash() { w.stashView.Stop() }
+func (w *Workspace) StopStash() { w.st().view.Stop() }
 
 // StopLandings settles running column and stash springs, leaving drags alone.
 func (w *Workspace) StopLandings() {
 	if w.view.Motion.On {
 		w.StopColumns()
 	}
-	if w.stashView.Motion.On {
+	if w.st().view.Motion.On {
 		w.StopStash()
 	}
 }
 
 // StepSlides advances both landing motions to the core-supplied frame time.
-func (w *Workspace) StepSlides(now time.Time) { w.view.Step(now); w.stashView.Step(now) }
+func (w *Workspace) StepSlides(now time.Time) { w.view.Step(now); w.st().view.Step(now) }
 
 // SlidesBusy reports a drag offset or a running landing on either slide.
-func (w *Workspace) SlidesBusy() bool { return w.view.Busy() || w.stashView.Busy() }
+func (w *Workspace) SlidesBusy() bool { return w.view.Busy() || w.st().view.Busy() }
 
 // SlidesRunning reports a running landing, excluding finger-driven offsets.
-func (w *Workspace) SlidesRunning() bool { return w.view.Motion.On || w.stashView.Motion.On }
+func (w *Workspace) SlidesRunning() bool { return w.view.Motion.On || w.st().view.Motion.On }

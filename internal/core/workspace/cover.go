@@ -24,7 +24,7 @@ func (w *Workspace) mayCover(id WindowID) bool {
 		}
 		w.left = 0
 	}
-	if !w.Engine().PinsFullscreen() || w.stashHidden && w.StashIndex(id) >= 0 {
+	if !w.Engine().PinsFullscreen() || w.st().hidden && w.StashIndex(id) >= 0 {
 		return true
 	}
 	focused, ok := w.Focused()
@@ -83,14 +83,14 @@ func (w *Workspace) FocusCover() {
 	}
 	if w.stashOverCover() {
 		// The stash shown over it has the focus.
-		w.stashFocus, w.floatFocus = true, false
+		w.st().focus, w.floatFocus = true, false
 		return
 	}
 	if w.IsFloat(c) {
 		w.FocusID(c)
 		return
 	}
-	w.floatFocus, w.stashFocus = false, false
+	w.floatFocus, w.st().focus = false, false
 	for i, col := range w.Columns {
 		if j := slices.Index(col.Windows, c); j >= 0 {
 			w.Focus, w.Columns[i].Focus = i, j
