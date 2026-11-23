@@ -147,6 +147,21 @@ func (c *Core) dispatchAction(a Action) Effect {
 	if e, ok := c.cur().mon.overviewAction(a); ok {
 		return e
 	}
+	// An explicit stash action brings the global stash to this screen;
+	// once moved, a shown stash stays shown, focused, here.
+	switch a {
+	case ActionToggleWindowStash:
+		// The window focused before the stash arrived is the one stashed.
+		w := c.cur().mon.Current()
+		if id, ok := w.Focused(); c.pullStash(c.cur()) && ok {
+			w.FocusID(id)
+		}
+	case ActionToggleStashVisible:
+		if w := c.cur().mon.Current(); c.pullStash(c.cur()) && w.StashLen() > 0 {
+			w.ShowStash()
+			return Effect{}
+		}
+	}
 	// A bind acts on the window on screen: under a covering fullscreen
 	// window, that is the one Focused reports.
 	c.cur().mon.Current().FocusCover()

@@ -451,6 +451,14 @@ func (c *Core) removeScreen(name string) {
 		gone.mon.lendee = nil
 	}
 	host.mon.stash.Absorb(&gone.mon.stash, false)
+	// A gone holder gives the session stash to the focused screen.
+	if c.stashHolder == gone.name() {
+		if l := c.stashLendee; l != nil {
+			l.Lend(nil)
+			c.stashLendee = nil
+		}
+		c.stashHolder = ""
+	}
 	for pos, w := range gone.mon.Workspaces {
 		if w.Empty() && w.Name == "" {
 			continue

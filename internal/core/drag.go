@@ -467,6 +467,9 @@ func (c *Core) drop(id WindowID, t dropTarget) {
 	if from == nil || t.ws == nil || src.ColumnOf(id) < 0 {
 		return
 	}
+	if t.a.Action == domain.DropStash {
+		c.pullStash(t.screen)
+	}
 	Drop(src, t.ws, id, t.a, int(c.cursorX)-t.screen.x, int(c.cursorY)-t.screen.y)
 	from.mon.normalize()
 	t.screen.mon.normalize()

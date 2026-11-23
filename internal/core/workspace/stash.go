@@ -228,6 +228,22 @@ func (w *Workspace) ToggleStashVisible() {
 	w.st().hidden, w.st().focus = true, false
 }
 
+// ShowStash shows the stash and gives it the focus, hidden or not; over a
+// covering window outside the stash it shows over it. A stashed cover is
+// the stash on screen already: no-op.
+func (w *Workspace) ShowStash() {
+	if len(w.st().entries) == 0 {
+		return
+	}
+	if c := w.Cover(); c != 0 {
+		if w.StashIndex(c) < 0 {
+			w.showStashOver()
+		}
+		return
+	}
+	w.showStash()
+}
+
 // showStashOver shows the stash over the covering fullscreen window,
 // focused. Not showStash: a pending stashed fullscreen must not replace
 // the covering window.
