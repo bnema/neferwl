@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"cmp"
 	"slices"
 
 	"github.com/bnema/neferwl/internal/core/layout"
@@ -161,9 +162,17 @@ func Merge(dst, src *Workspace) {
 		dst.Floats[len(dst.Floats)-1] = f
 	}
 	dst.reconcileFloats()
-	for _, f := range src.st().entries {
-		dst.st().entries = append(dst.st().entries, f.rehome())
+	// A lent stash stays with its owner, which lends it again; src's own
+	// windows move once, through the stash handoff.
+	src.Lend(nil)
+	for i := range src.own.entries {
+		src.own.entries[i] = src.own.entries[i].rehome()
 	}
+	// dst keeps its stash state (selection, visibility, focus), even empty.
+	d := dst.st()
+	at, view, focus, hidden, fs := d.at, d.view, d.focus, d.hidden, d.fullscreen
+	src.GiveStash(d, false)
+	d.at, d.view, d.focus, d.hidden, d.fullscreen = at, view, focus, hidden, cmp.Or(fs, d.fullscreen)
 	// Held members stay held where the layout scrolls (hold refuses
 	// elsewhere): in a column or band of their own, off screen.
 	for _, id := range src.Held {
