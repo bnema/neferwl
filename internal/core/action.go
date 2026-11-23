@@ -62,6 +62,8 @@ func (c *Core) applyAction(a Action) Effect {
 	wasStashed := beforeWS.StashIndex(beforeID) >= 0
 	wasShown := beforeWS.StashShown()
 	defer func() {
+		// Compare the final state: a shared stash follows the switch.
+		c.lendStashes()
 		sc := c.cur()
 		id, _ := sc.mon.Focused()
 		if sc.mon.ov.open {
