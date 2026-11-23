@@ -137,11 +137,14 @@ type Config struct {
 	// usable width; Dim darkens the neighbors, 0 to 1. Capture puts new
 	// windows in the stash while it is shown. SpawnTerminal makes
 	// toggle-stash-visible on an empty stash open the terminal in it.
+	// Scope says who owns a stash: each workspace, each output or the
+	// whole session.
 	Stash struct {
 		Width, Gap    int
 		Dim           float64
 		Capture       bool
 		SpawnTerminal bool
+		Scope         StashScope
 	}
 	// Border is drawn inside the window edge; Width 0 disables it. Radius is
 	// in logical pixels, >= 0 (at most 64 from the file): it rounds floats

@@ -49,6 +49,11 @@ floating.dim = 0.3
 # on: toggle-stash-visible on an empty stash opens the terminal in it.
 stash.spawn-terminal = on
 
+# Who owns a stash: workspace (each workspace), output (each screen, it
+# follows you across its workspaces) or global (one, moved to the screen
+# where you open it).
+stash.scope = workspace
+
 layout.gaps = 0
 # Columns sharing the screen equally before the overflow applies: one cell is
 # a max-columns-th of the width, and columns, rules and slots are sized in
