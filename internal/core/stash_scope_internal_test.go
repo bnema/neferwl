@@ -153,3 +153,34 @@ func TestLendStashesAllocs(t *testing.T) {
 		t.Fatalf("%v allocs", n)
 	}
 }
+
+// A shared stash stays in place while the workspaces slide under it; the
+// workspace's own tiles slide.
+func TestOutputStashStaysDuringSwitchSlide(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		c := scopeCore(t, domain.StashScopeOutput, "A")
+		m := c.cur().mon
+		ws1 := m.Current()
+		stashTile(ws1, 2)
+		c.lendStashes()
+		m.Focus(1)
+		ws2 := m.Current()
+		ws2.AddWindow(3)
+		ws2.FocusID(2)
+		c.lendStashes()
+		settled := map[WindowID]Rect{}
+		for _, p := range ws2.AppendLayout(nil) {
+			settled[p.ID] = p.Rect
+		}
+		m.switchView.Off = -0.5
+		moved := map[WindowID]bool{}
+		for _, p := range m.Layout() {
+			if !p.Hidden {
+				moved[p.ID] = p.Rect != settled[p.ID]
+			}
+		}
+		if moved[2] || !moved[3] {
+			t.Fatalf("stash moved %v, tile moved %v", moved[2], moved[3])
+		}
+	})
+}

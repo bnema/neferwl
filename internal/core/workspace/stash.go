@@ -22,6 +22,10 @@ import (
 // usable height.
 const stashWidth, stashHeight = 80, 80
 
+// StashLent reports whether w shows a shared stash lent by its monitor or
+// the core (stash.scope output or global).
+func (w *Workspace) StashLent() bool { return w.lent != nil }
+
 // StashLen returns the number of stashed windows.
 func (w *Workspace) StashLen() int { return len(w.st().entries) }
 

@@ -67,16 +67,22 @@ func (m *Monitor) slideLayout(cur []Placement) []Placement {
 	}
 	h := float64(m.switchAxis.Span(m.template.Output))
 	pos := float64(base) + m.switchView.Off
-	offset := func(p []Placement, k int) []Placement {
+	offset := func(p []Placement, k int, keep *Workspace) []Placement {
 		d := int(math.Round((float64(k) - pos) * h))
 		for i := range p {
-			if !p[i].Hidden {
+			// A shared stash is not the workspace's: it stays in place
+			// while the workspaces slide under it.
+			if !p[i].Hidden && (keep == nil || keep.StashIndex(p[i].ID) < 0) {
 				m.switchAxis.Offset(&p[i].Rect, d)
 			}
 		}
 		return p
 	}
-	cur = offset(cur, base)
+	var keep *Workspace
+	if w := m.Current(); w.StashLent() {
+		keep = w
+	}
+	cur = offset(cur, base, keep)
 	for _, k := range []int{int(math.Floor(pos)), int(math.Ceil(pos))} {
 		if k == base || k < 0 || k >= len(list) || !m.has(list[k]) {
 			continue
@@ -92,7 +98,7 @@ func (m *Monitor) slideLayout(cur []Placement) []Placement {
 		}
 		shown := m.slideShown
 		clear(shown)
-		for _, p := range offset(next, k) {
+		for _, p := range offset(next, k, nil) {
 			shown[p.ID] = p
 		}
 		for i, p := range cur {
