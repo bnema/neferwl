@@ -8,8 +8,9 @@ import "github.com/bnema/neferwl/internal/domain"
 // workspaces hand theirs over. A stash a scope change left behind returns
 // to the scope in force. Idempotent and allocation-free: it runs before
 // every frame, transition and wait. A previewing monitor (overview,
-// switcher) is left alone: its selection is provisional and a handoff
-// could not be undone.
+// switcher) is left alone, its selection being provisional, except that a
+// non-empty shared stash is never left unlent: its windows would be in no
+// workspace.
 func (c *Core) lendStashes() {
 	scope := c.cfg.Stash.Scope
 	output, global := scope == domain.StashScopeOutput, scope == domain.StashScopeGlobal
@@ -51,7 +52,7 @@ func (c *Core) lendStashes() {
 		// Orphaned session stash: to the holder's monitor or workspace.
 		if output {
 			hs.mon.stash.Absorb(&c.stash, false)
-		} else if !hs.mon.previewing() {
+		} else {
 			hs.mon.Current().TakeStash(&c.stash)
 		}
 		c.lendMonitors(output)
@@ -63,6 +64,10 @@ func (c *Core) lendStashes() {
 	var hcur *Workspace
 	if !hs.mon.previewing() {
 		hcur = hs.mon.Current()
+	} else if c.stashLendee == nil && c.stash.Len() > 0 {
+		// Never unlent: see lendMonitors.
+		c.stashLendee = hs.mon.Current()
+		c.stashLendee.Lend(&c.stash)
 	}
 	for _, sc := range c.screens {
 		m := sc.mon
@@ -98,6 +103,18 @@ func (c *Core) lendMonitors(output bool) {
 	for _, sc := range c.screens {
 		m := sc.mon
 		if m.previewing() {
+			// A stash released under a preview (its lendee left, a replug
+			// took windows back) is lent at once: unlent, its windows would
+			// be in no workspace. A lent one waits for the preview to end.
+			switch {
+			case m.stash.Len() == 0:
+			case !output:
+				m.Current().TakeStash(&m.stash)
+			case m.lendee == nil:
+				cur := m.Current()
+				cur.Lend(&m.stash)
+				m.lendee = cur
+			}
 			continue
 		}
 		cur := m.Current()
