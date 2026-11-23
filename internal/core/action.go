@@ -147,8 +147,9 @@ func switchesWorkspace(a Action) bool {
 
 func (c *Core) dispatchAction(a Action) Effect {
 	// A shared stash's window is in every workspace of its output: moving
-	// it to a workspace does nothing.
-	if movesToWorkspace(a) && c.stashShared() {
+	// it to a workspace does nothing. The overview moves its selection
+	// instead and refuses a stash card itself (overviewMoveTo).
+	if movesToWorkspace(a) && c.stashShared() && !c.cur().mon.ov.open {
 		if id, ok := c.cur().mon.Focused(); ok && c.cur().mon.Current().StashIndex(id) >= 0 {
 			return Effect{}
 		}

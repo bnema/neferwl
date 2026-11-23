@@ -34,3 +34,29 @@ func TestSharedStashMoveWindowToWorkspaceNoop(t *testing.T) {
 		})
 	}
 }
+
+// In the overview, a column preview selected after the stash card moves
+// to a workspace even though the stash keeps the workspace's focus.
+func TestSharedStashOverviewColumnMoves(t *testing.T) {
+	for _, scope := range []domain.StashScope{domain.StashScopeOutput, domain.StashScopeGlobal} {
+		t.Run(scope.String(), func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				c := scopeCore(t, scope, "A")
+				m := c.cur().mon
+				m.AddWindow(1)
+				stashTile(m.Current(), 2)
+				c.lendStashes()
+				w := m.Current()
+				m.ToggleOverview()
+				m.clearCard() // the selection leaves the stash card for the column
+				if id, _ := w.Focused(); id != 2 || m.overviewTarget() != 1 {
+					t.Fatalf("setup: focused %d target %d", id, m.overviewTarget())
+				}
+				c.dispatchAction("move-window-to-workspace 2")
+				if w.Has(1) || !m.Workspaces[1].Has(1) {
+					t.Fatal("tile 1 did not move")
+				}
+			})
+		})
+	}
+}
