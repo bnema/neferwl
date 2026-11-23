@@ -763,6 +763,7 @@ func (c *Core) snapshot(now time.Time) []viewShot {
 // there), the source slides to its next workspace. The focus-monitor-*
 // actions move nothing: no window changes place, so they are not animated.
 func (c *Core) transition(before []viewShot, now time.Time) {
+	c.lendStashes()
 	if !c.animOn() {
 		return
 	}

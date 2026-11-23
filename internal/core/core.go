@@ -732,6 +732,7 @@ func (c *Core) publishFrame(ctx context.Context, only *screen) error {
 	if c.inputEpochChanged() {
 		return errSecurityChanged
 	}
+	c.lendStashes()
 	c.syncSecurity()
 	c.updatePositionHints(only)
 	c.hintValidate()

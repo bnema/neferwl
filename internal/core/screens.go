@@ -445,6 +445,12 @@ func (c *Core) removeScreen(name string) {
 		c.focusScreen = max(slices.IndexFunc(c.screens, func(s *screen) bool { return !s.isolated }), 0)
 	}
 	host := c.cur()
+	// The gone monitor's stash joins the host's; its lendee gives it back.
+	if l := gone.mon.lendee; l != nil {
+		l.Lend(nil)
+		gone.mon.lendee = nil
+	}
+	host.mon.stash.Absorb(&gone.mon.stash, false)
 	for pos, w := range gone.mon.Workspaces {
 		if w.Empty() && w.Name == "" {
 			continue
