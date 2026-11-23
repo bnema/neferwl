@@ -22,7 +22,7 @@ func TestSharedStashMoveWindowToWorkspaceNoop(t *testing.T) {
 				c.lendStashes()
 				w := m.Current()
 				w.FocusID(2)
-				m.Apply("move-window-to-workspace 2")
+				c.dispatchAction("move-window-to-workspace 2")
 				c.lendStashes()
 				if m.Current() != w || !slices.Equal(seenStash(w), []WindowID{2, 3}) || w.StashID(w.StashAt()) != 2 {
 					t.Fatalf("stash %v at %d", seenStash(w), w.StashAt())

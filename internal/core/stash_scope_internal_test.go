@@ -184,3 +184,27 @@ func TestOutputStashStaysDuringSwitchSlide(t *testing.T) {
 		}
 	})
 }
+
+// Reload to output scope merges in workspace then arrival order, the
+// current workspace in place with its selection, even when it comes first.
+func TestStashScopeReloadToOutputCurrentFirst(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		c := scopeCore(t, domain.StashScopeWorkspace, "A")
+		m := c.cur().mon
+		ws1 := m.Current()
+		m.AddWindow(1)
+		stashTile(ws1, 2)
+		stashTile(ws1, 3)
+		m.Focus(1)
+		m.AddWindow(4)
+		stashTile(m.Current(), 5)
+		m.Focus(0)
+		ws1.FocusID(2)
+		c.lendStashes()
+		c.cfg.Stash.Scope = domain.StashScopeOutput
+		c.lendStashes()
+		if got := seenStash(ws1); !slices.Equal(got, []WindowID{2, 3, 5}) || ws1.StashID(ws1.StashAt()) != 2 {
+			t.Fatalf("stash %v at %d", got, ws1.StashAt())
+		}
+	})
+}

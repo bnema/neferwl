@@ -220,7 +220,7 @@ func (c *Core) runTargeted(ctx context.Context, id WindowID, a Action) error {
 			// maximize change on either side), never fullscreen, behind
 			// no cover.
 			// A shared stash's window is in every workspace of the output.
-			shared := s.mon.stashShared && w.StashIndex(id) >= 0
+			shared := c.stashShared() && w.StashIndex(id) >= 0
 			if i, _, ok := s.mon.moveDest(a); ok && !shared && !w.IsFullscreenMember(id) {
 				if dst := s.mon.Workspaces[i]; dst != w && dst.Fullscreen == 0 {
 					MoveByRule(w, dst, id)

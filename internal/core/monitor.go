@@ -40,10 +40,6 @@ type Monitor struct {
 	// lendee the one workspace it is lent to, nil if none.
 	stash  Stash
 	lendee *Workspace
-	// stashShared is set while stash.scope shares the stash beyond one
-	// workspace (output, global): its windows are in no single workspace,
-	// so moving one to a workspace does nothing.
-	stashShared bool
 	// stashCapture puts new windows in the shown stash (stash.capture).
 	stashCapture bool
 	// stashTerminal makes toggle-stash-visible on an empty stash open the
@@ -380,9 +376,6 @@ func (m *Monitor) ToggleFullscreen() { m.Current().ToggleFullscreen() }
 func (m *Monitor) MoveToWorkspace(i int, column bool) {
 	i = min(max(i, 0), len(m.Workspaces)-1)
 	cur, to := m.Current(), m.Workspaces[i]
-	if id, ok := cur.Focused(); ok && m.stashShared && cur.StashIndex(id) >= 0 {
-		return
-	}
 	if to == cur || !MoveFocused(cur, to, column) {
 		return
 	}

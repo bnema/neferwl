@@ -18,17 +18,8 @@ func (c *Core) lendStashes() {
 	// seeing another stash.
 	for _, sc := range c.screens {
 		m := sc.mon
-		l := m.lendee
-		if l == nil || !m.has(l) {
-			if l != nil {
-				l.Lend(nil)
-			}
-			m.lendee = nil
-			continue
-		}
-		if !m.previewing() && (!output || l != m.Current()) {
-			l.Lend(nil)
-			m.lendee = nil
+		if l := m.lendee; l != nil && (!m.has(l) || !m.previewing() && (!output || l != m.Current())) {
+			unlend(&m.lendee)
 		}
 	}
 	if len(c.screens) == 0 {
@@ -45,8 +36,7 @@ func (c *Core) lendStashes() {
 	}
 	hs := c.holderScreen()
 	if l := c.stashLendee; l != nil && (!global || !hs.mon.has(l) || !hs.mon.previewing() && l != hs.mon.Current()) {
-		l.Lend(nil)
-		c.stashLendee = nil
+		unlend(&c.stashLendee)
 	}
 	if !global {
 		// Orphaned session stash: to the holder's monitor or workspace.
@@ -78,27 +68,11 @@ func (c *Core) lendStashes() {
 			c.stash.Absorb(&m.stash, setup && sc == focused)
 			moved = true
 		}
-		// In screen then workspace order; the holder's current workspace
-		// keeps the selection.
-		for _, w := range m.Workspaces {
-			if w != c.stashLendee && w.GiveStash(&c.stash, prefer || w == hcur) {
-				moved = true
-			}
-		}
-		for _, w := range m.hidden {
-			if w != c.stashLendee && w.GiveStash(&c.stash, prefer || w == hcur) {
-				moved = true
-			}
+		if m.gatherStash(&c.stash, c.stashLendee, hcur, prefer) {
+			moved = true
 		}
 	}
-	if moved && c.stashLendee != nil {
-		c.stashLendee.Reattach()
-	}
-	if hcur != nil && c.stashLendee != hcur {
-		hcur.GiveStash(&c.stash, true)
-		hcur.Lend(&c.stash)
-		c.stashLendee = hcur
-	}
+	lendShared(&c.stash, &c.stashLendee, hcur, moved)
 }
 
 // lendMonitors runs the per-monitor part of lendStashes in output or
@@ -128,29 +102,52 @@ func (c *Core) lendMonitors(output bool) {
 			}
 			continue
 		}
-		prefer, moved := m.stash.Len() > 0, false
-		for _, w := range m.Workspaces {
-			if w != cur && w.GiveStash(&m.stash, prefer) {
-				moved = true
-			}
-		}
-		for _, w := range m.hidden {
-			if w != cur && w.GiveStash(&m.stash, prefer) {
-				moved = true
-			}
-		}
-		if moved && m.lendee == cur {
-			cur.Reattach()
-		}
-		if m.lendee != cur {
-			// Collected first, the current workspace's stash wins the
-			// selection.
-			cur.GiveStash(&m.stash, true)
-			cur.Lend(&m.stash)
-			m.lendee = cur
-		}
+		moved := m.gatherStash(&m.stash, m.lendee, cur, m.stash.Len() > 0)
+		lendShared(&m.stash, &m.lendee, cur, moved)
 	}
 }
+
+// gatherStash hands the stashes of m's workspaces but skip to dst, in
+// workspace order, numbered then hidden; sel's state is preferred, as
+// every one's is with prefer. It reports whether any window moved.
+func (m *Monitor) gatherStash(dst *Stash, skip, sel *Workspace, prefer bool) bool {
+	moved := false
+	for _, list := range [2][]*Workspace{m.Workspaces, m.hidden} {
+		for _, w := range list {
+			if w != skip && w.GiveStash(dst, prefer || w == sel) {
+				moved = true
+			}
+		}
+	}
+	return moved
+}
+
+// lendShared lends s to cur after a gather, unless it is lent there
+// already; a lendee kept receives Reattach when windows moved in. A nil
+// cur (previewing) keeps the lendee.
+func lendShared(s *Stash, lendee **Workspace, cur *Workspace, moved bool) {
+	if moved && *lendee != nil {
+		(*lendee).Reattach()
+	}
+	if cur == nil || *lendee == cur {
+		return
+	}
+	cur.GiveStash(s, true)
+	cur.Lend(s)
+	*lendee = cur
+}
+
+// unlend gives the stash lent to *l back and clears it.
+func unlend(l **Workspace) {
+	if *l != nil {
+		(*l).Lend(nil)
+		*l = nil
+	}
+}
+
+// stashShared reports whether stash.scope shares a stash beyond one
+// workspace (output, global).
+func (c *Core) stashShared() bool { return c.cfg.Stash.Scope != domain.StashScopeWorkspace }
 
 // holderScreen is the screen holding the session stash, the focused one
 // when the holder is unset or gone; it records the fallback.
@@ -189,10 +186,7 @@ func (c *Core) returnStash(s *screen) {
 		if o == s {
 			continue
 		}
-		if l := o.mon.lendee; l != nil {
-			l.Lend(nil)
-			o.mon.lendee = nil
-		}
+		unlend(&o.mon.lendee)
 		o.mon.stash.TakeHome(&s.mon.stash, s.mon.matches)
 	}
 }
