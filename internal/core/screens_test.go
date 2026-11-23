@@ -1008,6 +1008,10 @@ func TestStateSnapshot(t *testing.T) {
 			{Focused: 2, ID: 2, Number: 1, Output: "DP-2", Visible: true, Overflow: "scroll", Columns: []domain.ColumnState{{Rect: domain.Rect{W: 400, H: 200}, Windows: []domain.TileState{{ID: 2, Rect: domain.Rect{W: 400, H: 200}}}}}},
 			{ID: 4, Number: 2, Output: "DP-2", Overflow: "scroll", Columns: []domain.ColumnState{}},
 		}
+		want.StashScope = "workspace"
+		for i := range want.Workspaces {
+			want.Workspaces[i].Stash = []domain.WindowID{}
+		}
 		for i := range want.Outputs {
 			want.Outputs[i].HDR = domain.OutputHDRState{Tier: "unavailable", PeakSource: "default", SDRExpand: "auto"}
 		}

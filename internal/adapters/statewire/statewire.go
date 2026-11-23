@@ -16,6 +16,8 @@ type State struct {
 	Windows []Window `json:"windows"`
 	// Workspaces lists every workspace of every output.
 	Workspaces []Workspace `json:"workspaces"`
+	// StashScope is stash.scope: workspace, output or global.
+	StashScope string `json:"stash_scope"`
 }
 
 // Workspace is one workspace and its tiled columns, left to right. ID is
@@ -31,6 +33,14 @@ type Workspace struct {
 	Overflow string          `json:"overflow"`
 	Cover    domain.WindowID `json:"cover"`
 	Columns  []Column        `json:"columns"`
+	Stash    Stash           `json:"stash"`
+}
+
+// Stash is the stash a workspace shows, its own or a shared one lent to
+// it: its windows left to right, and whether it is on screen.
+type Stash struct {
+	Visible bool     `json:"visible"`
+	Windows []uint64 `json:"windows"`
 }
 
 // Column is the area of one column in logical pixels of its output, view
@@ -116,7 +126,7 @@ type Window struct {
 
 // FromDomain converts a domain snapshot to the script-facing JSON format.
 func FromDomain(st domain.State, ids *workspaceid.IDs) State {
-	out := State{Output: st.Output, Mode: st.Mode, Outputs: make([]Output, 0, len(st.Outputs)), Windows: make([]Window, 0, len(st.Windows)), Workspaces: make([]Workspace, 0, len(st.Workspaces))}
+	out := State{Output: st.Output, Mode: st.Mode, StashScope: st.StashScope, Outputs: make([]Output, 0, len(st.Outputs)), Windows: make([]Window, 0, len(st.Windows)), Workspaces: make([]Workspace, 0, len(st.Workspaces))}
 	for _, o := range st.Outputs {
 		out.Outputs = append(out.Outputs, Output{HDR: o.HDR, Name: o.Name, Active: o.Active, Count: o.Count, Workspace: o.Workspace, WorkspaceID: ids.ID(o.WorkspaceID, o.Workspace)})
 	}
@@ -125,6 +135,10 @@ func FromDomain(st domain.State, ids *workspaceid.IDs) State {
 	}
 	for _, w := range st.Workspaces {
 		ws := Workspace{Focused: w.Focused, ID: ids.ID(w.ID, w.Name), Number: w.Number, Name: w.Name, Output: w.Output, Visible: w.Visible, Overflow: w.Overflow, Cover: w.Cover, Columns: make([]Column, 0, len(w.Columns))}
+		ws.Stash = Stash{Visible: w.StashShown, Windows: make([]uint64, 0, len(w.Stash))}
+		for _, id := range w.Stash {
+			ws.Stash.Windows = append(ws.Stash.Windows, uint64(id))
+		}
 		for _, c := range w.Columns {
 			col := Column{X: c.Rect.X, Y: c.Rect.Y, Width: c.Rect.W, Height: c.Rect.H, Windows: make([]Tile, 0, len(c.Windows)), Tabbed: c.Tabbed, Active: c.Active}
 			for _, t := range c.Windows {
