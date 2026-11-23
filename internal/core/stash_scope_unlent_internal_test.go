@@ -8,7 +8,7 @@ import (
 	"github.com/bnema/neferwl/internal/ports"
 )
 
-// placedOnce reports how many times id is laid out on m and listed in the
+// placedCount reports how many times id is laid out on m and listed in the
 // state.
 func placedCount(c *Core, m *Monitor, id WindowID) (layout, state int) {
 	for _, p := range m.Layout() {
@@ -24,15 +24,17 @@ func placedCount(c *Core, m *Monitor, id WindowID) (layout, state int) {
 	return layout, state
 }
 
-func inAnyStash(c *Core, id WindowID) bool {
+// stashCount is how many workspaces, on every screen, see id stashed.
+func stashCount(c *Core, id WindowID) int {
+	n := 0
 	for _, sc := range c.screens {
 		for w := range sc.mon.all() {
 			if w.StashIndex(id) >= 0 {
-				return true
+				n++
 			}
 		}
 	}
-	return false
+	return n
 }
 
 // A lendee released while its monitor previews leaves no stash window in
@@ -49,7 +51,7 @@ func TestOutputStashReleasedWhilePreviewing(t *testing.T) {
 		c.unmapWindow(ports.WindowUnmapped{ID: 2})
 		a.ToggleOverview()
 		c.lendStashes()
-		if inAnyStash(c, 2) {
+		if stashCount(c, 2) != 0 {
 			t.Fatal("unmapped window still stashed")
 		}
 		if l, s := placedCount(c, a, 9); l != 1 || s != 1 {
@@ -71,7 +73,7 @@ func TestGlobalStashReleasedWhilePreviewing(t *testing.T) {
 		c.unmapWindow(ports.WindowUnmapped{ID: 2})
 		a.ToggleOverview()
 		c.lendStashes()
-		if inAnyStash(c, 2) {
+		if stashCount(c, 2) != 0 {
 			t.Fatal("unmapped window still stashed")
 		}
 		if l, s := placedCount(c, a, 9); l != 1 || s != 1 {

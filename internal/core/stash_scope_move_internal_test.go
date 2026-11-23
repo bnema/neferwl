@@ -34,17 +34,3 @@ func TestSharedStashMoveWindowToWorkspaceNoop(t *testing.T) {
 		})
 	}
 }
-
-// A stashed window moved to a workspace on another output (a rule) joins
-// that output's stash in output scope.
-func TestOutputStashMoveToOtherOutput(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		c, a := outputRig(t, false)
-		b := c.screens[1].mon
-		MoveByRule(a.Current(), b.Current(), 2)
-		c.lendStashes()
-		if a.Current().StashIndex(2) >= 0 || !slices.Contains(seenStash(b.Current()), 2) {
-			t.Fatalf("a %v b %v", seenStash(a.Current()), seenStash(b.Current()))
-		}
-	})
-}

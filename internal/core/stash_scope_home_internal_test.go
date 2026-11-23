@@ -46,6 +46,12 @@ func TestOutputStashReturnsOnReplug(t *testing.T) {
 		if got := seenStash(b.Current()); !slices.Equal(got, []WindowID{4, 5}) {
 			t.Fatalf("replugged: b %v", got)
 		}
+		if b.Current().StashShown() {
+			t.Fatal("returned stash shown, want hidden")
+		}
+		if w := a.Current(); w.StashID(w.StashAt()) != 2 {
+			t.Fatalf("a selection %d", w.StashID(w.StashAt()))
+		}
 	})
 }
 

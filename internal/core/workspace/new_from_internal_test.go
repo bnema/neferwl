@@ -66,6 +66,7 @@ func dirty(w *Workspace) {
 	w.OverviewAfter = &Workspace{}
 	w.colBuf, w.rowBuf, w.tileBuf, w.zoomBuf = make([]Rect, 1), make([]Rect, 1), make([]Placement, 1), make([]Placement, 1)
 	w.anchorBuf, w.anchorCols, w.snapBuf = make([]Placement, 1), make([]visibleColumn, 1), make([]float64, 1)
+	w.lent = &Stash{entries: []Float{{ID: 30}}}
 }
 
 func TestNewFromCopiesOnlySettings(t *testing.T) {
@@ -106,7 +107,7 @@ func TestNewFromCopiesOnlySettings(t *testing.T) {
 		w.SetBorder(9)
 		w.SetOverflow(OverflowScroll)
 		if !reflect.DeepEqual(before.Columns, tpl.Columns) || tpl.Gaps != 7 || tpl.border != 2 ||
-			tpl.Overflow != OverflowFixed || len(tpl.Floats) != 1 || len(tpl.st().entries) != 2 {
+			tpl.Overflow != OverflowFixed || len(tpl.Floats) != 1 || len(tpl.own.entries) != 2 {
 			t.Fatalf("template changed: %+v", tpl)
 		}
 	})

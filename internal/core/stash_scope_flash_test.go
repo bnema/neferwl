@@ -25,8 +25,8 @@ func TestOutputStashSwitchFlashesNoTile(t *testing.T) {
 		if m.Current() != m.Workspaces[0] || !m.Current().StashShown() {
 			t.Fatal("setup: not on the first workspace with the stash shown")
 		}
-		if pending != nil && pending.window != 5 {
-			t.Fatalf("flash on %d, a tile under the stash", pending.window)
+		if pending == nil || pending.window != 5 {
+			t.Fatalf("flash %+v, want one on stash window 5", pending)
 		}
 	})
 }

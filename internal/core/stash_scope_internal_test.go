@@ -40,27 +40,33 @@ func stashTile(w *Workspace, id WindowID) {
 	w.ToggleWindowStash()
 }
 
-func TestOutputStashFollowsWorkspace(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		c := scopeCore(t, domain.StashScopeOutput, "A")
-		m := c.cur().mon
-		ws1 := m.Current()
-		m.AddWindow(1)
-		stashTile(ws1, 2)
-		c.lendStashes()
-		m.Focus(1)
-		ws2 := m.Current()
-		c.lendStashes()
-		if ws1.StashLen() != 0 || ws1.Has(2) {
-			t.Fatalf("ws1 still sees %v", seenStash(ws1))
-		}
-		if !slices.Equal(seenStash(ws2), []WindowID{2}) || !ws2.StashShown() {
-			t.Fatalf("ws2 stash %v shown %v", seenStash(ws2), ws2.StashShown())
-		}
-		if id, _ := ws2.Focused(); id != 2 {
-			t.Fatalf("ws2 focused %d", id)
-		}
-	})
+// A shared stash shown on workspace 1 shows on workspace 2, focused, after
+// a switch; workspace 1 then sees nothing.
+func TestSharedStashFollowsWorkspace(t *testing.T) {
+	for _, scope := range []domain.StashScope{domain.StashScopeOutput, domain.StashScopeGlobal} {
+		t.Run(scope.String(), func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				c := scopeCore(t, scope, "A")
+				m := c.cur().mon
+				ws1 := m.Current()
+				m.AddWindow(1)
+				stashTile(ws1, 2)
+				c.lendStashes()
+				m.Focus(1)
+				ws2 := m.Current()
+				c.lendStashes()
+				if ws1.StashLen() != 0 || ws1.Has(2) {
+					t.Fatalf("ws1 still sees %v", seenStash(ws1))
+				}
+				if !slices.Equal(seenStash(ws2), []WindowID{2}) || !ws2.StashShown() {
+					t.Fatalf("ws2 stash %v shown %v", seenStash(ws2), ws2.StashShown())
+				}
+				if id, _ := ws2.Focused(); id != 2 {
+					t.Fatalf("ws2 focused %d", id)
+				}
+			})
+		})
+	}
 }
 
 // A stash spawn into the workspace left joins the monitor stash, selected.
@@ -141,16 +147,21 @@ func TestOutputStashPerMonitor(t *testing.T) {
 	})
 }
 
+// lendStashes allocates nothing in a steady shared scope.
 func TestLendStashesAllocs(t *testing.T) {
-	c := scopeCore(t, domain.StashScopeOutput, "A", "B")
-	m := c.cur().mon
-	m.AddWindow(1)
-	stashTile(m.Current(), 2)
-	m.Focus(1)
-	m.AddWindow(3)
-	c.lendStashes()
-	if n := testing.AllocsPerRun(100, c.lendStashes); n != 0 {
-		t.Fatalf("%v allocs", n)
+	for _, scope := range []domain.StashScope{domain.StashScopeOutput, domain.StashScopeGlobal} {
+		t.Run(scope.String(), func(t *testing.T) {
+			c := scopeCore(t, scope, "A", "B")
+			m := c.cur().mon
+			m.AddWindow(1)
+			stashTile(m.Current(), 2)
+			m.Focus(1)
+			m.AddWindow(3)
+			c.lendStashes()
+			if n := testing.AllocsPerRun(100, c.lendStashes); n != 0 {
+				t.Fatalf("%v allocs", n)
+			}
+		})
 	}
 }
 

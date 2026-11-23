@@ -385,7 +385,7 @@ func runLauncherArrivalRemote(t *testing.T, capture bool) {
 				t.Fatalf("setup: desktop stash %+v shown %v", stashIDs(dw), dw.StashShown())
 			}
 		}
-		stash := stashIDs(dw)
+		stash, stashRects := stashIDs(dw), stashPlacements(dw)
 		seat, keyboard, pointer := c.focusScreen, c.keyboardFocus(), c.pointer
 		view, workspace := dw.View, desktop.mon.Current()
 		x, y := c.cursorX, c.cursorY
@@ -437,7 +437,7 @@ func runLauncherArrivalRemote(t *testing.T, capture bool) {
 		if w.Fullscreen != 1 || c.x11.sent != 1 {
 			t.Fatalf("launcher return: cover %d X11 %d", w.Fullscreen, c.x11.sent)
 		}
-		if dw.Has(2) || !slices.Equal(stashIDs(dw), stash) || dw.StashShown() != capture {
+		if dw.Has(2) || !slices.Equal(stashIDs(dw), stash) || !slices.Equal(stashPlacements(dw), stashRects) || dw.StashShown() != capture {
 			t.Fatalf("desktop stash changed: %+v (was %+v) shown %v", stashIDs(dw), stash, dw.StashShown())
 		}
 	})

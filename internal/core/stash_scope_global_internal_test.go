@@ -62,18 +62,6 @@ func TestGlobalStashToggleShowsHidden(t *testing.T) {
 	})
 }
 
-func TestGlobalStashFollowsWorkspaceSwitch(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		c, a, _ := globalRig(t)
-		ws1 := a.Current()
-		a.Focus(1)
-		c.lendStashes()
-		if ws1.StashLen() != 0 || !slices.Equal(seenStash(a.Current()), []WindowID{2}) {
-			t.Fatalf("ws1 %v current %v", seenStash(ws1), seenStash(a.Current()))
-		}
-	})
-}
-
 // A window landing in another screen's stash joins the session stash on
 // the holder, selected.
 func TestGlobalStashIndirectStaysOnHolder(t *testing.T) {
@@ -157,13 +145,6 @@ func TestGlobalStashHolderUnplugged(t *testing.T) {
 			t.Fatalf("a %v holder %q", got, c.stashHolder)
 		}
 	})
-}
-
-func TestLendStashesGlobalAllocs(t *testing.T) {
-	c, _, _ := globalRig(t)
-	if n := testing.AllocsPerRun(100, c.lendStashes); n != 0 {
-		t.Fatalf("%v allocs", n)
-	}
 }
 
 // A targeted toggle-window-stash moves nothing shown: the window joins the

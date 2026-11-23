@@ -45,14 +45,15 @@ func TestSharedStashMergeNoDuplicate(t *testing.T) {
 // and selection stay.
 func TestSharedStashTitleRuleNoMove(t *testing.T) {
 	for _, tc := range []struct {
+		name           string
 		scope          domain.StashScope
 		workspace, out string
 	}{
-		{domain.StashScopeOutput, "2", ""},
-		{domain.StashScopeGlobal, "2", ""},
-		{domain.StashScopeGlobal, "", "B"},
+		{"output to workspace 2", domain.StashScopeOutput, "2", ""},
+		{"global to workspace 2", domain.StashScopeGlobal, "2", ""},
+		{"global to output B", domain.StashScopeGlobal, "", "B"},
 	} {
-		t.Run(tc.scope.String()+tc.workspace+tc.out, func(t *testing.T) {
+		t.Run(tc.name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				var cfg domain.Config
 				cfg.Keyboard.CmdKey = "alt"
@@ -105,7 +106,13 @@ func TestOutputUnplugKeepsStashFullscreen(t *testing.T) {
 		if got := seenStash(w); !slices.Equal(got, []WindowID{2, 4}) {
 			t.Fatalf("stash %v", got)
 		}
-		if in := w.Inspect(); w.StashShown() && (w.Fullscreen != 4 || in.HiddenFullscreen != 0) {
+		// The stashed cover is the stash on screen (StashShown is false
+		// under a cover by definition): the stash itself is not hidden.
+		in := w.Inspect()
+		if in.StashHidden {
+			t.Fatal("stash hidden")
+		}
+		if w.Fullscreen != 4 || in.HiddenFullscreen != 0 {
 			t.Fatalf("fullscreen %d pending %d", w.Fullscreen, in.HiddenFullscreen)
 		}
 	})
@@ -153,15 +160,7 @@ func TestOutputStashStaysOnMoveWorkspaceToMonitor(t *testing.T) {
 			t.Fatalf("moved %v", got)
 		}
 		for _, id := range []WindowID{2, 4, 5} {
-			n := 0
-			for _, sc := range c.screens {
-				for w := range sc.mon.all() {
-					if w.StashIndex(id) >= 0 {
-						n++
-					}
-				}
-			}
-			if n != 1 {
+			if n := stashCount(c, id); n != 1 {
 				t.Fatalf("window %d seen %d times", id, n)
 			}
 		}

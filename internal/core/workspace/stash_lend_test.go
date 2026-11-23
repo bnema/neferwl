@@ -220,12 +220,29 @@ func TestLendShownOverCover(t *testing.T) {
 	}
 }
 
-// Absorb keeps a pending fullscreen from src when s has none.
-func TestStashAbsorbKeepsPending(t *testing.T) {
-	dst := Stash{entries: []Float{{ID: 1}}}
-	src := Stash{entries: []Float{{ID: 2}}, fullscreen: 2}
-	dst.Absorb(&src, false)
-	if dst.fullscreen != 2 || dst.at != 0 {
-		t.Fatalf("dst %+v", dst)
+// TakeHome moves the matching windows in order, keeps the selection on its
+// window (else the nearest), moves a pending fullscreen and returns them
+// hidden.
+func TestStashTakeHome(t *testing.T) {
+	home := func(h string) bool { return h == "B" }
+	mk := func(at int) Stash {
+		return Stash{entries: []Float{{ID: 1}, {ID: 4, home: "B"}, {ID: 2}, {ID: 5, home: "B"}}, at: at, fullscreen: 5}
 	}
+	t.Run("selection kept", func(t *testing.T) {
+		s, dst := mk(2), Stash{}
+		s.TakeHome(&dst, home)
+		if s.Len() != 2 || s.entries[s.at].ID != 2 || s.fullscreen != 0 {
+			t.Fatalf("s %+v", s)
+		}
+		if dst.Len() != 2 || dst.entries[0].ID != 4 || dst.entries[1].ID != 5 || dst.entries[0].home != "" || !dst.hidden || dst.fullscreen != 5 {
+			t.Fatalf("dst %+v", dst)
+		}
+	})
+	t.Run("selection moved", func(t *testing.T) {
+		s, dst := mk(3), Stash{}
+		s.TakeHome(&dst, home)
+		if s.at != 1 {
+			t.Fatalf("at %d", s.at)
+		}
+	})
 }
