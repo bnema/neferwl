@@ -164,7 +164,7 @@ Each window also carries metadata keys:
 
 The top-level `mode` key is the active [bind mode](config.md#modes), empty in default.
 
-The `workspaces` list holds every workspace with its `visible` flag, its columns and the windows in them, each with `x`, `y`, `width` and `height` in logical pixels of its output. A workspace's `cover` is its active fullscreen window, 0 if none; a window's `fullscreen` is also set for the other fullscreen windows it holds, which sit output-sized in their own column or band. A tabbed column has `tabbed` set and `active`, the 1-based row of its visible tab (0 when not tabbed); each of its windows reports the rect it has when shown, below the bar. The file is written at most once per second.
+The `workspaces` list holds every workspace with its `visible` flag, its columns and the windows in them, each with `x`, `y`, `width` and `height` in logical pixels of its output. A workspace's `cover` is its active fullscreen window, 0 if none; a window's `fullscreen` is also set for the other fullscreen windows it holds, which sit output-sized in their own column or band. A tabbed column has `tabbed` set and `active`, the 1-based row of its visible tab (0 when not tabbed); each of its windows reports the rect it has when shown, below the bar. A workspace's `stash` lists the windows of the stash it shows, left to right, and `visible` while that stash is on screen. With a shared [`stash.scope`](config.md#stash), only the workspace the stash is on lists it, and its windows report that workspace. The top-level `stash_scope` is `workspace`, `output` or `global`. The file is written at most once per second.
 
 `neferwl state` prints it. On a headless session it reads the live state over
 the [control socket](control.md) (`neferwl -s ID state`); otherwise it reads the
@@ -174,6 +174,7 @@ file.
 neferwl state                        # the whole state
 neferwl state output-of "$PID"       # the output showing that process's window
 neferwl state | jq '[.windows[] | select(.hidden)] | length'   # windows in hidden stashes
+neferwl state | jq '.workspaces[] | select(.stash.visible) | .output'   # outputs showing a stash
 neferwl state | jq '[.windows[] | select(.fullscreen)] | length'   # fullscreen windows
 neferwl state | jq '.workspaces[] | select(.visible) | .cover'   # the window covering the screen
 neferwl state | jq '.workspaces[] | select(.visible) | .columns[] | .width'   # column widths on screen

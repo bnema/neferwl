@@ -50,6 +50,7 @@ See [examples/config](../examples/config) for every key with its default.
 | `stash.dim` | `0.5` | Darkening of the stash neighbors, 0 to 1 |
 | `stash.capture` | `on` | A window opened while the stash shows joins the stash |
 | `stash.spawn-terminal` | `on` | `toggle-stash-visible` on an empty stash opens `terminal` in it |
+| `stash.scope` | `workspace` | Who owns a [stash](#stash): `workspace`, `output` or `global` |
 | `touchpad.natural-scroll` | `off` | Content follows the fingers |
 | `touchpad.tap` | `on` | Tap to click |
 | `touchpad.accel-speed` | `0` | Pointer speed, `-1` to `1` |
@@ -591,7 +592,7 @@ A cell is `1/max-columns` of the screen width. A column is 1 to 16 cells wide. C
 
 ### Stash
 
-Each workspace has a stash: a strip of windows set aside with `toggle-window-stash`. The selected one shows centered over your columns, with its neighbors dimmed on the sides. `focus-column-left/right` or a three-finger swipe browse it. `toggle-stash-visible` or a four-finger swipe hides it.
+A stash is a strip of windows set aside with `toggle-window-stash`. Each workspace has its own, unless `stash.scope` shares it (below). The selected one shows centered over your columns, with its neighbors dimmed on the sides. `focus-column-left/right` or a three-finger swipe browse it. `toggle-stash-visible` or a four-finger swipe hides it.
 
 `stash <command>` runs a program and opens its window straight in the stash of the workspace you were on, selected and focused, even if you switch workspace before it appears. With `stash.spawn-terminal`, `toggle-stash-visible` or the four-finger swipe down on an empty stash does the same with `terminal`.
 
@@ -600,6 +601,19 @@ bind.cmd+shift+f = stash firefox
 ```
 
 The window must appear within 5 seconds, otherwise it opens normally. Apps that hand a launch to an already running instance (single-instance browsers, `footclient`) open their window normally.
+
+`stash.scope` sets who owns a stash:
+
+| Value | Stash |
+|-------|-------|
+| `workspace` | One per workspace |
+| `output` | One per output, shared by its workspaces: a shown stash stays on screen, focused, when you switch workspace |
+| `global` | One for the session, on one output at a time |
+
+- With `global`, the stash changes output only when you act on it from another output: `toggle-stash-visible` or the four-finger swipe, `toggle-window-stash`, a drop on the stash edge, or `stash <command>`. A stash shown elsewhere comes over shown; press again to hide it. A window sent to a stash by any other path, such as a rule, joins the stash where it is.
+- A window taken out of the stash on another workspace than the one it was stashed from becomes a new column right of the focused one.
+- Changing the scope on reload merges the stashes, output by output then workspace by workspace; the stash of the focused output keeps its selection.
+- With `output`, an unplugged output's stash joins the focused output's stash, and returns when the output is plugged in again. Windows taken out of it meanwhile stay where they are.
 
 ### Free floating windows
 
