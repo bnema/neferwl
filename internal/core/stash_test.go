@@ -212,7 +212,7 @@ func TestStashCapture(t *testing.T) {
 				w := m.Current()
 				m.AddWindow(4)
 				if captured := w.StashIndex(4) == 2 && w.StashAt() == 2; captured != tc.captured {
-					t.Fatalf("captured %v, stash %+v", captured, w.Stash)
+					t.Fatalf("captured %v, stash %+v", captured, stashIDs(w))
 				}
 				if id, _ := w.Focused(); id != tc.focused {
 					t.Fatalf("focused %d", id)
@@ -244,7 +244,7 @@ func TestStashCaptureUnstash(t *testing.T) {
 		m.AddWindow(4)
 		w.ToggleWindowStash()
 		if len(w.Columns) != 2 || w.Columns[1].Windows[0] != 4 || w.Focus != 1 || w.StashIndex(4) >= 0 {
-			t.Fatalf("columns %+v focus %d stash %+v", w.Columns, w.Focus, w.Stash)
+			t.Fatalf("columns %+v focus %d stash %+v", w.Columns, w.Focus, stashIDs(w))
 		}
 
 	})

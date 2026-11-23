@@ -81,7 +81,7 @@ func layoutVariants(t *testing.T) map[string]*Monitor {
 	// The variants must hold what they are named for, on the workspace on
 	// screen (the one whose scratch the tests exercise).
 	for name, has := range map[string]func(*Workspace) bool{
-		"stash":       func(w *Workspace) bool { return len(w.Stash) > 0 && len(w.Columns) > 0 },
+		"stash":       func(w *Workspace) bool { return w.StashLen() > 0 && len(w.Columns) > 0 },
 		"floats":      func(w *Workspace) bool { return len(w.Floats) == 2 && len(w.Columns) > 0 },
 		"shares":      func(w *Workspace) bool { return layout.ValidShares(w.Columns[0]) },
 		"fixed-cells": func(w *Workspace) bool { return w.Columns[1].Cells == 2 },

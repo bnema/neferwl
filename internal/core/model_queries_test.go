@@ -37,11 +37,11 @@ func modelPlaced(w *Workspace, id WindowID) (Rect, bool) {
 func modelFloatRect(w *Workspace, f Float) Rect { _, r, _ := w.FloatAt(f.ID); return r }
 func modelStashOverCover(w *Workspace) bool {
 	s := w.Inspect()
-	return s.StashOver != 0 && s.StashOver == w.Cover() && !s.StashHidden && len(w.Stash) > 0
+	return s.StashOver != 0 && s.StashOver == w.Cover() && !s.StashHidden && w.StashLen() > 0
 }
 func modelStashFocused(w *Workspace) bool {
 	s := w.Inspect()
-	return (s.StashFocus || len(w.Columns) == 0) && !s.StashHidden && len(w.Stash) > 0
+	return (s.StashFocus || len(w.Columns) == 0) && !s.StashHidden && w.StashLen() > 0
 }
 func modelNoteFocus(w *Workspace)                { w.Settle(true) }
 func modelSettleLeft(w *Workspace)               { w.Settle(false) }
@@ -78,7 +78,7 @@ func modelPeekStep(w *Workspace, axis layout.Axis) int {
 	return max(1, int(math.Round(float64(w.Usable.H)*modelOverviewZoom(w, axis)*overviewPeekStep)))
 }
 func modelPileWidth(w *Workspace) int {
-	if len(w.Stash) == 0 {
+	if w.StashLen() == 0 {
 		return 0
 	}
 	a := w.OverviewArea()
@@ -87,7 +87,7 @@ func modelPileWidth(w *Workspace) int {
 	r := Rect{W: w.Usable.W * width / 100}
 	card := int(math.Round(float64(r.W) * overviewCardZoom))
 	step := min(overviewCardStep, a.W/100, a.H/50)
-	return min(card+(min(len(w.Stash), overviewCards)-1)*step+a.W*2/100, a.W/3)
+	return min(card+(min(w.StashLen(), overviewCards)-1)*step+a.W*2/100, a.W/3)
 }
 func modelHiddenColumnRects(w *Workspace) []Rect {
 	v := *w

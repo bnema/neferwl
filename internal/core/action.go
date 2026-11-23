@@ -378,7 +378,7 @@ func (m *Monitor) Apply(a Action) Effect {
 	case ActionToggleStashVisible:
 		w := m.Current()
 		// An empty stash has nothing to show: open the terminal in it.
-		if len(w.Stash) == 0 && m.stashTerminal {
+		if w.StashLen() == 0 && m.stashTerminal {
 			return Effect{Spawn: true, Stash: true}
 		}
 		w.ToggleStashVisible()

@@ -58,7 +58,7 @@ func TestMoveColumnIsNoOpWhileFloatFocused(t *testing.T) {
 					c.applyAction(tc.action)
 
 					if !kind.held(w) || modelFloatIndex(dst, 2) >= 0 || dst.StashIndex(2) >= 0 {
-						t.Fatalf("window 2 left src: src floats %v stash %v, dst floats %v stash %v", w.Floats, w.Stash, dst.Floats, dst.Stash)
+						t.Fatalf("window 2 left src: src floats %v stash %v, dst floats %v stash %v", w.Floats, stashIDs(w), dst.Floats, stashIDs(dst))
 					}
 					wantColumns(t, w, 1)
 					wantColumns(t, dst, 3)

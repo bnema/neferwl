@@ -109,13 +109,26 @@ func (g *swipeGesture) columnsChanged(m *Monitor) bool {
 	return !slices.Equal(g.scratch, g.points)
 }
 
+// stashIs reports whether the stash of w holds exactly ids, in order.
+func stashIs(w *Workspace, ids []WindowID) bool {
+	if w.StashLen() != len(ids) {
+		return false
+	}
+	for i, id := range ids {
+		if w.StashID(i) != id {
+			return false
+		}
+	}
+	return true
+}
+
 // stashChanged reports whether a stash swipe lost its stash: it is no
 // longer shown or focused, its windows or selection changed, or the
 // overview opened over it.
 func (g *swipeGesture) stashChanged(m *Monitor) bool {
 	w := g.ws
 	return m.overviewOpens != g.opens || m.Current() != w || !w.StashSwipeable() || w.StashAt() != g.home ||
-		!slices.EqualFunc(w.Stash, g.ids, func(f Float, id WindowID) bool { return f.ID == id })
+		!stashIs(w, g.ids)
 }
 
 // swipeSign turns finger movement into view movement: natural scroll moves
@@ -248,12 +261,12 @@ func (c *Core) decide(g *swipeGesture) {
 		g.mode, g.snap = swipeDiscrete, motion.NewStepSwipe()
 	case g.horizontal && w.StashSwipeable():
 		g.mode, g.ws, g.home = swipeStash, w, w.StashAt()
-		g.ids = make([]WindowID, 0, len(w.Stash))
-		for _, f := range w.Stash {
-			g.ids = append(g.ids, f.ID)
+		g.ids = make([]WindowID, 0, w.StashLen())
+		for i := range w.StashLen() {
+			g.ids = append(g.ids, w.StashID(i))
 		}
 		pos := w.BeginStashDrag()
-		g.snap = motion.NewSnapSwipe(pos, float64(w.StashAt()), 1/stashSwipeMovement, motion.IndexPoints(len(w.Stash)), motion.WorkspaceBand)
+		g.snap = motion.NewSnapSwipe(pos, float64(w.StashAt()), 1/stashSwipeMovement, motion.IndexPoints(w.StashLen()), motion.WorkspaceBand)
 	case g.horizontal == (content == layout.Horizontal) && w.Slidable():
 		g.mode, g.ws, g.points = swipeColumns, w, w.SnapPoints(nil)
 		pos := w.BeginColumnsDrag()

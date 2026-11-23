@@ -22,6 +22,12 @@ import (
 // usable height.
 const stashWidth, stashHeight = 80, 80
 
+// StashLen returns the number of stashed windows.
+func (w *Workspace) StashLen() int { return len(w.Stash) }
+
+// StashID returns the window at stash index i.
+func (w *Workspace) StashID(i int) WindowID { return w.Stash[i].ID }
+
 // StashIndex returns the stash index of id, or -1.
 func (w *Workspace) StashIndex(id WindowID) int {
 	return slices.IndexFunc(w.Stash, func(f Float) bool { return f.ID == id })

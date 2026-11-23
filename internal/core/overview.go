@@ -112,7 +112,7 @@ func (m *Monitor) selectRow() {
 
 // selectCard selects stash entry i of w.
 func (m *Monitor) selectCard(w *Workspace, i int) {
-	m.ov.card, m.ov.cardOf = w.Stash[i].ID, w
+	m.ov.card, m.ov.cardOf = w.StashID(i), w
 }
 
 // card is the selected stash card, 0 when there is none: the overview is
@@ -402,7 +402,7 @@ func (m *Monitor) cycleCard(w *Workspace, d int) bool {
 // round when the carousel does (wrapsCards). It reports false, selecting
 // nothing, past an end of one that does not.
 func (m *Monitor) stepCard(w *Workspace, at, d int) bool {
-	n, next := len(w.Stash), at+d
+	n, next := w.StashLen(), at+d
 	if next < 0 || next >= n {
 		if !w.WrapsCards() {
 			return false
@@ -434,7 +434,7 @@ func (m *Monitor) overviewLane(dy int) {
 			return
 		}
 	}
-	if dy > 0 && len(w.Stash) > 0 {
+	if dy > 0 && w.StashLen() > 0 {
 		m.selectCard(w, w.StashAt())
 	}
 }
@@ -555,7 +555,7 @@ func (m *Monitor) overviewHorizontal(dx int) {
 		if dx < 0 && m.moveStack(1) {
 			return
 		}
-		if dx < 0 && len(w.Stash) > 0 {
+		if dx < 0 && w.StashLen() > 0 {
 			m.selectCard(w, w.StashAt())
 		}
 		return
@@ -575,7 +575,7 @@ func (m *Monitor) overviewHorizontal(dx int) {
 	if w.OverviewMaximized() && w.Focus == 0 {
 		first = 1
 	}
-	if dx < 0 && i == first && len(w.Stash) > 0 {
+	if dx < 0 && i == first && w.StashLen() > 0 {
 		m.selectCard(w, w.StashAt())
 		return
 	}

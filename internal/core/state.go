@@ -91,7 +91,7 @@ func (c *Core) stateInto(st domain.State) domain.State {
 					}
 				}
 				if i := w.StashIndex(id); i >= 0 {
-					v.StashIndex, v.StashCount = i+1, len(w.Stash)
+					v.StashIndex, v.StashCount = i+1, w.StashLen()
 					v.Hidden, _ = w.StashVisibility()
 				}
 				if !v.Floating {

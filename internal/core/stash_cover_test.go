@@ -486,7 +486,7 @@ func TestStashOverCoverMapCapture(t *testing.T) {
 					t.Fatalf("cover lost: fullscreen %d cover %d", w.Fullscreen, w.Cover())
 				}
 				if got := w.StashIndex(4) >= 0; got != tc.captured {
-					t.Fatalf("captured %v, stash %+v path %s", got, w.Stash, c.placementPath)
+					t.Fatalf("captured %v, stash %+v path %s", got, stashIDs(w), c.placementPath)
 				}
 				if !tc.captured {
 					return

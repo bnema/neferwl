@@ -89,8 +89,8 @@ func TestOverviewWorkspaceAnimatedFrameAllocations(t *testing.T) {
 				leaving++
 			}
 		}
-		if leaving == 0 || len(m.Workspaces[1].Stash) < 3 {
-			t.Fatalf("fixture needs leaving cards and a stack: leaving %d, stash %d", leaving, len(m.Workspaces[1].Stash))
+		if leaving == 0 || m.Workspaces[1].StashLen() < 3 {
+			t.Fatalf("fixture needs leaving cards and a stack: leaving %d, stash %d", leaving, m.Workspaces[1].StashLen())
 		}
 		// Establish the complete published frame with the controlled clock and
 		// count its Now calls before excluding mock bookkeeping from the budget.
