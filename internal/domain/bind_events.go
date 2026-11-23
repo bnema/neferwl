@@ -44,3 +44,22 @@ type SeatInputReset struct {
 }
 
 func (SeatInputReset) inputTrace() {}
+
+// WindowDropped records a pointer drag that changed where a window is.
+// Output and WorkspaceBefore are the output and 1-based workspace position
+// holding Window before the drop; OutputAfter and WorkspaceAfter hold it
+// once dropped, numbered after empty workspaces are pruned, like
+// BindDispatched (0 when its workspace has no position, e.g. hidden). Kind is
+// the drop action (DropAction.String: "swap", "column", "stack", "tab",
+// "stash", "float"). Only tile drops are traced: a dragged float stays on
+// its workspace. The app logs it at info.
+type WindowDropped struct {
+	Window          WindowID
+	Kind            string
+	Output          string
+	OutputAfter     string
+	WorkspaceBefore int
+	WorkspaceAfter  int
+}
+
+func (WindowDropped) inputTrace() {}

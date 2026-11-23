@@ -343,7 +343,7 @@ func (c *Core) dragHoverTick(ctx context.Context) error {
 func (c *Core) endDrag(ctx context.Context) error {
 	d := c.drag
 	var t dropTarget
-	_, src := c.screenOf(d.id)
+	from, src := c.screenOf(d.id)
 	if !d.float && src != nil {
 		t = c.dropAt(src, d.id, c.cursorX, c.cursorY)
 	}
@@ -353,7 +353,9 @@ func (c *Core) endDrag(ctx context.Context) error {
 		if t.a.Kind != AnchorNone && !hoverEdge(t.a) && t.ws.DropValid(src, d.id, t.a) {
 			now := c.now()
 			shots := c.snapshot(now)
+			m := c.markDrop(d.id, from, src)
 			c.drop(d.id, t)
+			c.traceDrop(m, t.a.Action.String())
 			c.requestFlash(flashWindow, d.id)
 			c.transition(shots, now)
 			// Slots and guests follow the windows, as after a bind.
@@ -366,6 +368,37 @@ func (c *Core) endDrag(ctx context.Context) error {
 		return err
 	}
 	return c.rehit(ctx)
+}
+
+// dropMark is where a dropped tile was before the drop; ok is false when
+// traces are off.
+type dropMark struct {
+	id  WindowID
+	out string
+	ws  int
+	ok  bool
+}
+
+// markDrop records where tile id is, on screen from in workspace src,
+// before the drop: the drop may delete the emptied src.
+func (c *Core) markDrop(id WindowID, from *screen, src *Workspace) dropMark {
+	if c.ch.Binds == nil {
+		return dropMark{}
+	}
+	return dropMark{id: id, out: from.name(), ws: indexOf(from.mon.Workspaces, src) + 1, ok: true}
+}
+
+// traceDrop traces the tile marked by m, dropped with action kind, to
+// where it is now.
+func (c *Core) traceDrop(m dropMark, kind string) {
+	if !m.ok {
+		return
+	}
+	t := domain.WindowDropped{Window: m.id, Kind: kind, Output: m.out, WorkspaceBefore: m.ws}
+	if s, w := c.screenOf(m.id); s != nil {
+		t.OutputAfter, t.WorkspaceAfter = s.name(), indexOf(s.mon.Workspaces, w)+1
+	}
+	c.traceInput(t)
 }
 
 // cancelDrag puts a dragged float back; a tile never moved.
