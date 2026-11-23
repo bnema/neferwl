@@ -372,7 +372,7 @@ func validAction(a Action, modes map[string]map[string]string) error {
 	}
 	switch a {
 	case "none", ActionSpawnTerminal, ActionFocusColumnLeft, ActionFocusColumnRight, ActionFocusWindowUp, ActionFocusWindowDown, ActionMoveColumnLeft, ActionMoveColumnRight, ActionCycleColumnWidth, ActionMaximizeColumn, ActionToggleFullscreen, ActionToggleWindowStash, ActionToggleStashVisible, ActionToggleOverview, ActionCloseWindow, ActionQuit, ActionFocusWorkspacePrev, ActionFocusWorkspaceNext, ActionMoveColumnToWorkspacePrev, ActionMoveColumnToWorkspaceNext, ActionMoveWindowToWorkspacePrev, ActionMoveWindowToWorkspaceNext, ActionFocusMonitorLeft, ActionFocusMonitorRight, ActionFocusMonitorUp, ActionFocusMonitorDown, ActionMoveWorkspaceLeft, ActionMoveWorkspaceRight, ActionMoveWorkspaceToMonitorUp, ActionMoveWorkspaceToMonitorDown, ActionConsumeOrExpelLeft, ActionConsumeOrExpelRight,
-		ActionMoveWindowUp, ActionMoveWindowDown, ActionMoveWorkspacePrev, ActionMoveWorkspaceNext, ActionToggleFloating, ActionSwitchColumnNext, ActionSwitchColumnPrev, ActionHint, ActionOSDPin, ActionToggleColumnTabbed, ActionTabWindowLeft, ActionTabWindowRight:
+		ActionMoveWindowUp, ActionMoveWindowDown, ActionMoveWorkspacePrev, ActionMoveWorkspaceNext, ActionToggleFloating, ActionSwitchColumnNext, ActionSwitchColumnPrev, ActionHint, ActionOSDPin, ActionToggleColumnTabbed, ActionTabWindowLeft, ActionTabWindowRight, ActionFocusTabNext, ActionFocusTabPrev, ActionMoveTabNext, ActionMoveTabPrev:
 	default:
 		return fmt.Errorf("invalid action %q", a)
 	}

@@ -95,6 +95,8 @@ func TestBindTraceNotable(t *testing.T) {
 		{"resize", "set-column-width +1", "set-column-width +1", true},
 		{"move to workspace n", "move-column-to-workspace 2", "move-column-to-workspace 2", true},
 		{"tabbed", "toggle-column-tabbed", "toggle-column-tabbed", true},
+		{"move tab", "move-tab-next", "move-tab-next", true},
+		{"focus tab", "focus-tab-next", "focus-tab-next", false},
 		{"focus", "focus-column-left", "focus-column-left", false},
 		{"focus workspace n", "focus-workspace 2", "focus-workspace 2", false},
 		{"spawn", "spawn foot", "spawn foot", false},

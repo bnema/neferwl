@@ -92,6 +92,18 @@ const ActionTabWindowLeft = workspacedomain.ActionTabWindowLeft
 // ActionTabWindowRight is workspace.ActionTabWindowRight.
 const ActionTabWindowRight = workspacedomain.ActionTabWindowRight
 
+// ActionFocusTabNext is workspace.ActionFocusTabNext.
+const ActionFocusTabNext = workspacedomain.ActionFocusTabNext
+
+// ActionFocusTabPrev is workspace.ActionFocusTabPrev.
+const ActionFocusTabPrev = workspacedomain.ActionFocusTabPrev
+
+// ActionMoveTabNext is workspace.ActionMoveTabNext.
+const ActionMoveTabNext = workspacedomain.ActionMoveTabNext
+
+// ActionMoveTabPrev is workspace.ActionMoveTabPrev.
+const ActionMoveTabPrev = workspacedomain.ActionMoveTabPrev
+
 // ActionToggleFullscreen is workspace.ActionToggleFullscreen.
 const ActionToggleFullscreen = workspacedomain.ActionToggleFullscreen
 

@@ -36,6 +36,14 @@ const (
 	ActionTabWindowLeft Action = "tab-window-left"
 	// ActionTabWindowRight moves the focused window into the right column as a tab.
 	ActionTabWindowRight Action = "tab-window-right"
+	// ActionFocusTabNext shows the next tab of the focused tabbed column.
+	ActionFocusTabNext Action = "focus-tab-next"
+	// ActionFocusTabPrev shows the previous tab of the focused tabbed column.
+	ActionFocusTabPrev Action = "focus-tab-prev"
+	// ActionMoveTabNext moves the visible tab one place later in the tab order.
+	ActionMoveTabNext Action = "move-tab-next"
+	// ActionMoveTabPrev moves the visible tab one place earlier in the tab order.
+	ActionMoveTabPrev Action = "move-tab-prev"
 	// ActionToggleFullscreen is the ActionToggleFullscreen action value.
 	ActionToggleFullscreen Action = "toggle-fullscreen"
 	// ActionToggleWindowStash is the ActionToggleWindowStash action value.
@@ -337,6 +345,14 @@ func (w *Workspace) Apply(a Action) Effect {
 		w.TabWindow(-1)
 	case ActionTabWindowRight:
 		w.TabWindow(1)
+	case ActionFocusTabNext:
+		w.FocusTab(1)
+	case ActionFocusTabPrev:
+		w.FocusTab(-1)
+	case ActionMoveTabNext:
+		w.MoveTab(1)
+	case ActionMoveTabPrev:
+		w.MoveTab(-1)
 	case ActionToggleFullscreen:
 		w.ToggleFullscreen()
 	case ActionToggleWindowStash:
@@ -368,6 +384,7 @@ func Actions() []Action {
 		ActionConsumeOrExpelRight, ActionMoveWindowUp, ActionMoveWindowDown, ActionMoveWorkspacePrev,
 		ActionMoveWorkspaceNext, ActionToggleFloating, ActionSwitchColumnNext, ActionSwitchColumnPrev,
 		ActionHint, ActionOSDPin, ActionToggleColumnTabbed, ActionTabWindowLeft, ActionTabWindowRight,
+		ActionFocusTabNext, ActionFocusTabPrev, ActionMoveTabNext, ActionMoveTabPrev,
 	}
 }
 

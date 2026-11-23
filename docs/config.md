@@ -423,6 +423,8 @@ bind.XF86MonBrightnessDown = spawn brightnessctl set 5%-
 | `maximize-column` | Toggle full width for the focused column |
 | `toggle-column-tabbed` | Show the focused column as [tabs](#tabbed-columns), or back as a stack |
 | `tab-window-left`, `tab-window-right` | Move the focused window into the column on that side as its visible [tab](#tabbed-columns) |
+| `focus-tab-next`, `focus-tab-prev` | Show the next or previous [tab](#tabbed-columns) of the focused column |
+| `move-tab-next`, `move-tab-prev` | Move the visible [tab](#tabbed-columns) one place in the tab order |
 | `cycle-column-width` | Grow the focused column by one [cell](#column-widths), then back to equal widths |
 | `set-column-width <+N\|-N>` | Widen or narrow the focused column by N cells |
 | `set-window-height <+N%\|-N%>` | Change the focused window's share of its column |
@@ -573,6 +575,7 @@ A tabbed column shows one of its windows at a time, under a title bar with one t
 - `toggle-column-tabbed` (`cmd+t`) turns the focused column into tabs, or back into a stack with equal row heights. It does nothing on a float, a stash window or a column with one window.
 - `tab-window-left/right` (`cmd+shift+[` / `cmd+shift+]`) moves the focused window into the neighbour column as its visible, focused tab; that column becomes tabbed. It does nothing without a neighbour, on a float, a stash window, in fullscreen or in the overview.
 - `focus-window-up/down` switches tabs. At the first or last tab it leaves the column like in a stack. `move-window-up/down` reorders the tabs.
+- `focus-tab-next/prev` shows the next or previous tab, and `move-tab-next/prev` moves the visible tab one place. Both wrap at the ends and never leave the column. They do nothing on a column that is not tabbed or has one window, on a float, a stash window, in fullscreen or in the overview. They have no default bind, e.g. `bind.cmd+shift+j = move-tab-next`.
 - The bar shows each window's title in `font`, cut with `…` when too long, in an ink that contrasts with the bar. The visible tab is filled with `border.active`, the rest of the bar with `border.inactive`; when that is the background colour (the default), with `border.active` blended over the background at 25 %. Its height follows the [hint](#hint-mode) font size.
 - With `layout.gaps`, the bar is the visible window's attached title bar: it sits right on the window, with no gap, its top corners are rounded with `border.radius` and its bottom corners are square, and the window below loses its top rounding. The window border surrounds the bar and the visible tab as one, with four rounded corners. The active tab is rounded only where it meets the bar's top corners. Without gaps, the bar and the window are square and flush.
 - A click on a tab shows it; the window under it gets no click. `cmd` + drag on a tab drags that window, even a hidden one.

@@ -19,6 +19,7 @@ func changesLayout(a Action) bool {
 		ActionMoveWorkspacePrev, ActionMoveWorkspaceNext,
 		ActionConsumeOrExpelLeft, ActionConsumeOrExpelRight,
 		ActionTabWindowLeft, ActionTabWindowRight, ActionToggleColumnTabbed,
+		ActionMoveTabNext, ActionMoveTabPrev,
 		ActionCycleColumnWidth, ActionMaximizeColumn, ActionToggleFullscreen, ActionToggleFloating,
 		ActionToggleWindowStash, ActionCloseWindow, ActionQuit, ActionScaleUp, ActionScaleDown:
 		return true
