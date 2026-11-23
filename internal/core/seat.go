@@ -138,22 +138,25 @@ func (c *Core) emitBind(m bindMark, combo, action string, source domain.BindSour
 	}
 	c.traceInput(domain.BindDispatched{Combo: combo, Action: action, Output: m.out, OutputAfter: after,
 		WorkspaceBefore: m.ws, WorkspaceAfter: m.sc.mon.Active + 1, Source: source,
-		Window: domain.WindowID(m.win), Notable: source != domain.BindSourceRepeat && !focusOnly(Action(action))})
-}
-
-// traceBind returns the func to defer once the action ran.
-func (c *Core) traceBind(action, combo string, source domain.BindSource) func() {
-	m := c.markBind()
-	return func() { c.emitBind(m, combo, action, source) }
+		Window: m.win, Notable: source != domain.BindSourceRepeat && changesLayout(Action(action))})
 }
 
 // traceAction starts the trace of one action of the current bind, when
 // traces are on, and clears the bind's combo and source for nested work;
 // defer the returned func.
-func (c *Core) traceAction(a Action) func() {
+func (c *Core) traceAction(a Action) func() { return c.traceActionOn(a, 0) }
+
+// traceActionOn is traceAction for an action on window id rather than the
+// focused one; id 0 means the focused window.
+func (c *Core) traceActionOn(a Action, id WindowID) func() {
 	done := func() {}
 	if c.ch.Binds != nil {
-		done = c.traceBind(string(a), c.bindCombo, c.bindSource)
+		m := c.markBind()
+		if id != 0 {
+			m.win = id
+		}
+		combo, source := c.bindCombo, c.bindSource
+		done = func() { c.emitBind(m, combo, string(a), source) }
 	}
 	c.bindCombo, c.bindSource = "", ""
 	return done

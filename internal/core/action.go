@@ -333,7 +333,7 @@ func (c *Core) edgeFocus(axis layout.Axis, dir int, d direction) bool {
 	mark := c.markBind()
 	moved := c.edgeGo(c.edgeTarget(axis, dir, d), d)
 	if moved {
-		c.emitBind(mark, "", "edge-focus", domain.BindSourceEdge)
+		c.emitBind(mark, "", traceEdgeFocus, domain.BindSourceEdge)
 	}
 	return moved
 }

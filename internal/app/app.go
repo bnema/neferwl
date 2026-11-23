@@ -18,6 +18,7 @@ import (
 	"github.com/bnema/neferwl/internal/core"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
+	"github.com/rs/zerolog"
 	"golang.org/x/sys/unix"
 )
 
@@ -252,10 +253,11 @@ func logConfigError(ctx context.Context, configLog zerowrap.Logger, err error) {
 // dispatches (ones that change windows or layout) log at info, the rest at
 // debug. It carries the bind combo only, never typed text.
 func logInputTrace(log zerowrap.Logger, t domain.InputTrace) {
-	ev := log.Debug()
+	level := zerolog.DebugLevel
 	if b, ok := t.(domain.BindDispatched); ok && b.Notable {
-		ev = log.Info()
+		level = zerolog.InfoLevel
 	}
+	ev := log.WithLevel(level)
 	if !ev.Enabled() {
 		return
 	}
