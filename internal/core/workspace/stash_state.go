@@ -114,19 +114,35 @@ func (w *Workspace) TakeStash(src *Stash) {
 	w.attachStash()
 }
 
-// GiveStash moves every window of the stash w sees into dst, detached from
+// GiveStash, reporting whether it moved any, moves every window of the stash w sees into dst, detached from
 // w first (detachStash), and leaves w's stash empty. With prefer dst takes
 // the given stash's selection and state (Absorb).
-func (w *Workspace) GiveStash(dst *Stash, prefer bool) {
+func (w *Workspace) GiveStash(dst *Stash, prefer bool) bool {
 	src := w.st()
 	if src == dst || len(src.entries) == 0 {
 		// Nothing to hand over: an empty stash binds nothing to w.
-		return
+		return false
 	}
 	w.detachStash(src)
 	dst.Absorb(src, prefer)
 	w.reconcileFloats()
 	w.scroll()
+	return true
+}
+
+// Reattach is run on the workspace a stash is lent to after windows were
+// absorbed into it: a shown stash's pending fullscreen member covers w
+// when nothing else does, as when it was lent.
+func (w *Workspace) Reattach() {
+	s := w.st()
+	if len(s.entries) == 0 || s.hidden || w.Fullscreen != 0 {
+		return
+	}
+	if i := w.StashIndex(s.fullscreen); i >= 0 {
+		w.Fullscreen, s.at, s.fullscreen = s.fullscreen, i, 0
+		w.reconcileFloats()
+		w.scroll()
+	}
 }
 
 // detachStash unbinds stash s from w without touching its visibility or

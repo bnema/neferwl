@@ -59,7 +59,7 @@ func (c *Core) lendStashes() {
 		return
 	}
 	setup := c.stashLendee == nil && c.stash.Len() == 0
-	prefer := c.stash.Len() > 0
+	prefer, moved := c.stash.Len() > 0, false
 	focused := c.cur()
 	var hcur *Workspace
 	if !hs.mon.previewing() {
@@ -76,19 +76,23 @@ func (c *Core) lendStashes() {
 		}
 		if m.stash.Len() > 0 {
 			c.stash.Absorb(&m.stash, setup && sc == focused)
+			moved = true
 		}
 		// In screen then workspace order; the holder's current workspace
 		// keeps the selection.
 		for _, w := range m.Workspaces {
-			if w != c.stashLendee {
-				w.GiveStash(&c.stash, prefer || w == hcur)
+			if w != c.stashLendee && w.GiveStash(&c.stash, prefer || w == hcur) {
+				moved = true
 			}
 		}
 		for _, w := range m.hidden {
-			if w != c.stashLendee {
-				w.GiveStash(&c.stash, prefer || w == hcur)
+			if w != c.stashLendee && w.GiveStash(&c.stash, prefer || w == hcur) {
+				moved = true
 			}
 		}
+	}
+	if moved && c.stashLendee != nil {
+		c.stashLendee.Reattach()
 	}
 	if hcur != nil && c.stashLendee != hcur {
 		hcur.GiveStash(&c.stash, true)
@@ -124,16 +128,19 @@ func (c *Core) lendMonitors(output bool) {
 			}
 			continue
 		}
-		prefer := m.stash.Len() > 0
+		prefer, moved := m.stash.Len() > 0, false
 		for _, w := range m.Workspaces {
-			if w != cur {
-				w.GiveStash(&m.stash, prefer)
+			if w != cur && w.GiveStash(&m.stash, prefer) {
+				moved = true
 			}
 		}
 		for _, w := range m.hidden {
-			if w != cur {
-				w.GiveStash(&m.stash, prefer)
+			if w != cur && w.GiveStash(&m.stash, prefer) {
+				moved = true
 			}
+		}
+		if moved && m.lendee == cur {
+			cur.Reattach()
 		}
 		if m.lendee != cur {
 			// Collected first, the current workspace's stash wins the

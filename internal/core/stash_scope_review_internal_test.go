@@ -85,3 +85,51 @@ func TestSharedStashTitleRuleNoMove(t *testing.T) {
 		})
 	}
 }
+
+// A fullscreen stash member of an unplugged output is fullscreen again on
+// the host, not left pending in a shown stash.
+func TestOutputUnplugKeepsStashFullscreen(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		c := scopeCore(t, domain.StashScopeOutput, "A", "B")
+		a, b := c.screens[0].mon, c.screens[1].mon
+		a.AddWindow(1)
+		stashTile(a.Current(), 2)
+		b.AddWindow(3)
+		stashTile(b.Current(), 4)
+		c.lendStashes()
+		b.Current().SetFullscreen(4, true)
+		c.focusScreen = 0
+		c.removeScreen("B")
+		c.lendStashes()
+		w := a.Current()
+		if got := seenStash(w); !slices.Equal(got, []WindowID{2, 4}) {
+			t.Fatalf("stash %v", got)
+		}
+		if in := w.Inspect(); w.StashShown() && (w.Fullscreen != 4 || in.HiddenFullscreen != 0) {
+			t.Fatalf("fullscreen %d pending %d", w.Fullscreen, in.HiddenFullscreen)
+		}
+	})
+}
+
+// A background workspace handing a pending fullscreen to the lent stash
+// makes it fullscreen on the lendee.
+func TestOutputDrainAppliesPendingFullscreen(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		c := scopeCore(t, domain.StashScopeOutput, "A")
+		m := c.cur().mon
+		m.AddWindow(1)
+		stashTile(m.Current(), 2)
+		c.lendStashes()
+		ws1 := m.Current()
+		m.Focus(1)
+		m.AddWindow(3)
+		c.lendStashes()
+		ws1.StashSpawned(5) // in ws1's own stash, shown
+		ws1.SetFullscreen(5, true)
+		c.lendStashes()
+		w := m.Current()
+		if in := w.Inspect(); w.Fullscreen != 5 || in.HiddenFullscreen != 0 {
+			t.Fatalf("fullscreen %d pending %d stash %v", w.Fullscreen, in.HiddenFullscreen, seenStash(w))
+		}
+	})
+}

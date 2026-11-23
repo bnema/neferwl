@@ -173,6 +173,7 @@ func Merge(dst, src *Workspace) {
 	at, view, focus, hidden, fs := d.at, d.view, d.focus, d.hidden, d.fullscreen
 	src.GiveStash(d, false)
 	d.at, d.view, d.focus, d.hidden, d.fullscreen = at, view, focus, hidden, cmp.Or(fs, d.fullscreen)
+	dst.Reattach()
 	// Held members stay held where the layout scrolls (hold refuses
 	// elsewhere): in a column or band of their own, off screen.
 	for _, id := range src.Held {
