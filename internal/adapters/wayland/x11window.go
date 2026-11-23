@@ -261,7 +261,11 @@ func (h hostImpl) Dissociate(slot xwm.Slot, destroyed bool) {
 	if w == nil {
 		return
 	}
-	w.unmap()
+	if destroyed {
+		w.closeWindow()
+	} else {
+		w.unmap()
+	}
 	w.x11.drop()
 	w.x11.ready = false
 	if destroyed {

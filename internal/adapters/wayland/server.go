@@ -175,6 +175,8 @@ type Server struct {
 	// written once at shutdown to end the listeners, securityWG waits for
 	// them, securityLive counts them.
 	sandboxed    map[server.Client]*sandbox
+	// clientLives mark the clients being torn down (xdg.go clientLife).
+	clientLives map[server.Client]*clientLife
 	securityStop int
 	securityWG   sync.WaitGroup
 	securityLive atomic.Int32
@@ -456,6 +458,7 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 		s.peer = linuxPeerExe{}
 	}
 	s.sandboxed, s.securityStop = map[server.Client]*sandbox{}, -1
+	s.clientLives = map[server.Client]*clientLife{}
 	s.captureReplies = map[uint64]func(domain.CaptureDone){}
 	s.captureInflight = map[uint64]struct{}{}
 	s.outputReplies = map[uint64]*outputConfiguration{}
