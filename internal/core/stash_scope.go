@@ -62,6 +62,7 @@ func (c *Core) lendStashes() {
 	for _, sc := range c.screens {
 		m := sc.mon
 		if m.previewing() {
+			m.unborrow(&c.stash, c.stashLendee)
 			continue
 		}
 		if m.stash.Len() > 0 {
@@ -93,6 +94,7 @@ func (c *Core) lendMonitors(output bool) {
 				cur.Lend(&m.stash)
 				m.lendee = cur
 			}
+			m.unborrow(&m.stash, m.lendee)
 			continue
 		}
 		cur := m.Current()
@@ -114,12 +116,31 @@ func (m *Monitor) gatherStash(dst *Stash, skip, sel *Workspace, prefer bool) boo
 	moved := false
 	for _, list := range [2][]*Workspace{m.Workspaces, m.hidden} {
 		for _, w := range list {
-			if w != skip && w.GiveStash(dst, prefer || w == sel) {
+			if w == skip {
+				continue
+			}
+			// A lend no one tracks (a merge heir that left the screen)
+			// ends first: only the lendee may see dst.
+			if w.Borrows(dst) {
+				w.Lend(nil)
+			}
+			if w.GiveStash(dst, prefer || w == sel) {
 				moved = true
 			}
 		}
 	}
 	return moved
+}
+
+// unborrow ends every lend of s on m's workspaces but keep's.
+func (m *Monitor) unborrow(s *Stash, keep *Workspace) {
+	for _, list := range [2][]*Workspace{m.Workspaces, m.hidden} {
+		for _, w := range list {
+			if w != keep && w.Borrows(s) {
+				w.Lend(nil)
+			}
+		}
+	}
 }
 
 // lendShared lends s to cur after a gather, unless it is lent there

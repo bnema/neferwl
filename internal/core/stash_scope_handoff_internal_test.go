@@ -174,3 +174,30 @@ func TestOutputStashStaysOnMoveWorkspaceToMonitor(t *testing.T) {
 		}
 	})
 }
+
+// A reload that merges the lendee into a workspace that then becomes a
+// hidden named one leaves exactly one workspace seeing the stash.
+func TestSharedStashMergeHeirHidden(t *testing.T) {
+	for _, scope := range []domain.StashScope{domain.StashScopeOutput, domain.StashScopeGlobal} {
+		t.Run(scope.String(), func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				c := scopeCore(t, scope, "A")
+				m := c.cur().mon
+				m.SetNamed([]NamedWorkspace{{Name: "work"}})
+				m.Workspaces[m.Active].Name = "dev" // the merge heir, named next reload
+				m.ToggleNamed("work")
+				m.AddWindow(1)
+				stashTile(m.Current(), 2)
+				c.lendStashes()
+				m.SetNamed([]NamedWorkspace{{Name: "dev"}})
+				c.lendStashes()
+				if n := stashCount(c, 2); n != 1 {
+					t.Fatalf("stash seen by %d workspaces", n)
+				}
+				if w := m.Current(); !slices.Equal(seenStash(w), []WindowID{2}) {
+					t.Fatalf("current %v", seenStash(w))
+				}
+			})
+		})
+	}
+}

@@ -25,6 +25,9 @@ type Stash struct {
 	fullscreen WindowID
 }
 
+// Borrows reports whether s is the shared stash lent to w.
+func (w *Workspace) Borrows(s *Stash) bool { return w.lent == s }
+
 // st returns the stash the workspace uses: the lent one, else its own.
 func (w *Workspace) st() *Stash {
 	if w.lent != nil {
