@@ -1,7 +1,6 @@
 package workspace
 
 import (
-	"cmp"
 	"slices"
 
 	"github.com/bnema/neferwl/internal/core/layout"
@@ -169,10 +168,8 @@ func Merge(dst, src *Workspace) {
 		src.own.entries[i] = src.own.entries[i].rehome()
 	}
 	// dst keeps its stash state (selection, visibility, focus), even empty.
-	d := dst.st()
-	at, view, focus, hidden, fs := d.at, d.view, d.focus, d.hidden, d.fullscreen
-	src.GiveStash(d, false)
-	d.at, d.view, d.focus, d.hidden, d.fullscreen = at, view, focus, hidden, cmp.Or(fs, d.fullscreen)
+	src.detachStash(&src.own)
+	dst.st().absorbKeep(&src.own)
 	dst.Reattach()
 	// Held members stay held where the layout scrolls (hold refuses
 	// elsewhere): in a column or band of their own, off screen.

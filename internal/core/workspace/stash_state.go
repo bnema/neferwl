@@ -60,14 +60,22 @@ func (s *Stash) Absorb(src *Stash, prefer bool) {
 	*src = Stash{}
 }
 
+// absorbKeep appends src's windows to s, keeping s's state (selection,
+// view, focus, visibility) and its pending fullscreen, else src's; src is
+// left empty.
+func (s *Stash) absorbKeep(src *Stash) {
+	if src == s {
+		return
+	}
+	s.entries = append(s.entries, src.entries...)
+	s.fullscreen = cmp.Or(s.fullscreen, src.fullscreen)
+	*src = Stash{}
+}
+
 // Lend makes w use the shared stash s; nil returns it to its own. The
-// stash it leaves is detached (detachStash) and its own windows join s
-// (GiveStash), so none shows in two stashes. On a shown s, a pending
-// fullscreen member covers w when nothing else does; under another
-// covering window s shows over it; a focused s keeps the focus.
-// Only the cover follows the stash: held fullscreen members of the stash
-// w leaves drop out of the group. A pending fullscreen waits while w has a
-// fullscreen window of its own, even one scrolled off.
+// stash it leaves is detached (detachStash), its own windows join s
+// (GiveStash), so none shows in two stashes, and s is attached
+// (attachStash).
 func (w *Workspace) Lend(s *Stash) {
 	if s == &w.own {
 		s = nil
@@ -84,14 +92,13 @@ func (w *Workspace) Lend(s *Stash) {
 }
 
 // attachStash binds the stash w now sees: when shown, a pending fullscreen
-// member covers w if nothing else does, it shows over another covering
-// window, and a focused stash keeps the focus.
+// member covers w (promotePending), it shows over another covering window,
+// and a focused stash keeps the focus. Only the cover follows a stash:
+// held fullscreen members of a stash w left dropped out of the group.
 func (w *Workspace) attachStash() {
 	cur := w.st()
 	if len(cur.entries) > 0 && !cur.hidden {
-		if i := w.StashIndex(cur.fullscreen); i >= 0 && w.Fullscreen == 0 {
-			w.Fullscreen, cur.at, cur.fullscreen = cur.fullscreen, i, 0
-		}
+		w.promotePending()
 		if c := w.Cover(); c != 0 && w.StashIndex(c) < 0 {
 			w.showStashOver()
 		} else if cur.focus {
@@ -114,9 +121,10 @@ func (w *Workspace) TakeStash(src *Stash) {
 	w.attachStash()
 }
 
-// GiveStash, reporting whether it moved any, moves every window of the stash w sees into dst, detached from
-// w first (detachStash), and leaves w's stash empty. With prefer dst takes
-// the given stash's selection and state (Absorb).
+// GiveStash moves every window of the stash w sees into dst and reports
+// whether there was any. The stash is detached from w first (detachStash)
+// and merged by Absorb, prefer choosing whose state dst keeps; w's stash
+// is left empty.
 func (w *Workspace) GiveStash(dst *Stash, prefer bool) bool {
 	src := w.st()
 	if src == dst || len(src.entries) == 0 {
@@ -134,15 +142,26 @@ func (w *Workspace) GiveStash(dst *Stash, prefer bool) bool {
 // absorbed into it: a shown stash's pending fullscreen member covers w
 // when nothing else does, as when it was lent.
 func (w *Workspace) Reattach() {
-	s := w.st()
-	if len(s.entries) == 0 || s.hidden || w.Fullscreen != 0 {
-		return
-	}
-	if i := w.StashIndex(s.fullscreen); i >= 0 {
-		w.Fullscreen, s.at, s.fullscreen = s.fullscreen, i, 0
+	if w.promotePending() {
 		w.reconcileFloats()
 		w.scroll()
 	}
+}
+
+// promotePending makes a shown stash's pending fullscreen member w's
+// fullscreen, selected, when w has none (even one scrolled off), and
+// reports whether it did.
+func (w *Workspace) promotePending() bool {
+	s := w.st()
+	if len(s.entries) == 0 || s.hidden || w.Fullscreen != 0 {
+		return false
+	}
+	i := w.StashIndex(s.fullscreen)
+	if i < 0 {
+		return false
+	}
+	w.Fullscreen, s.at, s.fullscreen = s.fullscreen, i, 0
+	return true
 }
 
 // detachStash unbinds stash s from w without touching its visibility or

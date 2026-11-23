@@ -208,3 +208,19 @@ func TestStashScopeReloadToOutputCurrentFirst(t *testing.T) {
 		}
 	})
 }
+
+// A workspace slide with a lent stash lays out without allocating.
+func TestOutputStashSlideLayoutAllocs(t *testing.T) {
+	c := scopeCore(t, domain.StashScopeOutput, "A")
+	m := c.cur().mon
+	m.AddWindow(1)
+	stashTile(m.Current(), 2)
+	m.Focus(1)
+	m.AddWindow(3)
+	c.lendStashes()
+	m.switchView.Off = -.5
+	buf := m.layoutInto(nil)
+	if n := testing.AllocsPerRun(100, func() { buf = m.layoutInto(buf[:0]) }); n != 0 {
+		t.Fatalf("%v allocs", n)
+	}
+}

@@ -7,9 +7,9 @@ import (
 )
 
 // Slides move what is on screen smoothly: a workspace's columns (view), its
-// stash (stashView) and the monitor between workspaces (switchView). All
-// are pure presentation over the settled state (View, Focus, stashAt,
-// Active): the layout ends where the state says as soon as a slide stops.
+// stash (the stash view) and the monitor between workspaces (switchView).
+// All are pure presentation over the settled state (View, Focus, the stash
+// selection, Active): the layout ends where the state says as soon as a slide stops.
 
 // switchSpring is the workspace slide's spring from off: it snaps once it
 // is under half a logical pixel of the output span along the switch axis
@@ -72,14 +72,14 @@ func (m *Monitor) slideLayout(cur []Placement) []Placement {
 		for i := range p {
 			// A shared stash is not the workspace's: it stays in place
 			// while the workspaces slide under it.
-			if !p[i].Hidden && (keep == nil || keep.StashIndex(p[i].ID) < 0) {
+			if !p[i].Hidden && (keep == nil || !p[i].Floating || keep.StashIndex(p[i].ID) < 0) {
 				m.switchAxis.Offset(&p[i].Rect, d)
 			}
 		}
 		return p
 	}
 	var keep *Workspace
-	if w := m.Current(); w.StashLent() {
+	if w := m.Current(); w.StashLent() && w.StashLen() > 0 {
 		keep = w
 	}
 	cur = offset(cur, base, keep)
