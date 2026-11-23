@@ -32,7 +32,7 @@ func (c *Core) state() domain.State { return cloneState(c.stateInto(domain.State
 // its Window points into its Windows. The placeholder screen is not an
 // output.
 func (c *Core) stateInto(st domain.State) domain.State {
-	st.Output, st.Window, st.Mode = c.cur().name(), nil, c.mode
+	st.Output, st.Window, st.Mode, st.StashScope = c.cur().name(), nil, c.mode, c.cfg.Stash.Scope
 	st.Outputs, st.Windows = st.Outputs[:0], st.Windows[:0]
 	// Workspaces keep their Columns storage across calls (see workspaceInto).
 	nws := 0
@@ -91,7 +91,7 @@ func (c *Core) stateInto(st domain.State) domain.State {
 					}
 				}
 				if i := w.StashIndex(id); i >= 0 {
-					v.StashIndex, v.StashCount = i+1, len(w.Stash)
+					v.StashIndex, v.StashCount = i+1, w.StashLen()
 					v.Hidden, _ = w.StashVisibility()
 				}
 				if !v.Floating {
@@ -147,9 +147,13 @@ func (c *Core) workspaceInto(ws []domain.WorkspaceState, i int, w *Workspace, ou
 		ws = append(ws, domain.WorkspaceState{})
 	}
 	v := &ws[i]
-	cols := v.Columns[:0]
+	cols, stash := v.Columns[:0], v.Stash[:0]
 	focused, _ := w.Focused()
 	*v = domain.WorkspaceState{Focused: focused, ID: w.ID, Number: number, Name: w.Name, Output: output, Visible: visible, Overflow: string(w.Overflow), Cover: w.Fullscreen}
+	for i := range w.StashLen() {
+		stash = append(stash, w.StashID(i))
+	}
+	v.Stash, v.StashShown = stash, w.StashShown()
 	c.scratch.rects = w.Engine().ColumnRects(w.Snapshot(), c.scratch.rects, layout.RectOpts{})
 	for ci, col := range w.Columns {
 		if ci < cap(cols) {
@@ -187,9 +191,10 @@ func (c *Core) workspaceInto(ws []domain.WorkspaceState, i int, w *Workspace, ou
 }
 
 func sameState(a, b domain.State) bool {
-	return a.Output == b.Output && a.Mode == b.Mode && slices.Equal(a.Outputs, b.Outputs) && slices.Equal(a.Windows, b.Windows) &&
+	return a.Output == b.Output && a.Mode == b.Mode && a.StashScope == b.StashScope && slices.Equal(a.Outputs, b.Outputs) && slices.Equal(a.Windows, b.Windows) &&
 		slices.EqualFunc(a.Workspaces, b.Workspaces, func(x, y domain.WorkspaceState) bool {
 			return x.Focused == y.Focused && x.ID == y.ID && x.Number == y.Number && x.Name == y.Name && x.Output == y.Output && x.Visible == y.Visible && x.Overflow == y.Overflow && x.Cover == y.Cover &&
+				x.StashShown == y.StashShown && slices.Equal(x.Stash, y.Stash) &&
 				slices.EqualFunc(x.Columns, y.Columns, func(p, q domain.ColumnState) bool {
 					return p.Rect == q.Rect && p.Tabbed == q.Tabbed && p.Active == q.Active && slices.Equal(p.Windows, q.Windows)
 				})
@@ -200,10 +205,11 @@ func sameState(a, b domain.State) bool {
 // cloneState copies st out of the scratch: empty lists stay non-nil (JSON
 // []), and Window is its own copy.
 func cloneState(st domain.State) domain.State {
-	out := domain.State{Output: st.Output, Mode: st.Mode, Outputs: append([]domain.OutputState{}, st.Outputs...), Windows: append([]domain.WindowState{}, st.Windows...)}
+	out := domain.State{Output: st.Output, Mode: st.Mode, StashScope: st.StashScope, Outputs: append([]domain.OutputState{}, st.Outputs...), Windows: append([]domain.WindowState{}, st.Windows...)}
 	out.Workspaces = make([]domain.WorkspaceState, len(st.Workspaces))
 	for i, w := range st.Workspaces {
 		out.Workspaces[i] = w
+		out.Workspaces[i].Stash = append([]domain.WindowID{}, w.Stash...)
 		out.Workspaces[i].Columns = make([]domain.ColumnState, len(w.Columns))
 		for j, col := range w.Columns {
 			out.Workspaces[i].Columns[j] = domain.ColumnState{Rect: col.Rect, Windows: append([]domain.TileState{}, col.Windows...), Tabbed: col.Tabbed, Active: col.Active}

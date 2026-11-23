@@ -23,6 +23,9 @@ type Placement = workspacedomain.Placement
 // Workspace is the window, focus and presentation model of one workspace.
 type Workspace = workspacedomain.Workspace
 
+// Stash is a strip of stashed windows a workspace sees.
+type Stash = workspacedomain.Stash
+
 // Float is a floating window and its client size.
 type Float = workspacedomain.Float
 

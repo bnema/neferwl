@@ -391,8 +391,8 @@ func TestStashNavigationChainsManyWithoutJump(t *testing.T) {
 			c.applyAction(ActionToggleWindowStash)
 		}
 		settleShown(t, c)
-		if len(w.Stash) != 7 {
-			t.Fatalf("setup: %d stashed", len(w.Stash))
+		if w.StashLen() != 7 {
+			t.Fatalf("setup: %d stashed", w.StashLen())
 		}
 		prev := float64(w.StashAt()) + w.Inspect().StashSlide.Off
 		for i := range 5 {
@@ -411,7 +411,7 @@ func TestStashNavigationChainsManyWithoutJump(t *testing.T) {
 		if at-w.StashAt() < 3 {
 			t.Fatalf("setup: the view is %d windows from the selection", at-w.StashAt())
 		}
-		near := w.Stash[at].ID
+		near := w.StashID(at)
 		if got := sceneWindow(t, indicatorScene(t, c), near); got.Hidden || got.Rect.W == 0 {
 			t.Fatalf("window %d, %d away from the selection, is not drawn under the view: %+v", near, at-w.StashAt(), got)
 		}

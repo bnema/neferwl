@@ -36,7 +36,7 @@ func TestFreeFloatMovesAcrossWorkspaces(t *testing.T) {
 		m.Apply(ActionToggleWindowStash)
 		w = m.Current()
 		if i := modelFloatIndex(w, 2); i < 0 || !w.Inspect().Floats[i].Free || w.Inspect().Floats[i].CX != 0.2 {
-			t.Fatal(w.Floats, w.Stash)
+			t.Fatal(w.Floats, stashIDs(w))
 		}
 
 	})

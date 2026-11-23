@@ -62,6 +62,8 @@ func (c *Core) applyAction(a Action) Effect {
 	wasStashed := beforeWS.StashIndex(beforeID) >= 0
 	wasShown := beforeWS.StashShown()
 	defer func() {
+		// Compare the final state: a shared stash follows the switch.
+		c.lendStashes()
 		sc := c.cur()
 		id, _ := sc.mon.Focused()
 		if sc.mon.ov.open {
@@ -144,8 +146,31 @@ func switchesWorkspace(a Action) bool {
 }
 
 func (c *Core) dispatchAction(a Action) Effect {
+	// A shared stash's window is in every workspace of its output: moving
+	// it to a workspace does nothing. The overview moves its selection
+	// instead and refuses a stash card itself (overviewMoveTo).
+	if movesToWorkspace(a) && c.stashShared() && !c.cur().mon.ov.open {
+		if id, ok := c.cur().mon.Focused(); ok && c.cur().mon.Current().StashIndex(id) >= 0 {
+			return Effect{}
+		}
+	}
 	if e, ok := c.cur().mon.overviewAction(a); ok {
 		return e
+	}
+	// An explicit stash action brings the global stash to this screen;
+	// once moved, a shown stash stays shown, focused, here.
+	switch a {
+	case ActionToggleWindowStash:
+		// The window focused before the stash arrived is the one stashed.
+		w := c.cur().mon.Current()
+		if id, ok := w.Focused(); c.pullStash(c.cur()) && ok {
+			w.FocusID(id)
+		}
+	case ActionToggleStashVisible:
+		if w := c.cur().mon.Current(); c.pullStash(c.cur()) && w.StashLen() > 0 {
+			w.ShowStash()
+			return Effect{}
+		}
 	}
 	// A bind acts on the window on screen: under a covering fullscreen
 	// window, that is the one Focused reports.
@@ -378,7 +403,7 @@ func (m *Monitor) Apply(a Action) Effect {
 	case ActionToggleStashVisible:
 		w := m.Current()
 		// An empty stash has nothing to show: open the terminal in it.
-		if len(w.Stash) == 0 && m.stashTerminal {
+		if w.StashLen() == 0 && m.stashTerminal {
 			return Effect{Spawn: true, Stash: true}
 		}
 		w.ToggleStashVisible()

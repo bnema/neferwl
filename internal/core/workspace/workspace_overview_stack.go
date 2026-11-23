@@ -119,7 +119,7 @@ func (w *Workspace) ItemOf(id WindowID) (StackItem, bool) {
 // SelectOverviewColumn focuses column i of an ordinary overview row, leaving
 // float and stash focus, and scrolls to it.
 func (w *Workspace) SelectOverviewColumn(i int) {
-	w.floatFocus, w.stashFocus = false, false
+	w.floatFocus, w.st().focus = false, false
 	if w.Engine().MaximizeHides() && w.Focus != i && w.Focus < len(w.Columns) {
 		w.Unmaximize()
 	}

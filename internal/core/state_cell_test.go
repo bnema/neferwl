@@ -22,7 +22,7 @@ func TestStateColumnRow(t *testing.T) {
 		c.addScreen(domain.OutputInfo{Name: "OUT-1", Width: 400, Height: 300})
 		w := c.cur().mon.Current()
 		w.Columns = []Column{{Windows: []WindowID{1}}, {Windows: []WindowID{65, 66}}, {Windows: []WindowID{2}}}
-		w.Stash = []Float{{ID: 7}}
+		w.StashSpawned(7)
 		w.Floats = []Float{{ID: 8}}
 		want := map[WindowID][2]int{1: {1, 1}, 65: {2, 1}, 66: {2, 2}, 2: {3, 1}, 7: {0, 0}, 8: {0, 0}}
 		got := map[WindowID][2]int{}

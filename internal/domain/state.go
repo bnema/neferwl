@@ -13,6 +13,8 @@ type State struct {
 	Workspaces []WorkspaceState
 	// Mode is the active bind mode, empty for default.
 	Mode string
+	// StashScope is stash.scope: workspace, output or global.
+	StashScope StashScope
 }
 
 // WorkspaceState is one workspace and its tiled columns, left to right in
@@ -30,6 +32,11 @@ type WorkspaceState struct {
 	// members (held) are reported only by WindowState.Fullscreen.
 	Cover   WindowID
 	Columns []ColumnState
+	// Stash holds the windows of the stash this workspace shows, left to
+	// right: its own, or the output's or session's shared stash while it
+	// is lent to it. StashShown is set while that stash is on screen.
+	Stash      []WindowID
+	StashShown bool
 }
 
 // ColumnState is one column and its tiled windows.

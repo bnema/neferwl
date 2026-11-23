@@ -905,6 +905,12 @@ func set(c *domain.Config, key, v string) error {
 			return err
 		}
 		c.Stash.SpawnTerminal = b
+	case "stash.scope":
+		scope, ok := domain.ParseStashScope(v)
+		if !ok {
+			return fmt.Errorf("must be workspace, output or global")
+		}
+		c.Stash.Scope = scope
 	case "border.radius":
 		n, err := strconv.Atoi(v)
 		if err != nil || n < 0 || n > 64 {

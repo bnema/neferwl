@@ -28,8 +28,8 @@ func TestStashSpawnedAlwaysShown(t *testing.T) {
 		if p := previewOf(t, w.Layout(), 5); p.Hidden || !p.Focused {
 			t.Fatalf("new window %+v", p)
 		}
-		if w.Stash[w.stashAt].ID != 5 {
-			t.Fatalf("selected %d", w.Stash[w.stashAt].ID)
+		if w.st().entries[w.st().at].ID != 5 {
+			t.Fatalf("selected %d", w.st().entries[w.st().at].ID)
 		}
 	}
 
@@ -78,13 +78,13 @@ func TestStashSpawnedAlwaysShown(t *testing.T) {
 			w := base()
 			w.ToggleStashVisible() // hidden
 			w.SetFullscreen(3, true)
-			if w.hiddenFullscreen != 3 {
-				t.Fatalf("setup: deferred %d", w.hiddenFullscreen)
+			if w.st().fullscreen != 3 {
+				t.Fatalf("setup: deferred %d", w.st().fullscreen)
 			}
 			w.StashSpawned(5)
 			shown(t, w)
-			if w.Cover() != 0 || w.hiddenFullscreen != 0 {
-				t.Fatalf("cover %d, deferred %d", w.Cover(), w.hiddenFullscreen)
+			if w.Cover() != 0 || w.st().fullscreen != 0 {
+				t.Fatalf("cover %d, deferred %d", w.Cover(), w.st().fullscreen)
 			}
 			w.ToggleStashVisible()
 			w.ToggleStashVisible()

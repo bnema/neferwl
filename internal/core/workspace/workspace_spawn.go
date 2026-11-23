@@ -116,8 +116,8 @@ func (w *Workspace) RemoveWindow(id WindowID) {
 	if w.stashOver == id {
 		w.stashOver = 0
 	}
-	if w.hiddenFullscreen == id {
-		w.hiddenFullscreen = 0
+	if w.st().fullscreen == id {
+		w.st().fullscreen = 0
 	}
 	if w.left == id {
 		w.left = 0
@@ -131,12 +131,12 @@ func (w *Workspace) RemoveWindow(id WindowID) {
 	}
 	if i := w.StashIndex(id); i >= 0 {
 		// The right neighbor takes the selection, else the left one.
-		w.Stash = slices.Delete(w.Stash, i, i+1)
-		if i < w.stashAt || w.stashAt == len(w.Stash) {
-			w.stashAt = max(w.stashAt-1, 0)
+		w.st().entries = slices.Delete(w.st().entries, i, i+1)
+		if i < w.st().at || w.st().at == len(w.st().entries) {
+			w.st().at = max(w.st().at-1, 0)
 		}
-		if len(w.Stash) == 0 {
-			w.stashFocus, w.stashHidden, w.stashOver = false, false, 0
+		if len(w.st().entries) == 0 {
+			w.st().focus, w.st().hidden, w.stashOver = false, false, 0
 		}
 		return
 	}
@@ -293,6 +293,6 @@ func (w *Workspace) AddAppWindow(id WindowID, cells, width, height int) {
 	}
 	w.Columns = slices.Insert(w.Columns, at, layout.Column{Windows: []WindowID{id}, Cells: cells})
 	w.ColumnInserted(at, kind)
-	w.Focus, w.floatFocus, w.stashFocus = at, false, false
+	w.Focus, w.floatFocus, w.st().focus = at, false, false
 	w.scroll()
 }

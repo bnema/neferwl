@@ -34,11 +34,11 @@ func TestStashCaptureLineage(t *testing.T) {
 					w.FocusID(1)
 					w.ToggleWindowStash()
 					if w.StashIndex(1) < 0 || !w.StashShown() {
-						t.Fatalf("setup: stash %+v shown %v", w.Stash, w.StashShown())
+						t.Fatalf("setup: stash %+v shown %v", stashIDs(w), w.StashShown())
 					}
 					c.clientEvent(context.Background(), tc.child)
 					if w.StashIndex(5) < 0 {
-						t.Fatalf("arrival bypassed the stash (path %q): columns %+v stash %+v", c.placementPath, w.Columns, w.Stash)
+						t.Fatalf("arrival bypassed the stash (path %q): columns %+v stash %+v", c.placementPath, w.Columns, stashIDs(w))
 					}
 					if f, _ := w.Focused(); f != 5 {
 						t.Fatalf("focus %d", f)
@@ -123,7 +123,7 @@ func TestStashCaptureWinsOverInheritance(t *testing.T) {
 		}
 		c.clientEvent(context.Background(), ports.WindowMapped{ID: 5, PID: 50, AppID: "game", Proc: lineageNodes(50, 10)})
 		if w.StashIndex(5) < 0 || w.IsFullscreenMember(5) || w.Fullscreen != 1 || len(w.Held) != 0 {
-			t.Fatalf("path %q stash %+v fullscreen %d held %v", c.placementPath, w.Stash, w.Fullscreen, w.Held)
+			t.Fatalf("path %q stash %+v fullscreen %d held %v", c.placementPath, stashIDs(w), w.Fullscreen, w.Held)
 		}
 	})
 }

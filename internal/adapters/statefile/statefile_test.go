@@ -42,7 +42,7 @@ func TestRunWritesAndRemoves(t *testing.T) {
 		go func() { done <- Run(ctx, path, states, workspaceid.WithPrefix("0a1b2c3d"), zerowrap.Default()) }()
 		focused := domain.WindowState{ID: 2, AppID: "foot", PID: 200, Output: "DP-2", Workspace: 1, WorkspaceID: 9, Visible: true}
 		states <- domain.State{Output: "DP-2", Outputs: []domain.OutputState{{Name: "DP-2", Active: 1, Count: 1, WorkspaceID: 9}}, Window: &focused, Windows: []domain.WindowState{focused}}
-		want := statewire.State{Output: "DP-2", Outputs: []statewire.Output{{Name: "DP-2", Active: 1, Count: 1, WorkspaceID: "0a1b2c3d-9"}}, Window: &statewire.Window{ID: 2, AppID: "foot", PID: 200, Output: "DP-2", Workspace: 1, WorkspaceID: "0a1b2c3d-9", Visible: true, Marks: []string{}}, Windows: []statewire.Window{{ID: 2, AppID: "foot", PID: 200, Output: "DP-2", Workspace: 1, WorkspaceID: "0a1b2c3d-9", Visible: true, Marks: []string{}}}, Workspaces: []statewire.Workspace{}}
+		want := statewire.State{Output: "DP-2", Outputs: []statewire.Output{{Name: "DP-2", Active: 1, Count: 1, WorkspaceID: "0a1b2c3d-9"}}, Window: &statewire.Window{ID: 2, AppID: "foot", PID: 200, Output: "DP-2", Workspace: 1, WorkspaceID: "0a1b2c3d-9", Visible: true, Marks: []string{}}, Windows: []statewire.Window{{ID: 2, AppID: "foot", PID: 200, Output: "DP-2", Workspace: 1, WorkspaceID: "0a1b2c3d-9", Visible: true, Marks: []string{}}}, Workspaces: []statewire.Workspace{}, StashScope: "workspace"}
 		synctest.Wait()
 		got, err := Read(path)
 		if err != nil {

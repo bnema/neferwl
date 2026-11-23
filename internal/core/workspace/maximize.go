@@ -81,7 +81,7 @@ func (w *Workspace) Activate(id WindowID) {
 			if !w.stashOverCover() {
 				w.showStashOver()
 			}
-			w.stashAt, w.stashFocus, w.floatFocus = i, true, false
+			w.st().at, w.st().focus, w.floatFocus = i, true, false
 		}
 		if owner == c || w.stashOverCover() && w.StashIndex(owner) >= 0 {
 			if owner != id {
@@ -91,12 +91,12 @@ func (w *Workspace) Activate(id WindowID) {
 			return
 		}
 	}
-	if i := w.StashIndex(id); i >= 0 && w.stashHidden {
+	if i := w.StashIndex(id); i >= 0 && w.st().hidden {
 		// A hidden stashed window must be seen: show the stash with it,
 		// selected. Another window's fullscreen leaves first, so its own
 		// pending fullscreen comes back.
 		w.leaveFullscreen()
-		w.stashAt = i
+		w.st().at = i
 		w.showStash()
 	}
 	if w.Fullscreen != 0 && w.Fullscreen != id && !w.groupLeaveTo(id) {
@@ -111,7 +111,7 @@ func (w *Workspace) Activate(id WindowID) {
 // and no pending fullscreen of id's own that would replace it.
 func (w *Workspace) coverStays(id WindowID) bool {
 	c := w.Cover()
-	return c != 0 && w.StashIndex(c) < 0 && (!w.stashHidden || w.hiddenFullscreen != id)
+	return c != 0 && w.StashIndex(c) < 0 && (!w.st().hidden || w.st().fullscreen != id)
 }
 
 // SetFullscreen applies a client request. It never moves focus: client
@@ -126,12 +126,12 @@ func (w *Workspace) SetFullscreen(id WindowID, on bool) {
 		return
 	}
 	if w.IsFloat(id) {
-		if w.stashHidden && w.StashIndex(id) >= 0 {
+		if w.st().hidden && w.StashIndex(id) >= 0 {
 			// Applied when the stash is shown again.
 			if on {
-				w.hiddenFullscreen = id
-			} else if w.hiddenFullscreen == id {
-				w.hiddenFullscreen = 0
+				w.st().fullscreen = id
+			} else if w.st().fullscreen == id {
+				w.st().fullscreen = 0
 			}
 			return
 		}

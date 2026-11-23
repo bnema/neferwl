@@ -362,6 +362,7 @@ func (c *Core) addScreen(info domain.OutputInfo) {
 	delete(c.offGone, info.Name)
 	s.mon.Name, s.mon.Key = info.Name, info.Key()
 	c.settings(s)
+	c.returnStash(s)
 	s.cfgScale = c.configScale(info.Name)
 	s.transform = c.configTransform(info.Name)
 	s.setScale(s.cfgScale)
@@ -445,6 +446,21 @@ func (c *Core) removeScreen(name string) {
 		c.focusScreen = max(slices.IndexFunc(c.screens, func(s *screen) bool { return !s.isolated }), 0)
 	}
 	host := c.cur()
+	// The gone monitor's stash joins the host's; its lendee gives it back.
+	unlend(&gone.mon.lendee)
+	if c.cfg.Stash.Scope == domain.StashScopeOutput && !gone.info.Virtual {
+		// Its windows return with it (addScreen).
+		gone.mon.stash.TagHome(gone.info.Key())
+	}
+	host.mon.stash.Absorb(&gone.mon.stash, false)
+	if l := host.mon.lendee; l != nil {
+		l.Reattach()
+	}
+	// A gone holder gives the session stash to the focused screen.
+	if c.stashHolder == gone.name() {
+		unlend(&c.stashLendee)
+		c.stashHolder = ""
+	}
 	for pos, w := range gone.mon.Workspaces {
 		if w.Empty() && w.Name == "" {
 			continue

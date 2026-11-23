@@ -283,8 +283,8 @@ func TestWorkspaceSizingGuardsBeforeDispatch(t *testing.T) {
 					w.Floats = []Float{{ID: 9}}
 					w.floatFocus = true
 				case "stash":
-					w.Stash = []Float{{ID: 9}}
-					w.stashFocus = true
+					w.st().entries = []Float{{ID: 9}}
+					w.st().focus = true
 				case "fullscreen":
 					w.Fullscreen = 1
 				}

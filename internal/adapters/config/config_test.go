@@ -749,6 +749,27 @@ func TestStash(t *testing.T) {
 	}
 }
 
+func TestStashScope(t *testing.T) {
+	for _, tc := range []struct {
+		line    string
+		want    domain.StashScope
+		warning bool
+	}{
+		{"", domain.StashScopeWorkspace, false},
+		{"stash.scope = workspace", domain.StashScopeWorkspace, false},
+		{"stash.scope = output", domain.StashScopeOutput, false},
+		{"stash.scope = global", domain.StashScopeGlobal, false},
+		{"stash.scope = monitor", domain.StashScopeWorkspace, true},
+	} {
+		t.Run(tc.line, func(t *testing.T) {
+			c, warnings := parseString(t, tc.line)
+			if c.Stash.Scope != tc.want || (len(warnings) != 0) != tc.warning {
+				t.Fatalf("scope %v, warnings %v", c.Stash.Scope, warnings)
+			}
+		})
+	}
+}
+
 func TestStashCapture(t *testing.T) {
 	if c, _ := parseString(t, ""); !c.Stash.Capture {
 		t.Fatal("stash.capture is on by default")

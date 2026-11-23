@@ -104,9 +104,23 @@ func placement(w *Workspace, id WindowID) Placement {
 func shownCards(t *testing.T, w *Workspace, ps []Placement) []Placement {
 	t.Helper()
 	var out []Placement
-	for _, e := range w.Stash {
-		if p := previewOf(t, ps, e.ID); !p.Hidden {
+	for i := range w.StashLen() {
+		if p := previewOf(t, ps, w.StashID(i)); !p.Hidden {
 			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// stashPlacements is where w lays out its stash windows, in stash order.
+func stashPlacements(w *Workspace) []Placement {
+	ps := w.Layout()
+	out := make([]Placement, 0, w.StashLen())
+	for i := range w.StashLen() {
+		for _, p := range ps {
+			if p.ID == w.StashID(i) {
+				out = append(out, p)
+			}
 		}
 	}
 	return out
@@ -114,8 +128,8 @@ func shownCards(t *testing.T, w *Workspace, ps []Placement) []Placement {
 
 func stashIDs(w *Workspace) []WindowID {
 	var ids []WindowID
-	for _, f := range w.Stash {
-		ids = append(ids, f.ID)
+	for i := range w.StashLen() {
+		ids = append(ids, w.StashID(i))
 	}
 	return ids
 }

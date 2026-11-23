@@ -123,6 +123,12 @@ type Core struct {
 	cfg                 domain.Config
 	screens             []*screen
 	focusScreen         int
+	// stash is the session stash in global scope (stash_scope.go), lent to
+	// stashLendee, the current workspace of the holder screen stashHolder
+	// (a screen name; empty or gone falls back to the focused screen).
+	stash       Stash
+	stashLendee *Workspace
+	stashHolder string
 	inputNames          map[domain.InputDeviceID]string
 	activeInputOutput   string
 	lastInputBound      bool
@@ -732,6 +738,7 @@ func (c *Core) publishFrame(ctx context.Context, only *screen) error {
 	if c.inputEpochChanged() {
 		return errSecurityChanged
 	}
+	c.lendStashes()
 	c.syncSecurity()
 	c.updatePositionHints(only)
 	c.hintValidate()

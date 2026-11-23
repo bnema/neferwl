@@ -17,9 +17,8 @@ import (
 var workspaceFields = map[string]bool{ // true: setting
 	"ID": false, "Name": false, "OverviewAfter": false, "recent": false, "view": false,
 	"monitor": true, "reserved": true, "size": false, "border": true, "TabBar": true, "left": false,
-	"Floats": false, "floatFocus": false, "Stash": false, "stashAt": false, "stashView": false,
-	"stashFocus": false, "stashHidden": false, "stashWidth": true, "stashGap": true,
-	"hiddenFullscreen": false, "stashOver": false, "Home": false, "HomePos": false, "TermAt": false,
+	"Floats": false, "floatFocus": false, "own": false, "lent": false,
+	"stashWidth": true, "stashGap": true, "stashOver": false, "Home": false, "HomePos": false, "TermAt": false,
 	"colBuf": false, "rowBuf": false, "tileBuf": false, "zoomBuf": false,
 	"anchorBuf": false, "anchorCols": false, "snapBuf": false,
 }
@@ -58,15 +57,16 @@ func dirty(w *Workspace) {
 	w.Focus, w.View, w.Fullscreen = 1, 5, 2
 	w.Maximized = []WindowID{2}
 	w.AddFloating(10, 30, 20)
-	w.Stash = append(w.Stash, Float{ID: 20})
-	w.stashAt, w.stashFocus, w.stashHidden, w.hiddenFullscreen, w.stashOver = 1, true, true, 20, 2
+	w.st().entries = append(w.st().entries, Float{ID: 20})
+	w.st().at, w.st().focus, w.st().hidden, w.st().fullscreen, w.stashOver = 1, true, true, 20, 2
 	w.recent = []WindowID{1, 2}
-	w.view.Off, w.stashView.Off, w.left = 3, 4, 3
+	w.view.Off, w.st().view.Off, w.left = 3, 4, 3
 	w.size = [2]int{50, 50}
 	w.Name, w.Home, w.HomePos, w.TermAt = "dev", "HDMI-1", 2, time.Unix(1, 0)
 	w.OverviewAfter = &Workspace{}
 	w.colBuf, w.rowBuf, w.tileBuf, w.zoomBuf = make([]Rect, 1), make([]Rect, 1), make([]Placement, 1), make([]Placement, 1)
 	w.anchorBuf, w.anchorCols, w.snapBuf = make([]Placement, 1), make([]visibleColumn, 1), make([]float64, 1)
+	w.lent = &Stash{entries: []Float{{ID: 30}}}
 }
 
 func TestNewFromCopiesOnlySettings(t *testing.T) {
@@ -107,7 +107,7 @@ func TestNewFromCopiesOnlySettings(t *testing.T) {
 		w.SetBorder(9)
 		w.SetOverflow(OverflowScroll)
 		if !reflect.DeepEqual(before.Columns, tpl.Columns) || tpl.Gaps != 7 || tpl.border != 2 ||
-			tpl.Overflow != OverflowFixed || len(tpl.Floats) != 1 || len(tpl.Stash) != 2 {
+			tpl.Overflow != OverflowFixed || len(tpl.Floats) != 1 || len(tpl.own.entries) != 2 {
 			t.Fatalf("template changed: %+v", tpl)
 		}
 	})

@@ -54,7 +54,7 @@ func TestSpawnStashIndependentOfCommandDrain(t *testing.T) {
 		}
 		req := <-spawn
 		c.placement.place(c, ports.WindowMapped{ID: 5, Slot: claimToken(req)})
-		if w := c.cur().mon.Current(); len(w.Stash) != 1 || w.Stash[0].ID != 5 {
+		if w := c.cur().mon.Current(); w.StashLen() != 1 || w.StashID(0) != 5 {
 			t.Fatal("placement lost while commands unread")
 		}
 
@@ -146,7 +146,7 @@ func TestStashClaimExpiry(t *testing.T) {
 				now = claimBase.Add(tc.age)
 				c.placement.place(c, ports.WindowMapped{ID: 5, Slot: claimToken(req)})
 				_, w := c.screenOf(5)
-				if placed := w == target && len(target.Stash) == 1; placed != tc.placed {
+				if placed := w == target && target.StashLen() == 1; placed != tc.placed {
 					t.Fatalf("placed %t, want %t", placed, tc.placed)
 				}
 

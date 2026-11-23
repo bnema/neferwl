@@ -78,7 +78,7 @@ func TestOverviewCascadeSmallCarousel(t *testing.T) {
 			m.selectCard(w, 0)
 			if n == 2 {
 				ps := m.Layout()
-				if a, b := previewOf(t, ps, w.Stash[0].ID).Rect.X, previewOf(t, ps, w.Stash[1].ID).Rect.X; b <= a {
+				if a, b := previewOf(t, ps, w.StashID(0)).Rect.X, previewOf(t, ps, w.StashID(1)).Rect.X; b <= a {
 					t.Fatalf("2 cards: the next card at %d, not right of the selection at %d", b, a)
 				}
 				m.OverviewMove(1, 0)
@@ -106,7 +106,7 @@ func TestOverviewCascadeCarouselSeam(t *testing.T) {
 		m.ToggleOverview()
 		m.selectCard(w, 4)
 		ps := m.Layout()
-		x := func(i int) int { return previewOf(t, ps, w.Stash[i].ID).Rect.X }
+		x := func(i int) int { return previewOf(t, ps, w.StashID(i)).Rect.X }
 		stride := x(4) - x(3)
 		if stride <= 0 || x(3)-x(2) != stride {
 			t.Fatalf("left of the newest card: %d %d %d", x(2), x(3), x(4))
@@ -174,17 +174,17 @@ func TestOverviewCarouselScrolls(t *testing.T) {
 					}
 					return r.X, r.X + r.W/2 - (u.X + u.W/2)
 				}
-				for step := range len(w.Stash) + 1 {
+				for step := range w.StashLen() + 1 {
 					i := m.cardAt(w)
 					ps := m.Layout()
-					sel := previewOf(t, ps, w.Stash[i].ID)
+					sel := previewOf(t, ps, w.StashID(i))
 					at, off := pos(sel.Rect)
 					if sel.Hidden || !sel.Focused || abs(off) > 1 {
 						t.Fatalf("step %d: card %d not centred: %+v in %v", step, i, sel, u)
 					}
 					before, after, hidden := false, false, false
-					for _, e := range w.Stash {
-						p := previewOf(t, ps, e.ID)
+					for k := range w.StashLen() {
+						p := previewOf(t, ps, w.StashID(k))
 						if p.Hidden {
 							hidden = true
 							continue
@@ -314,11 +314,11 @@ func TestOverviewStashOnlyCarousel(t *testing.T) {
 				if m.overviewAxis() != axis || len(w.Columns) != 0 || m.cardAt(w) < 0 {
 					t.Fatalf("setup: axis %d, %d columns, card %d", m.overviewAxis(), len(w.Columns), m.cardAt(w))
 				}
-				last := len(w.Stash) - 1
+				last := w.StashLen() - 1
 				m.selectCard(w, last)
 				ps := m.Layout()
 				pos := func(i int) int {
-					if r := previewOf(t, ps, w.Stash[i].ID).Rect; axis == layout.Vertical {
+					if r := previewOf(t, ps, w.StashID(i)).Rect; axis == layout.Vertical {
 						return r.Y
 					} else {
 						return r.X
@@ -368,12 +368,12 @@ func TestOverviewStashOnlyCarouselScrolls(t *testing.T) {
 		u := w.OverviewArea()
 		m.selectCard(w, 0)
 		ps := m.Layout()
-		if r := previewOf(t, ps, w.Stash[0].ID).Rect; r.X != u.X {
+		if r := previewOf(t, ps, w.StashID(0)).Rect; r.X != u.X {
 			t.Fatalf("first card at %d, area starts at %d", r.X, u.X)
 		}
-		m.selectCard(w, len(w.Stash)-1)
+		m.selectCard(w, w.StashLen()-1)
 		ps = m.Layout()
-		if r := previewOf(t, ps, w.Stash[len(w.Stash)-1].ID).Rect; r.X+r.W != u.X+u.W {
+		if r := previewOf(t, ps, w.StashID(w.StashLen()-1)).Rect; r.X+r.W != u.X+u.W {
 			t.Fatalf("last card ends at %d, area at %d", r.X+r.W, u.X+u.W)
 		}
 

@@ -99,8 +99,8 @@ func (w *Workspace) groupLeaveTo(id WindowID) bool {
 	if id == w.Fullscreen || !w.demotable() {
 		return false
 	}
-	if i := w.StashIndex(id); i >= 0 && w.stashHidden {
-		if w.hiddenFullscreen == id {
+	if i := w.StashIndex(id); i >= 0 && w.st().hidden {
+		if w.st().fullscreen == id {
 			return false
 		}
 		w.ShowStashAt(i)

@@ -159,6 +159,7 @@ func (p *spawnPlacement) place(c *Core, v ports.WindowMapped) (follow bool) {
 					if s.mon.has(target.ws) {
 						path = "slot"
 						if target.kind == spawnStash {
+							c.pullStash(s)
 							target.ws.StashSpawned(v.ID)
 						} else {
 							target.ws.AddWindow(v.ID)

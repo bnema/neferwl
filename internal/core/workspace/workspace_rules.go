@@ -57,11 +57,11 @@ func MoveByRule(from, to *Workspace, id WindowID) {
 		from.RemoveWindow(id)
 		to.addFloat(f, true)
 	} else if i := from.StashIndex(id); i >= 0 {
-		f := from.Stash[i].rehome()
+		f := from.st().entries[i].rehome()
 		from.RemoveWindow(id)
-		focused, hidden, at := to.stashFocus, to.stashHidden, to.stashAt
+		focused, hidden, at := to.st().focus, to.st().hidden, to.st().at
 		to.addStash(f)
-		to.stashFocus, to.stashHidden, to.stashAt = focused, hidden, at
+		to.st().focus, to.st().hidden, to.st().at = focused, hidden, at
 	} else if i := from.ColumnOf(id); i >= 0 {
 		cells := from.Columns[i].Cells
 		from.RemoveWindow(id)

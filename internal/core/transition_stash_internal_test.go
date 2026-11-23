@@ -298,8 +298,8 @@ func TestStashNavigationSlides(t *testing.T) {
 		w.AddWindow(5)
 		w.FocusID(5)                           // the new tile has the focus, not the stash
 		c.applyAction(ActionToggleWindowStash) // stash 4 3 2 5: 5 selected, 2 peeks
-		if len(w.Stash) != 4 || w.StashAt() != 3 {
-			t.Fatalf("setup: stash %+v at %d", w.Stash, w.StashAt())
+		if w.StashLen() != 4 || w.StashAt() != 3 {
+			t.Fatalf("setup: stash %+v at %d", stashIDs(w), w.StashAt())
 		}
 		settleShown(t, c)
 		centre := sceneWindow(t, indicatorScene(t, c), 5).Rect
@@ -546,11 +546,11 @@ func TestCarouselWrapFadesIn(t *testing.T) {
 				shots := c.snapshot(ic.now)
 				m.selectCard(w, tc.to)
 				c.transition(shots, ic.now)
-				for i, e := range w.Stash {
-					if previewOf(t, m.Layout(), e.ID).Hidden {
+				for i := range w.StashLen() {
+					if previewOf(t, m.Layout(), w.StashID(i)).Hidden {
 						continue
 					}
-					rm := sc.rects[e.ID]
+					rm := sc.rects[w.StashID(i)]
 					if slices.Contains(tc.wrapped, i) {
 						if rm.dx != 0 || !rm.fade.On {
 							t.Fatalf("wrapped card %d: dx %v, fade %v", i, rm.dx, rm.fade.On)
@@ -588,14 +588,14 @@ func TestCarouselStashSizeChangeNoWrapFade(t *testing.T) {
 		m.selectCard(w, 0)
 		settleShown(t, c)
 		shots := c.snapshot(ic.now)
-		m.RemoveWindow(w.Stash[4].ID) // 5 -> 4 cards
+		m.RemoveWindow(w.StashID(4)) // 5 -> 4 cards
 		m.selectCard(w, 1)
 		c.transition(shots, ic.now)
-		for i, e := range w.Stash {
-			if previewOf(t, m.Layout(), e.ID).Hidden {
+		for i := range w.StashLen() {
+			if previewOf(t, m.Layout(), w.StashID(i)).Hidden {
 				continue
 			}
-			if rm := sc.rects[e.ID]; rm.fade.On && rm.dx == 0 {
+			if rm := sc.rects[w.StashID(i)]; rm.fade.On && rm.dx == 0 {
 				t.Fatalf("card %d faded in as a wrap although the stash size changed", i)
 			}
 		}

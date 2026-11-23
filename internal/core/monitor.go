@@ -36,6 +36,10 @@ type Monitor struct {
 	named      []NamedWorkspace
 	// followMove shows the target workspace after a move to it.
 	followMove bool
+	// stash is the shared stash in output scope (stash_scope.go) and
+	// lendee the one workspace it is lent to, nil if none.
+	stash  Stash
+	lendee *Workspace
 	// stashCapture puts new windows in the shown stash (stash.capture).
 	stashCapture bool
 	// stashTerminal makes toggle-stash-visible on an empty stash open the

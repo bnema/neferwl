@@ -381,7 +381,7 @@ func TestOverviewCascadeKeys(t *testing.T) {
 					t.Fatalf("up from the stash: card %d, column %d", m.cardAt(w), sel())
 				}
 				d.move(m, 0, 1)
-				for range len(w.Stash) {
+				for range w.StashLen() {
 					d.move(m, -1, 0)
 				}
 				if m.Current() != prev {
@@ -414,13 +414,13 @@ func TestOverviewCascadeStashPile(t *testing.T) {
 					t.Fatalf("entered at %d", m.cardAt(w))
 				}
 				at := m.cardAt(w)
-				for i := range len(w.Stash) {
+				for i := range w.StashLen() {
 					d.move(m, 0, 1)
-					if want := min(at+i+1, len(w.Stash)-1); m.Current() != w || m.cardAt(w) != want {
+					if want := min(at+i+1, w.StashLen()-1); m.Current() != w || m.cardAt(w) != want {
 						t.Fatalf("down %d: card %d, want %d", i, m.cardAt(w), want)
 					}
 				}
-				picked := w.Stash[m.cardAt(w)].ID
+				picked := w.StashID(m.cardAt(w))
 				m.ToggleOverview()
 				if focusedID(m) != picked || w.Inspect().StashHidden {
 					t.Fatalf("confirm on %d, want %d (hidden %v)", focusedID(m), picked, w.Inspect().StashHidden)
@@ -479,7 +479,7 @@ func TestOverviewCascadeStashPile(t *testing.T) {
 	}
 	// Fingers down walk the pile; fingers up leave it for the columns.
 	swipeY(40)
-	if want := min(at+1, len(w.Stash)-1); m.Current() != w || m.cardAt(w) != want {
+	if want := min(at+1, w.StashLen()-1); m.Current() != w || m.cardAt(w) != want {
 		t.Fatalf("swipe down: card %d, want %d", m.cardAt(w), want)
 	}
 	swipeY(-40)
@@ -496,7 +496,7 @@ func TestOverviewCascadeStashPile(t *testing.T) {
 	}
 	c.swipeEnd(ports.SwipeEnd{})
 	// A horizontal three-finger swipe walks the carousel, wrapping round.
-	if want := (at + 1) % len(w.Stash); m.Current() != w || m.cardAt(w) != want {
+	if want := (at + 1) % w.StashLen(); m.Current() != w || m.cardAt(w) != want {
 		t.Fatalf("horizontal swipe over a stash card: workspace %d, card %d, want %d", indexOf(m.Workspaces, m.Current()), m.cardAt(w), want)
 	}
 	if got := stashIDs(w); !slices.Equal(got, before) {
@@ -1238,7 +1238,7 @@ func TestOverviewCascadeOutlineAndPile(t *testing.T) {
 		if framed(ps) != 1 {
 			t.Fatalf("card selected: %d framed", framed(ps))
 		}
-		card := previewOf(t, ps, w.Stash[at].ID)
+		card := previewOf(t, ps, w.StashID(at))
 		if !card.Focused || !card.Card {
 			t.Fatalf("selected card not framed: %+v", card)
 		}

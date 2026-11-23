@@ -133,6 +133,7 @@ func (p *waitPass) keep(deadline time.Time) { p.earliest = earlier(p.earliest, d
 // evalWaits runs at the top of every owner-loop pass, including passes reached
 // via continue, after the preceding event and its publications have completed.
 func (c *Core) evalWaits() {
+	c.lendStashes()
 	if len(c.controlWaits) == 0 && len(c.outputWaits) == 0 {
 		c.stopControlWaitTimer()
 		return

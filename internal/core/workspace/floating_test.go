@@ -21,8 +21,8 @@ func TestToggleWindowStash(t *testing.T) {
 					w.Columns[1].Focus = 1
 				}
 				w.Apply(ActionToggleWindowStash)
-				if len(w.Stash) != 1 || len(w.Floats) != 0 || !w.Stash[0].back.holdsStack(Column{Windows: []WindowID{3}}) && stacked {
-					t.Fatalf("stash %+v", w.Stash)
+				if len(w.st().entries) != 1 || len(w.Floats) != 0 || !w.st().entries[0].back.holdsStack(Column{Windows: []WindowID{3}}) && stacked {
+					t.Fatalf("stash %+v", w.st().entries)
 				}
 				p := placement(w, 2)
 				if !p.Focused || !p.Floating || p.Rect != (Rect{X: 10, Y: 8, W: 80, H: 64}) {
@@ -34,7 +34,7 @@ func TestToggleWindowStash(t *testing.T) {
 				}
 				w.Apply(ActionToggleWindowStash)
 				id, _ := w.Focused()
-				if id != 2 || len(w.Stash) != 0 || w.Focus != 1 || w.Columns[1].Cells != 3 || !slices.Contains(w.Columns[1].Windows, 2) {
+				if id != 2 || len(w.st().entries) != 0 || w.Focus != 1 || w.Columns[1].Cells != 3 || !slices.Contains(w.Columns[1].Windows, 2) {
 					t.Fatalf("round trip: %+v", w)
 				}
 
@@ -63,11 +63,11 @@ func TestStashStrip(t *testing.T) {
 			w.FocusID(id)
 			w.Apply(ActionToggleWindowStash)
 		}
-		if got := []WindowID{w.Stash[0].ID, w.Stash[1].ID, w.Stash[2].ID}; !slices.Equal(got, []WindowID{4, 3, 2}) {
+		if got := []WindowID{w.st().entries[0].ID, w.st().entries[1].ID, w.st().entries[2].ID}; !slices.Equal(got, []WindowID{4, 3, 2}) {
 			t.Fatalf("order %v", got)
 		}
-		if id, _ := w.Focused(); id != 2 || w.stashAt != 2 {
-			t.Fatalf("focused %d at %d", id, w.stashAt)
+		if id, _ := w.Focused(); id != 2 || w.st().at != 2 {
+			t.Fatalf("focused %d at %d", id, w.st().at)
 		}
 		center := Rect{X: 10, Y: 8, W: 80, H: 64}
 		if p := placement(w, 2); p.Rect != center || p.Peek || p.Hidden {
@@ -151,8 +151,8 @@ func TestToggleStashVisible(t *testing.T) {
 		w.Apply(ActionToggleWindowStash)
 		w.Apply(ActionFocusColumnLeft)
 		w.Apply(ActionToggleStashVisible)
-		if id, _ := w.Focused(); id != 1 || !w.stashHidden {
-			t.Fatalf("focused %d hidden %v", id, w.stashHidden)
+		if id, _ := w.Focused(); id != 1 || !w.st().hidden {
+			t.Fatalf("focused %d hidden %v", id, w.st().hidden)
 		}
 		for _, id := range []WindowID{2, 3} {
 			if p := placement(w, id); !p.Hidden || p.Focused {
@@ -164,19 +164,19 @@ func TestToggleStashVisible(t *testing.T) {
 		}
 		// Shown from a tile: the stash takes the focus on its selected window.
 		w.Apply(ActionToggleStashVisible)
-		if id, _ := w.Focused(); id != 3 || w.stashHidden {
+		if id, _ := w.Focused(); id != 3 || w.st().hidden {
 			t.Fatalf("restored focus %d", id)
 		}
 		w.Apply(ActionToggleStashVisible)
 		w.FocusID(1)
 		w.Apply(ActionToggleWindowStash)
-		if id, _ := w.Focused(); id != 1 || w.stashHidden || w.stashAt != 2 {
-			t.Fatalf("new stashed window: focused %d hidden %v", id, w.stashHidden)
+		if id, _ := w.Focused(); id != 1 || w.st().hidden || w.st().at != 2 {
+			t.Fatalf("new stashed window: focused %d hidden %v", id, w.st().hidden)
 		}
 		// A native dialog stays when the stash hides.
 		w.AddFloating(9, 10, 10)
 		w.Apply(ActionToggleStashVisible)
-		if p := placement(w, 9); p.Hidden || !w.stashHidden {
+		if p := placement(w, 9); p.Hidden || !w.st().hidden {
 			t.Fatalf("dialog hidden with the stash: %+v", p)
 		}
 		if id, _ := w.Focused(); id != 9 {
@@ -208,7 +208,7 @@ func TestStashClose(t *testing.T) {
 			t.Fatalf("after last: %d", id)
 		}
 		w.RemoveWindow(4)
-		if id, _ := w.Focused(); id != 1 || len(w.Stash) != 0 || w.stashFocus {
+		if id, _ := w.Focused(); id != 1 || len(w.st().entries) != 0 || w.st().focus {
 			t.Fatalf("after all: %d", id)
 		}
 
@@ -230,7 +230,7 @@ func TestExclusiveFullscreenNewWindow(t *testing.T) {
 					t.Fatalf("overflow %v: %+v", overflow, p)
 				}
 			}
-			if w.ToggleStashVisible(); w.stashHidden {
+			if w.ToggleStashVisible(); w.st().hidden {
 				t.Fatal("floats toggled under fullscreen")
 			}
 			w.SetFullscreen(1, false)
@@ -346,12 +346,12 @@ func TestToggleWindowStashIgnoresFullscreen(t *testing.T) {
 		w.AddWindow(1)
 		w.SetFullscreen(1, true)
 		w.Apply(ActionToggleWindowStash)
-		if len(w.Stash) != 0 || w.Fullscreen != 1 {
+		if len(w.st().entries) != 0 || w.Fullscreen != 1 {
 			t.Fatalf("fullscreen window floated: %+v", w)
 		}
 		w.SetFullscreen(1, false)
 		w.Apply(ActionToggleWindowStash)
-		if len(w.Stash) != 1 {
+		if len(w.st().entries) != 1 {
 			t.Fatal("window did not float after leaving fullscreen")
 		}
 
@@ -406,7 +406,7 @@ func TestToggleStashVisibleFullscreen(t *testing.T) {
 		w.ToggleWindowStash()
 		w.SetFullscreen(2, true)
 		w.Apply(ActionToggleStashVisible)
-		if id, _ := w.Focused(); id != 2 || w.Fullscreen != 2 || w.stashHidden {
+		if id, _ := w.Focused(); id != 2 || w.Fullscreen != 2 || w.st().hidden {
 			t.Fatalf("fullscreen stash hidden: focused %d fullscreen %d", id, w.Fullscreen)
 		}
 
@@ -426,8 +426,8 @@ func TestActivateHiddenFloat(t *testing.T) {
 		w.SetFullscreen(2, true)
 		w.SetFullscreen(1, true)
 		w.Activate(2)
-		if id, _ := w.Focused(); id != 2 || w.stashHidden || w.Fullscreen != 2 {
-			t.Fatalf("own fullscreen: focused %d hidden %v fullscreen %d", id, w.stashHidden, w.Fullscreen)
+		if id, _ := w.Focused(); id != 2 || w.st().hidden || w.Fullscreen != 2 {
+			t.Fatalf("own fullscreen: focused %d hidden %v fullscreen %d", id, w.st().hidden, w.Fullscreen)
 		}
 
 	})
@@ -461,8 +461,8 @@ func TestRestoreFloat(t *testing.T) {
 		before := w.Inspect()
 		columns := slices.Clone(w.Columns)
 		w.RestoreFloat(saved)
-		if len(w.Floats) != 0 || len(w.Stash) != 0 || w.floatIndex(2) >= 0 {
-			t.Fatalf("restoring a gone float changed the workspace: floats %v stash %v", w.Floats, w.Stash)
+		if len(w.Floats) != 0 || len(w.st().entries) != 0 || w.floatIndex(2) >= 0 {
+			t.Fatalf("restoring a gone float changed the workspace: floats %v stash %v", w.Floats, w.st().entries)
 		}
 		if got := w.Inspect(); !reflect.DeepEqual(got, before) || !reflect.DeepEqual(w.Columns, columns) {
 			t.Fatalf("restoring a gone float changed the state: %+v, want %+v", got, before)

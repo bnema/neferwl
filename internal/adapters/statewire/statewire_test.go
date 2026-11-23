@@ -69,14 +69,14 @@ func TestWorkspaceGeometryFields(t *testing.T) {
 	st := FromDomain(domain.State{Workspaces: []domain.WorkspaceState{
 		{ID: 7, Number: 2, Name: "web", Output: "DP-2", Visible: true, Overflow: "fixed", Columns: []domain.ColumnState{
 			{Rect: domain.Rect{X: 10, Y: 20, W: 300, H: 400}, Windows: []domain.TileState{{ID: 5, Rect: domain.Rect{X: 11, Y: 21, W: 298, H: 198}}}},
-		}},
+		}, Stash: []domain.WindowID{9, 4}, StashShown: true},
 		{ID: 8, Output: "DP-2"},
-	}}, ids)
+	}, StashScope: domain.StashScopeOutput}, ids)
 	want := []Workspace{
 		{ID: "name:web", Number: 2, Name: "web", Output: "DP-2", Visible: true, Overflow: "fixed", Columns: []Column{
 			{X: 10, Y: 20, Width: 300, Height: 400, Windows: []Tile{{ID: 5, X: 11, Y: 21, Width: 298, Height: 198}}},
-		}},
-		{ID: "0a1b2c3d-8", Output: "DP-2", Columns: []Column{}},
+		}, Stash: Stash{Visible: true, Windows: []uint64{9, 4}}},
+		{ID: "0a1b2c3d-8", Output: "DP-2", Columns: []Column{}, Stash: Stash{Windows: []uint64{}}},
 	}
 	if !reflect.DeepEqual(st.Workspaces, want) {
 		t.Fatalf("%+v", st.Workspaces)
@@ -85,7 +85,8 @@ func TestWorkspaceGeometryFields(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, key := range []string{`"workspaces":[`, `"id":"name:web"`, `"number":2`, `"visible":true`, `"overflow":"fixed"`, `"columns":[{"x":10,"y":20,"width":300,"height":400,"windows":[{"id":5,"x":11,"y":21,"width":298,"height":198}],"tabbed":false,"active":0}]`} {
+	for _, key := range []string{`"workspaces":[`, `"id":"name:web"`, `"number":2`, `"visible":true`, `"overflow":"fixed"`, `"columns":[{"x":10,"y":20,"width":300,"height":400,"windows":[{"id":5,"x":11,"y":21,"width":298,"height":198}],"tabbed":false,"active":0}]`,
+		`"stash":{"visible":true,"windows":[9,4]}`, `"stash":{"visible":false,"windows":[]}`, `"stash_scope":"output"`} {
 		if !strings.Contains(string(data), key) {
 			t.Fatalf("%s missing %s", data, key)
 		}

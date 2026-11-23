@@ -261,7 +261,8 @@ func (c *Core) windowTitle(ctx context.Context, v ports.WindowTitle) error {
 		return nil
 	}
 	toScreen, to := c.ruleTarget(eff)
-	if from == to {
+	// A shared stash's window is in no single workspace: rules leave it.
+	if from == to || c.stashShared() && from.StashIndex(v.ID) >= 0 {
 		return nil
 	}
 	focused, _ := c.cur().mon.Focused()
