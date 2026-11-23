@@ -338,7 +338,7 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool, spawn *Workspace) {
 			mark := c.markBind()
 			m.Focus(idx)
 			shown = true
-			c.emitBind(mark, swipeCombo(g.fingers), "swipe-workspace", domain.BindSourceGesture)
+			c.emitBind(mark, swipeCombo(g.fingers), traceSwipeWorkspace, domain.BindSourceGesture)
 		}
 		if !e.Cancelled {
 			c.focusScreen = c.screenIndex(g.screen.name())

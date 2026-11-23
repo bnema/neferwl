@@ -205,7 +205,7 @@ func (h hostImpl) window(slot xwm.Slot) *window { return h.s.x11Slots[slot] }
 
 func (h hostImpl) Created(slot xwm.Slot, xid uint32) domain.WindowID {
 	s := h.s
-	w := &window{id: s.nextWindow}
+	w := &window{id: s.nextWindow, life: s.xwayland.life}
 	w.x11 = &x11Window{server: s, slot: slot, xid: xid}
 	s.nextWindow++
 	s.windows[w.id] = w
@@ -261,7 +261,11 @@ func (h hostImpl) Dissociate(slot xwm.Slot, destroyed bool) {
 	if w == nil {
 		return
 	}
-	w.unmap()
+	if destroyed {
+		w.closeWindow()
+	} else {
+		w.unmap()
+	}
 	w.x11.drop()
 	w.x11.ready = false
 	if destroyed {

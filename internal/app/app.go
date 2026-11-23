@@ -18,6 +18,7 @@ import (
 	"github.com/bnema/neferwl/internal/core"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
+	"github.com/rs/zerolog"
 	"golang.org/x/sys/unix"
 )
 
@@ -248,17 +249,22 @@ func logConfigError(ctx context.Context, configLog zerowrap.Logger, err error) {
 	configLog.Warn().Err(err).Msg("config rejected")
 }
 
-// logInputTrace logs a bind dispatch or a seat input reset at debug level.
-// It carries the bind combo only, never typed text.
+// logInputTrace logs a bind dispatch or a seat input reset. Notable bind
+// dispatches (ones that change windows or layout) log at info, the rest at
+// debug. It carries the bind combo only, never typed text.
 func logInputTrace(log zerowrap.Logger, t domain.InputTrace) {
-	ev := log.Debug()
+	level := zerolog.DebugLevel
+	if b, ok := t.(domain.BindDispatched); ok && b.Notable {
+		level = zerolog.InfoLevel
+	}
+	ev := log.WithLevel(level)
 	if !ev.Enabled() {
 		return
 	}
 	switch v := t.(type) {
 	case domain.BindDispatched:
 		ev.Str("combo", v.Combo).Str("action", v.Action).Str("output", v.Output).Str("output_after", v.OutputAfter).
-			Int("workspace_before", v.WorkspaceBefore).Int("workspace_after", v.WorkspaceAfter).Str("source", string(v.Source)).Msg("bind dispatched")
+			Int("workspace_before", v.WorkspaceBefore).Int("workspace_after", v.WorkspaceAfter).Str("source", string(v.Source)).Uint64("window", uint64(v.Window)).Msg("bind dispatched")
 	case domain.SeatInputReset:
 		ev.Int("keys", v.Keys).Int("mods", v.Mods).Int("buttons", v.Buttons).Msg("seat input reset")
 	}

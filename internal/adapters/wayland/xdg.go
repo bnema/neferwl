@@ -147,6 +147,10 @@ type window struct {
 	x11          *x11Window
 	appID, title string
 	mapped       bool
+	// closed is set once the window is being destroyed (closeWindow);
+	// life marks its client's teardown (client_disconnected).
+	closed bool
+	life   *clientLife
 	// initialFullscreen keeps the last request until the first map.
 	initialFullscreen bool
 	// gen counts the mappings: an unmap and a remap is a new toplevel to
@@ -220,6 +224,9 @@ func (w *window) unmap() {
 		return
 	}
 	w.mapped = false
+	if w.popup == nil && !w.closed {
+		s.log.Info().Uint64("id", uint64(w.id)).Str("app_id", w.appID).Msg("window unmapped")
+	}
 	s.toplevelClosed(w.id)
 	if surf := w.surf(); surf != nil {
 		surf.resetInputEmission()
@@ -239,7 +246,7 @@ func (x *xdgSurface) GetToplevel(r *xdgshell.Surface, id uint32) {
 		r.PostError(uint32(xdgshell.SurfaceErrorAlreadyConstructed), "role object already constructed")
 		return
 	}
-	w := &window{id: x.server.nextWindow, xdg: x}
+	w := &window{id: x.server.nextWindow, xdg: x, life: x.server.clientLife(r.Client())}
 	t, err := xdgshell.NewToplevel(r.Client(), r.Version(), id, &top{w})
 	if err != nil {
 		return
@@ -250,7 +257,8 @@ func (x *xdgSurface) GetToplevel(r *xdgshell.Surface, id uint32) {
 	x.server.windows[w.id] = w
 	x.surface.role = func(buffer bool) {
 		if x.surface.destroyed {
-			w.unmap()
+			// The surface is gone for good: the window cannot map again.
+			w.closeWindow()
 			return
 		}
 		if !buffer && !w.mapped && !x.configured {
@@ -298,7 +306,7 @@ func (x *xdgSurface) GetToplevel(r *xdgshell.Surface, id uint32) {
 		}
 	}
 	t.OnDestroy = func() {
-		w.unmap()
+		w.closeWindow()
 		if w.gen > 0 {
 			x.server.emit(ports.WindowDestroyed{ID: w.id})
 		}
@@ -550,4 +558,47 @@ func (s *Server) outputSized(w, h int) bool {
 		}
 	}
 	return false
+}
+
+// Reasons of the "window closed" log.
+const (
+	closeClosed       = "closed"
+	closeDisconnected = "client_disconnected"
+)
+
+// clientLife marks a client whose teardown has started; its windows read
+// it through a pointer since the Client handle may be reused afterwards.
+// client_disconnected relies on libwayland's wl_client_destroy order:
+// Client.OnDestroy listeners run before the client's resources are
+// destroyed, so the mark is set when its windows are torn down.
+type clientLife struct{ gone bool }
+
+// clientLife returns the client's mark, registering one teardown
+// listener per client.
+func (s *Server) clientLife(c server.Client) *clientLife {
+	if l := s.clientLives[c]; l != nil {
+		return l
+	}
+	l := &clientLife{}
+	s.clientLives[c] = l
+	c.OnDestroy(func() {
+		l.gone = true
+		delete(s.clientLives, c)
+	})
+	return l
+}
+
+// closeWindow unmaps a toplevel that is being destroyed (its surface,
+// its role or its X11 window). The first call logs "window closed" once
+// for a window that was ever mapped; the unmap then logs nothing.
+func (w *window) closeWindow() {
+	if !w.closed && w.popup == nil && w.gen > 0 {
+		reason := closeClosed
+		if w.life != nil && w.life.gone {
+			reason = closeDisconnected
+		}
+		w.srv().log.Info().Uint64("id", uint64(w.id)).Str("app_id", w.appID).Str("reason", reason).Msg("window closed")
+	}
+	w.closed = true
+	w.unmap()
 }

@@ -114,6 +114,10 @@ type Channels struct {
 }
 
 type Server struct {
+	// clientLives holds the teardown mark of each client that owns a
+	// toplevel (xdg.go clientLife).
+	clientLives map[server.Client]*clientLife
+
 	processes          *peerexe.Processes
 	knownProc          map[domain.WindowID][]domain.ProcNode
 	x11Client          ports.X11Clients
@@ -456,6 +460,7 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 		s.peer = linuxPeerExe{}
 	}
 	s.sandboxed, s.securityStop = map[server.Client]*sandbox{}, -1
+	s.clientLives = map[server.Client]*clientLife{}
 	s.captureReplies = map[uint64]func(domain.CaptureDone){}
 	s.captureInflight = map[uint64]struct{}{}
 	s.outputReplies = map[uint64]*outputConfiguration{}

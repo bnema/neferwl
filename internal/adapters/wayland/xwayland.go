@@ -12,6 +12,8 @@ import (
 // xwaylandClient belongs to the display goroutine.
 type xwaylandClient struct {
 	client server.Client
+	// life is its teardown mark, shared by its X11 windows.
+	life *clientLife
 }
 
 // AttachXwayland transfers ownership of the Wayland descriptor to the display.
@@ -25,7 +27,10 @@ func (s *Server) AttachXwayland(wlFD int) {
 			return
 		}
 		s.forgetXwayland()
-		s.xwayland = xwaylandClient{client: c}
+		// The mark's listener is registered first: listeners run in
+		// registration order, so teardownXWM sees it set and the X11
+		// windows it closes report client_disconnected.
+		s.xwayland = xwaylandClient{client: c, life: s.clientLife(c)}
 		c.OnDestroy(func() {
 			if s.xwayland.client == c {
 				s.teardownXWM()

@@ -1,9 +1,11 @@
 package wayland
 
 import (
+	"bnema.dev/zerowrap"
 	"context"
 	"encoding/binary"
 	"fmt"
+	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/domain"
 	"net"
 	"os"
@@ -43,7 +45,13 @@ type x11Rig struct {
 
 func newX11Rig(t *testing.T) *x11Rig {
 	t.Helper()
-	s, events, commands, dir := lifecycleServer(t)
+	return newX11RigLog(t, logging.For(context.Background(), "wayland"))
+}
+
+// newX11RigLog is newX11Rig with the server logging to log.
+func newX11RigLog(t *testing.T, log zerowrap.Logger) *x11Rig {
+	t.Helper()
+	s, events, commands, dir := lifecycleServerLog(t, log)
 	r := &x11Rig{t: t, s: s, events: events, commands: commands, dir: dir}
 	wl := xwaylandPair(t)
 	s.AttachXwayland(wl[0])
