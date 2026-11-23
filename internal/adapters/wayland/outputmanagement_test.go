@@ -112,22 +112,15 @@ func recvManagement(t *testing.T, ch <-chan [2]uint32) [2]uint32 {
 		return [2]uint32{}
 	}
 }
+
+// waitManagementEvent dispatches wire events until the next management event
+// arrives. Apply replies may cross the forwarder goroutine before the display
+// sends them, so a fixed number of roundtrips is not a barrier.
 func waitManagementEvent(t *testing.T, c *wlturbo.Display, ch <-chan [2]uint32, want uint32) {
 	t.Helper()
-	for i := 0; i < 12; i++ {
-		if err := c.Roundtrip(); err != nil {
-			t.Fatal(err)
-		}
-		select {
-		case ev := <-ch:
-			if ev[0] != want {
-				t.Fatalf("event %v want %d", ev, want)
-			}
-			return
-		default:
-		}
+	if ev := recvWire(t, c, "management event", ch); ev[0] != want {
+		t.Fatalf("event %v want %d", ev, want)
 	}
-	t.Fatal("missing management event")
 }
 func TestOutputManagementStaleSerialAndLayout(t *testing.T) {
 	s, _, _, _, dir := outputTestServer(t)
