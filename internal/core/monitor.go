@@ -386,13 +386,28 @@ func (m *Monitor) MoveToWorkspace(i int, column bool) {
 	m.normalize()
 }
 
-// focusEntry selects the visible window nearest the edge entered from d.
-// Layout order breaks ties; an empty viewport keeps the focus where it is.
+// focusEntry selects the visible window nearest the edge entered from d,
+// or the selected window of a shown stash, unless a float over it has the
+// focus. Layout order breaks ties; an
+// empty viewport keeps the focus where it is.
 func (m *Monitor) focusEntry(d direction) {
 	if m.ov.open || m.switcherShown() {
 		return
 	}
 	w := m.Current()
+	if w.StashShown() {
+		// The columns behind a shown stash take no input: entry keeps the
+		// stash focused, on its selected window, or the float over it
+		// that has the focus.
+		if id, ok := w.Focused(); ok {
+			if _, _, float := w.FloatAt(id); float {
+				return
+			}
+		}
+		w.ShowStash()
+		w.FocusModal(0)
+		return
+	}
 	view := m.viewport()
 	var id WindowID
 	best := 0
