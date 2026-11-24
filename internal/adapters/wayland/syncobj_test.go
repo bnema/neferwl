@@ -144,6 +144,9 @@ func newSyncHarness(t *testing.T) *syncHarness {
 	if err := wireRequest(h.c, mgr, uint16(linuxdrmsyncobj.WpLinuxDrmSyncobjManagerV1RequestImportTimeline), []int{fd}, h.timeline); err != nil {
 		t.Fatal(err)
 	}
+	// The server binds the sync surface to its client on get_surface;
+	// tests read that state right after the harness returns.
+	roundtrip(t, h.c)
 	flushCommands(t, s, commands)
 	var out string
 	s.display.Do(func() { out = s.frameOutput(s.windows[w.ID].xdg.surface) })
