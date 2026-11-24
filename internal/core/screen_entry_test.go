@@ -260,3 +260,68 @@ func TestCrossScreenFocusEntrySkipsDemotedFloat(t *testing.T) {
 
 	})
 }
+
+// Entering a screen whose stash shows keeps the stash focused, on its
+// selected window, also over a fullscreen cover; a focused float over the
+// stash keeps the focus. The columns behind the stash take no input.
+func TestCrossScreenFocusEntryKeepsShownStash(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		setup func(t *testing.T, c *Core, w *Workspace)
+		want  WindowID
+	}{
+		{"stash", nil, 7},
+		{"over cover", func(t *testing.T, c *Core, w *Workspace) {
+			w.FocusID(4)
+			c.screens[1].mon.ToggleFullscreen()
+			w.ToggleStashVisible() // the stash shows over the cover
+			if w.Cover() != 4 || !w.StashShown() {
+				t.Fatalf("setup: cover %d shown %v", w.Cover(), w.StashShown())
+			}
+		}, 7},
+		{"float", func(t *testing.T, c *Core, w *Workspace) {
+			addFreeFloat(t, w, 8, .1, .5)
+			w.FocusID(8)
+		}, 8},
+	} {
+		for _, edge := range []bool{false, true} {
+			t.Run(tc.name+map[bool]string{false: "/monitor", true: "/edge"}[edge], func(t *testing.T) {
+				synctest.Test(t, func(t *testing.T) {
+					c, clock := flashCore(t)
+					c.addScreen(domain.OutputInfo{Name: "B", Width: 400, Height: 300})
+					b := c.screens[1]
+					b.x = 300
+					w := b.mon.Current()
+					for id := WindowID(4); id <= 8; id++ {
+						c.windows.mapped(ports.WindowMapped{ID: id}, clock.now)
+						if id < 8 {
+							b.mon.AddWindow(id)
+						}
+					}
+					w.FocusID(6)
+					w.ToggleWindowStash()
+					w.FocusID(7)
+					w.ToggleWindowStash() // stash [6 7], 7 selected and shown
+					if tc.setup != nil {
+						tc.setup(t, c, w)
+					}
+					if !w.StashShown() {
+						t.Fatal("setup: stash not shown")
+					}
+					c.focusScreen = 0
+					if edge {
+						if !c.edgeFocus(layout.Horizontal, 1, dirRight) {
+							t.Fatal("did not cross")
+						}
+					} else {
+						c.applyAction(ActionFocusMonitorRight)
+					}
+					id, _ := b.mon.Focused()
+					if c.cur() != b || id != tc.want || !w.StashShown() {
+						t.Fatalf("screen %s focus %d shown %v, want %d", c.cur().name(), id, w.StashShown(), tc.want)
+					}
+				})
+			})
+		}
+	}
+}
