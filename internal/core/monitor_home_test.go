@@ -249,6 +249,20 @@ func TestStrandedClearedWhenHomeReturnsFirst(t *testing.T) {
 	})
 }
 
+// focusAndWindow reads the focused output and window id's output from one
+// state snapshot.
+func focusAndWindow(t *testing.T, r *multiRig, id domain.WindowID) (string, string) {
+	t.Helper()
+	st := stateAfter(t, r.state, func(domain.State) bool { return true })
+	for _, w := range st.Windows {
+		if w.ID == id {
+			return st.Output, w.Output
+		}
+	}
+	t.Fatalf("window %d not in state", id)
+	return "", ""
+}
+
 // windowOutput is the output holding window id in the latest state.
 func windowOutput(t *testing.T, r *multiRig, id domain.WindowID) string {
 	t.Helper()
@@ -312,6 +326,29 @@ func TestMovedWorkspaceRemembersItsTwin(t *testing.T) {
 		receive(t, r.scenes)
 		if got := shown(r.plug(t, t2)); !slices.Equal(got["DP-2"], []domain.WindowID{2}) {
 			t.Fatalf("t2 back: %v", got)
+		}
+	})
+}
+
+// A stranded workspace whose home reconnects powered off waits on the
+// laptop, with the focus; it returns with the focus once the home is on.
+func TestStrandedWaitsForPoweredOffHome(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := startMulti(t, nil, extA)
+		r.mapWindow(t, 2)
+		r.client <- ports.OutputPower{Output: "DP-5", On: false}
+		receive(t, r.scenes)
+		r.output <- ports.OutputRemoved{Name: "DP-5"} // unplugged while off
+		receive(t, r.scenes)
+		r.plug(t, laptop)
+		r.plug(t, extA) // reconnects off: it slept
+		if focus, out := focusAndWindow(t, r, 2); focus != "eDP-1" || out != "eDP-1" {
+			t.Fatalf("home off: focus %q window on %q, want eDP-1", focus, out)
+		}
+		r.client <- ports.OutputPower{Output: "DP-5", On: true}
+		receive(t, r.scenes)
+		if focus, out := focusAndWindow(t, r, 2); focus != "DP-5" || out != "DP-5" {
+			t.Fatalf("power on: focus %q window on %q, want DP-5", focus, out)
 		}
 	})
 }

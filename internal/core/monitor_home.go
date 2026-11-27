@@ -117,27 +117,48 @@ func (c *Core) homeIndex(w *Workspace) (*screen, int) {
 }
 
 // arrive records that w reached its home s through Homes[idx]: that ref
-// takes s's current identity, so the connector fallback follows a monitor
-// replugged elsewhere. idx < 0 means HomeSpec matched: the config home is
-// reached and cleared, until named() sets it again. HomePos is consumed.
+// follows s (refreshHome). idx < 0 means HomeSpec matched: the config home is
+// authoritative, so it stays and older learned homes are dropped. HomePos is
+// consumed.
 func arrive(w *Workspace, s *screen, idx int) {
 	if idx < 0 {
-		w.HomeSpec = ""
+		w.Homes = nil
 	} else {
-		ref := s.info.Ref()
-		w.Homes[idx] = ref
-		// Keep Homes deduplicated: drop other entries now naming the same.
-		kept := w.Homes[:0]
-		for i, h := range w.Homes {
-			if i == idx || h.Connector != ref.Connector || h.EDIDID != ref.EDIDID {
-				kept = append(kept, h)
-			}
-		}
-		clear(w.Homes[len(kept):])
-		w.Homes = kept
+		refreshHome(w, idx, s)
 	}
 	w.HomePos = 0
 	w.Stranded = false
+}
+
+// refreshHome makes Homes[idx], which resolved to s, follow s: it takes s's
+// connector, so the connector fallback finds the monitor where it is now,
+// and s's EDID identity when s has one. An unreadable EDID keeps the stored
+// identity, so another known monitor on that connector never takes the home.
+// It does not allocate.
+func refreshHome(w *Workspace, idx int, s *screen) {
+	ref := w.Homes[idx]
+	ref.Connector = s.name()
+	if s.info.EDIDID != "" {
+		ref.EDIDID, ref.EDIDHash = s.info.EDIDID, s.info.EDIDHash
+	}
+	if ref == w.Homes[idx] {
+		return
+	}
+	w.Homes[idx] = ref
+	// Keep Homes deduplicated: drop other entries now naming the same.
+	kept := w.Homes[:0]
+	for i, h := range w.Homes {
+		if i == idx || h.Connector != ref.Connector || h.EDIDID != ref.EDIDID {
+			kept = append(kept, h)
+		}
+	}
+	clear(w.Homes[len(kept):])
+	w.Homes = kept
+}
+
+// forgetHome drops w's learned homes: it belongs where it is.
+func forgetHome(w *Workspace) {
+	w.Homes, w.HomePos, w.Stranded = nil, 0, false
 }
 
 // strand tags w, kept by the placeholder when the physical last output gone
@@ -149,18 +170,6 @@ func strand(w *Workspace, gone *screen, pos int) {
 	}
 	tagHome(w, gone, pos)
 	w.Stranded = true
-}
-
-// unstrandAtHome clears Stranded on workspaces already held by their home:
-// the first screen back was the home itself.
-func (c *Core) unstrandAtHome() {
-	for _, s := range c.screens {
-		for w := range s.mon.all() {
-			if w.Stranded && c.homeOf(w) == s {
-				w.Stranded = false
-			}
-		}
-	}
 }
 
 // tagHome remembers the physical screen gone as home of w, at pos, unless w

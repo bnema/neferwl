@@ -84,6 +84,10 @@ func (c *Core) clientEvent(ctx context.Context, ev ports.ClientEvent) (publish, 
 	case ports.OutputPower:
 		if i := c.screenIndex(v.Output); i >= 0 && c.screens[i].off == v.On {
 			c.screens[i].off = !v.On
+			// A stranded workspace waited for this home to power on.
+			if v.On && c.workspaceVisible(ctx, false) != nil {
+				return false, true
+			}
 		}
 	case ports.IdleInhibit:
 		c.windows.setIdleInhibit(v.Window, v.Active)

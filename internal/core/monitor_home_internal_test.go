@@ -261,6 +261,192 @@ func info(name, id string) domain.OutputInfo {
 	return domain.OutputInfo{Name: name, EDIDID: id, Width: 300, Height: 200}
 }
 
+// C1: a stranded workspace that became empty and unnamed is not settled:
+// normalize would drop it, leaving a detached workspace shown on its home.
+func TestSettleSkipsEmptiedStrandedWorkspace(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ext := info("DP-5", "bb01")
+		c := homeCore(t, ext)
+		w := c.cur().mon.Current()
+		w.AddWindow(1)
+		c.removeScreen("DP-5")
+		c.addScreen(info("eDP-1", "aa01"))
+		laptop := c.screens[c.screenIndex("eDP-1")]
+		if laptop.mon.Current() != w || !w.Stranded {
+			t.Fatal("setup: stranded workspace not shown on the laptop")
+		}
+		w.RemoveWindow(1)
+		c.addScreen(ext)
+		c.settleGuests()
+		for _, s := range c.screens {
+			if cur := s.mon.Current(); !s.mon.has(cur) {
+				t.Fatalf("%s shows a detached workspace", s.name())
+			}
+		}
+		if len(w.Homes) != 0 || w.Stranded || w.HomePos != 0 {
+			t.Fatalf("emptied workspace kept homes %v stranded %t pos %d", w.Homes, w.Stranded, w.HomePos)
+		}
+	})
+}
+
+// C1: show never puts a workspace the monitor does not hold on screen.
+func TestShowIgnoresForeignWorkspace(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		c := homeCore(t, info("DP-1", ""))
+		m := c.cur().mon
+		before := m.Current()
+		m.show(workspace())
+		if m.Current() != before {
+			t.Fatal("foreign workspace shown")
+		}
+	})
+}
+
+// C2: a last-output unplug keeps the order of the external's workspaces,
+// including one moved there explicitly (a learned home).
+func TestLastOutputUnplugKeepsWorkspaceOrder(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		laptop, ext := info("eDP-1", "aa01"), info("DP-5", "bb01")
+		c := homeCore(t, laptop, ext)
+		lap, out := c.screens[c.screenIndex("eDP-1")], c.screens[c.screenIndex("DP-5")]
+		native := out.mon.Current()
+		native.AddWindow(1)
+		out.mon.normalize()
+		c.focusScreen = c.screenIndex("eDP-1")
+		moved := lap.mon.Current()
+		moved.AddWindow(2)
+		lap.mon.normalize()
+		c.moveWorkspace(dirRight)
+		if idx := indexOf(out.mon.Workspaces, moved); idx != 1 || indexOf(out.mon.Workspaces, native) != 0 {
+			t.Fatalf("setup: order %d %d", indexOf(out.mon.Workspaces, native), idx)
+		}
+		c.removeScreen("eDP-1") // lid closed
+		c.removeScreen("DP-5")  // last output
+		c.addScreen(laptop)
+		c.settleGuests()
+		c.addScreen(ext)
+		c.settleGuests()
+		out = c.screens[c.screenIndex("DP-5")]
+		if indexOf(out.mon.Workspaces, native) != 0 || indexOf(out.mon.Workspaces, moved) != 1 {
+			t.Fatalf("order after return: native %d moved %d", indexOf(out.mon.Workspaces, native), indexOf(out.mon.Workspaces, moved))
+		}
+	})
+}
+
+// C3: a known monitor back on its connector with an unreadable EDID keeps
+// the ref's identity, so another known monitor there later takes nothing.
+func TestUnreadableReplugKeepsIdentity(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ext := info("DP-5", "bb01")
+		c := homeCore(t, info("eDP-1", "aa01"), ext)
+		c.focusScreen = c.screenIndex("DP-5")
+		w := c.cur().mon.Current()
+		w.AddWindow(1)
+		c.focusScreen = c.screenIndex("eDP-1")
+		c.removeScreen("DP-5")
+		c.addScreen(info("DP-5", ""))
+		c.settleGuests()
+		if s, _ := c.screenOf(1); s.name() != "DP-5" {
+			t.Fatalf("not home: %s", s.name())
+		}
+		if want := (domain.MonitorRef{Connector: "DP-5", EDIDID: "bb01"}); len(w.Homes) != 1 || w.Homes[0] != want {
+			t.Fatalf("homes %v, want [%v]", w.Homes, want)
+		}
+		c.removeScreen("DP-5")
+		c.addScreen(info("DP-5", "cc01"))
+		c.settleGuests()
+		if s, _ := c.screenOf(1); s.name() != "eDP-1" {
+			t.Fatalf("another monitor took it: %s", s.name())
+		}
+	})
+}
+
+// C3: the first output back is the home itself, on a new connector: the
+// ref follows it, so a later unreadable replug there finds it.
+func TestStrandedAtHomeRefreshesConnector(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		c := homeCore(t, info("DP-5", "bb01"))
+		w := c.cur().mon.Current()
+		w.AddWindow(1)
+		c.removeScreen("DP-5")
+		c.addScreen(info("DP-7", "bb01"))
+		c.settleGuests()
+		if len(w.Homes) != 1 || w.Homes[0].Connector != "DP-7" || w.Stranded {
+			t.Fatalf("homes %v stranded %t", w.Homes, w.Stranded)
+		}
+		c.addScreen(info("eDP-1", "aa01"))
+		c.focusScreen = c.screenIndex("eDP-1")
+		c.removeScreen("DP-7")
+		c.addScreen(info("DP-7", ""))
+		c.settleGuests()
+		if s, _ := c.screenOf(1); s.name() != "DP-7" {
+			t.Fatalf("unreadable replug on DP-7: window on %s", s.name())
+		}
+	})
+}
+
+// C4: arriving at a configured home keeps the config authoritative: an
+// older learned home never wins over workspace.<name>.monitor afterwards.
+func TestConfiguredHomeStaysAuthoritative(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		c := homeCore(t, info("eDP-1", "aa01"), info("DP-5", "bb01"))
+		w := workspace()
+		w.Name = "web"
+		w.AddWindow(1)
+		c.screens[c.screenIndex("eDP-1")].mon.adopt(w, true, 0)
+		w.Homes = []domain.MonitorRef{{Connector: "eDP-1", EDIDID: "aa01"}}
+		w.HomeSpec = "DP-5"
+		c.settleGuests()
+		if s, _ := c.screenOf(1); s.name() != "DP-5" {
+			t.Fatalf("not on its configured home: %s", s.name())
+		}
+		if w.HomeSpec != "DP-5" || len(w.Homes) != 0 {
+			t.Fatalf("spec %q homes %v", w.HomeSpec, w.Homes)
+		}
+		c.settleGuests()
+		if s, _ := c.screenOf(1); s.name() != "DP-5" {
+			t.Fatalf("learned home won: %s", s.name())
+		}
+	})
+}
+
+// C4: another monitor showing up on the connector of a named workspace's
+// configured home makes it a guest again, so it reaches its monitor later.
+func TestKeyChangeReappliesNamedHomes(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		var cfg domain.Config
+		cfg.Keyboard.CmdKey = "alt"
+		cfg.Layout.MaxColumns = 2
+		cfg.Workspaces = []domain.WorkspaceConfig{{Name: "web", Monitor: "Acme X 1"}}
+		c, err := New(cfg, Channels{Scenes: make(chan []domain.Scene, 1)}, testOptions(t, Options{}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		acme := domain.OutputInfo{Name: "DP-2", Make: "Acme", Model: "X", Serial: "1", Width: 300, Height: 200}
+		c.addScreen(acme) // web is created on its home: no HomeSpec
+		c.addScreen(domain.OutputInfo{Name: "DP-1", Width: 300, Height: 200})
+		s, w := c.byName("web")
+		if s.name() != "DP-2" || w.HomeSpec != "" {
+			t.Fatalf("web on %s spec %q", s.name(), w.HomeSpec)
+		}
+		w.AddWindow(1)
+		c.addScreen(domain.OutputInfo{Name: "DP-2", Make: "Other", Model: "Y", Serial: "2", Width: 300, Height: 200})
+		if w.HomeSpec != "Acme X 1" {
+			t.Fatalf("spec %q after another monitor took DP-2", w.HomeSpec)
+		}
+		// The user leaves web (not on screen): it may go home.
+		if s, _ := c.byName("web"); s.mon.Current() == w {
+			s.mon.Focus(len(s.mon.Workspaces) - 1)
+		}
+		acme.Name = "DP-3"
+		c.addScreen(acme)
+		c.settleGuests()
+		if s, _ := c.byName("web"); s.name() != "DP-3" {
+			t.Fatalf("web on %s, want DP-3", s.name())
+		}
+	})
+}
+
 // C5: output scope, the last physical output leaves with its stash; it
 // returns with that output whether another one or itself comes first.
 func TestLastOutputStashReturns(t *testing.T) {
@@ -325,6 +511,31 @@ func TestReturnedStashFullscreenCoversLendee(t *testing.T) {
 		}
 		if w.Fullscreen != 5 {
 			t.Fatalf("lendee fullscreen %d, want 5", w.Fullscreen)
+		}
+	})
+}
+
+// C8: a settle that moves nothing does not allocate, with several homes
+// resolved across three screens.
+func TestSettleGuestsNoMoveDoesNotAllocate(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		c := homeCore(t, info("eDP-1", "aa01"), info("DP-1", "dd01"), info("DP-2", "ee01"))
+		for i, s := range c.screens {
+			w := s.mon.Current()
+			w.AddWindow(WindowID(i + 1))
+			w.Homes = []domain.MonitorRef{{Connector: "DP-9", EDIDID: "zz"}, s.info.Ref()}
+			s.mon.normalize()
+		}
+		// A guest the user looks at stays: still no move.
+		g := c.screens[0].mon.Current()
+		g.Homes = []domain.MonitorRef{c.screens[1].info.Ref()}
+		c.settleGuests()
+		allocs := testing.AllocsPerRun(100, c.settleGuests)
+		if allocs != 0 {
+			t.Fatalf("settleGuests allocates %v times", allocs)
+		}
+		if s, _ := c.screenOf(1); s != c.screens[0] {
+			t.Fatal("shown guest moved")
 		}
 	})
 }

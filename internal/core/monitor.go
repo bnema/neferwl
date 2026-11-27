@@ -250,6 +250,11 @@ func (m *Monitor) show(w *Workspace) {
 		m.Focus(i)
 		return
 	}
+	if indexOf(m.hidden, w) < 0 {
+		// Not this monitor's (normalize may have dropped it): showing it
+		// would leave a detached workspace on screen.
+		return
+	}
 	m.stopSwitch()
 	m.shown = w
 	m.normalize()
