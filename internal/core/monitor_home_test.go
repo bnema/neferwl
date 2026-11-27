@@ -152,3 +152,101 @@ func TestArrivalRefreshesHomeConnector(t *testing.T) {
 		})
 	}
 }
+
+// lidClosed runs with the external only: tile 2 with 3 in its hidden stash,
+// then unplugs it, so the placeholder keeps the workspace stranded.
+func lidClosed(t *testing.T) *multiRig {
+	t.Helper()
+	r := startMulti(t, nil, extA)
+	r.mapWindow(t, 2)
+	r.mapWindow(t, 3)
+	r.key(t, "s", domain.ModAlt|domain.ModShift)
+	if got := shown(r.key(t, "s", domain.ModAlt)); !slices.Equal(got["DP-5"], []domain.WindowID{2}) {
+		t.Fatalf("setup: %v", got)
+	}
+	r.output <- ports.OutputRemoved{Name: "DP-5"}
+	receive(t, r.scenes)
+	return r
+}
+
+func stateOutput(t *testing.T, r *multiRig) string {
+	t.Helper()
+	return stateAfter(t, r.state, func(domain.State) bool { return true }).Output
+}
+
+// Lid closed on the external, unplug it, open the lid, replug the external:
+// the stranded workspace returns to it although shown on the laptop, and the
+// focus follows (AC3).
+func TestStrandedWorkspaceReturnsWithFocus(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := lidClosed(t)
+		if got := shown(r.plug(t, laptop)); !slices.Equal(got["eDP-1"], []domain.WindowID{2}) {
+			t.Fatalf("lid open: %v", got)
+		}
+		got := shown(r.plug(t, extA))
+		if !slices.Equal(got["DP-5"], []domain.WindowID{2}) || len(got["eDP-1"]) != 0 {
+			t.Fatalf("replug: %v", got)
+		}
+		if out := stateOutput(t, r); out != "DP-5" {
+			t.Fatalf("focused %q, want DP-5", out)
+		}
+		if got := shown(r.mapWindow(t, 4)); !slices.Contains(got["DP-5"], 4) {
+			t.Fatalf("new window not on DP-5: %v", got)
+		}
+		if got := shown(r.key(t, "s", domain.ModAlt)); !slices.Contains(got["DP-5"], 3) || slices.Contains(got["eDP-1"], 3) {
+			t.Fatalf("stash: %v", got)
+		}
+	})
+}
+
+// A workspace made on the laptop after the lid opened belongs there.
+func TestStrandedReturnKeepsNativeLaptopWorkspace(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := lidClosed(t)
+		r.plug(t, laptop)
+		r.key2(t)
+		if got := shown(r.mapWindow(t, 4)); !slices.Equal(got["eDP-1"], []domain.WindowID{4}) {
+			t.Fatalf("laptop: %v", got)
+		}
+		got := shown(r.plug(t, extA))
+		if !slices.Equal(got["eDP-1"], []domain.WindowID{4}) || !slices.Equal(got["DP-5"], []domain.WindowID{2}) {
+			t.Fatalf("replug: %v", got)
+		}
+		if out := stateOutput(t, r); out != "eDP-1" {
+			t.Fatalf("focused %q, want eDP-1", out)
+		}
+	})
+}
+
+// The external comes back first: the workspace is home, no longer stranded.
+// A later ordinary unplug leaves a shown guest on the laptop until the user
+// leaves it (AC5).
+func TestStrandedClearedWhenHomeReturnsFirst(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := lidClosed(t)
+		if got := shown(r.plug(t, extA)); !slices.Equal(got["DP-5"], []domain.WindowID{2}) {
+			t.Fatalf("home first: %v", got)
+		}
+		r.plug(t, laptop) // placed right of the external, plugged first
+		r.key(t, "Right", domain.ModAlt|domain.ModCtrl)
+		if out := stateOutput(t, r); out != "eDP-1" {
+			t.Fatalf("focused %q, want eDP-1", out)
+		}
+		r.output <- ports.OutputRemoved{Name: "DP-5"}
+		receive(t, r.scenes)
+		// The laptop's only workspace was empty: the guest is workspace 1.
+		r.input <- ports.KeyEvent{Keysym: "1", Keycode: 2, Mods: domain.ModAlt, Pressed: true}
+		got := shown(receive(t, r.scenes))
+		r.input <- ports.KeyEvent{Keysym: "1", Keycode: 2, Mods: domain.ModAlt}
+		if !slices.Equal(got["eDP-1"], []domain.WindowID{2}) {
+			t.Fatalf("guest shown: %v", got)
+		}
+		got = shown(r.plug(t, extA))
+		if !slices.Equal(got["eDP-1"], []domain.WindowID{2}) || len(got["DP-5"]) != 0 {
+			t.Fatalf("shown guest moved: %v", got)
+		}
+		if got := shown(r.key2(t)); !slices.Equal(got["DP-5"], []domain.WindowID{2}) || slices.Contains(got["eDP-1"], 2) {
+			t.Fatalf("left guest: %v", got)
+		}
+	})
+}

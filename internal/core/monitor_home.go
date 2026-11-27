@@ -137,6 +137,30 @@ func arrive(w *Workspace, s *screen, idx int) {
 		w.Homes = kept
 	}
 	w.HomePos = 0
+	w.Stranded = false
+}
+
+// strand tags w, kept by the placeholder when the physical last output gone
+// left, as stranded: it returns home even from the screen. An unnamed empty
+// workspace is skipped.
+func strand(w *Workspace, gone *screen, pos int) {
+	if w.Empty() && w.Name == "" {
+		return
+	}
+	tagHome(w, gone, pos)
+	w.Stranded = true
+}
+
+// unstrandAtHome clears Stranded on workspaces already held by their home:
+// the first screen back was the home itself.
+func (c *Core) unstrandAtHome() {
+	for _, s := range c.screens {
+		for w := range s.mon.all() {
+			if w.Stranded && c.homeOf(w) == s {
+				w.Stranded = false
+			}
+		}
+	}
 }
 
 // tagHome remembers the physical screen gone as home of w, at pos, unless w

@@ -430,6 +430,16 @@ func (c *Core) removeScreen(name string) {
 		c.offGone[name] = true
 	}
 	if len(c.screens) == 1 {
+		// The placeholder keeps the workspaces of a physical last output:
+		// stranded, they return to it even when on screen (settleGuests).
+		if gone.info.Physical() {
+			for pos, w := range gone.mon.Workspaces {
+				strand(w, gone, pos)
+			}
+			for _, w := range gone.mon.hidden {
+				strand(w, gone, 0)
+			}
+		}
 		c.screens[0].info = domain.OutputInfo{}
 		c.screens[0].layers = nil
 		// The next output is a new one for wayland: it needs its routes sent.
@@ -487,6 +497,7 @@ func (c *Core) removeScreen(name string) {
 			continue
 		}
 		tagHome(w, gone, pos)
+		w.Stranded = false
 		host.mon.adopt(w, false, len(host.mon.Workspaces))
 	}
 	for _, w := range gone.mon.hidden {
@@ -495,6 +506,7 @@ func (c *Core) removeScreen(name string) {
 		} else {
 			tagHome(w, gone, 0)
 		}
+		w.Stranded = false
 		host.mon.adopt(w, true, 0)
 	}
 	c.order()
@@ -502,22 +514,29 @@ func (c *Core) removeScreen(name string) {
 
 // settleGuests returns guests to their connected home monitor, at their
 // original positions. A guest on screen stays until the user leaves it
-// (golden rule: automatic events never move the user).
+// (golden rule: automatic events never move the user), unless it is
+// stranded: kept by the placeholder when every output was gone, it never
+// chose its host. It is shown on its home, and the focus follows it.
 func (c *Core) settleGuests() {
+	c.unstrandAtHome()
 	for _, home := range c.screens {
 		type guest struct {
 			w, anchor *Workspace
 			host      *Monitor
 			hidden    bool
+			onScreen  bool
 		}
 		var list []guest
+		follow := false
 		for _, host := range c.screens {
 			if host == home {
 				continue
 			}
 			for w := range host.mon.all() {
-				if host.mon.Current() != w && c.homeOf(w) == home {
-					list = append(list, guest{w: w, anchor: w.OverviewAfter, host: host.mon, hidden: host.mon.isHidden(w)})
+				onScreen := host.mon.Current() == w
+				if (!onScreen || w.Stranded) && c.homeOf(w) == home {
+					list = append(list, guest{w: w, anchor: w.OverviewAfter, host: host.mon, hidden: host.mon.isHidden(w), onScreen: onScreen})
+					follow = follow || onScreen && host == c.cur()
 				}
 			}
 		}
@@ -535,10 +554,14 @@ func (c *Core) settleGuests() {
 			_, idx := c.homeIndex(g.w)
 			arrive(g.w, home, idx)
 			home.mon.adopt(g.w, g.hidden, homePos)
-			if idle && !g.hidden {
+			// A stranded workspace that was on screen stays on screen.
+			if g.onScreen || idle && !g.hidden {
 				home.mon.show(g.w)
 				idle = false
 			}
+		}
+		if follow {
+			c.focusScreen = slices.Index(c.screens, home)
 		}
 		for _, g := range list {
 			if g.hidden && indexOf(home.mon.Workspaces, g.anchor) >= 0 {

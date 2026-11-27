@@ -177,3 +177,50 @@ func TestResolveHomeDoesNotAllocate(t *testing.T) {
 		}
 	})
 }
+
+// The last physical output leaving strands its non-empty workspaces; the
+// flag clears once the home holds them again, and an ordinary unplug never
+// sets it.
+func TestStrandedFlagLifecycle(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ext := domain.OutputInfo{Name: "DP-5", EDIDID: "bb01", EDIDHash: "h1"}
+		c := homeCore(t, ext)
+		m := c.cur().mon
+		w := m.Current()
+		w.AddWindow(1)
+		c.removeScreen("DP-5")
+		if !w.Stranded || !slices.Equal(w.Homes, []domain.MonitorRef{ext.Ref()}) {
+			t.Fatalf("last output: stranded %t homes %v", w.Stranded, w.Homes)
+		}
+		for e := range m.all() {
+			if e != w && e.Stranded {
+				t.Fatal("empty workspace stranded")
+			}
+		}
+		ext.Width, ext.Height = 300, 200
+		c.addScreen(ext)
+		c.settleGuests()
+		if w.Stranded {
+			t.Fatal("still stranded on its home")
+		}
+		c.addScreen(domain.OutputInfo{Name: "eDP-1", Width: 300, Height: 200})
+		c.focusScreen = c.screenIndex("eDP-1")
+		c.removeScreen("DP-5")
+		if w.Stranded {
+			t.Fatal("ordinary unplug stranded")
+		}
+	})
+}
+
+// A virtual last output strands nothing.
+func TestVirtualLastOutputStrandsNothing(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		c := homeCore(t, domain.OutputInfo{Name: "HEADLESS-1", Virtual: true})
+		w := c.cur().mon.Current()
+		w.AddWindow(1)
+		c.removeScreen("HEADLESS-1")
+		if w.Stranded || len(w.Homes) != 0 {
+			t.Fatalf("stranded %t homes %v", w.Stranded, w.Homes)
+		}
+	})
+}
