@@ -12,7 +12,13 @@ type OutputInfo struct {
 	// Name is the connector (e.g. DP-2), matched against output.<name>.* config.
 	Name string
 	// Make, Model and Serial come from EDID; empty when unknown.
-	Make, Model, Serial  string
+	Make, Model, Serial string
+	// EDIDID is the lowercase hex of EDID base-block bytes 8..17 (vendor,
+	// product, numeric serial, week, year); empty without a valid EDID.
+	EDIDID string
+	// EDIDHash is the lowercase hex of the first 16 bytes of the full EDID's
+	// SHA-256; empty without a valid EDID.
+	EDIDHash             string
 	Width, Height        int
 	RefreshMilli         int
 	PhysicalW, PhysicalH int // millimetres
