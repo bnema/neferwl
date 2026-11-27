@@ -75,6 +75,15 @@ type Workspace struct {
 	Home string
 	// HomePos is the position to restore on the home monitor; core owns ordering.
 	HomePos int
+	// Homes are the monitors the workspace belongs to, most preferred first
+	// (at most 4); empty means the one it is on.
+	Homes []domain.MonitorRef
+	// HomeSpec is the workspace.<name>.monitor config string (key or
+	// connector); it wins over Homes.
+	HomeSpec string
+	// Stranded marks a workspace kept by the placeholder when the last
+	// output left.
+	Stranded bool
 	// TermAt is when core last spawned a terminal for this workspace.
 	TermAt time.Time
 	// colBuf, rowBuf and tileBuf are appendLayout's scratch (column rects,

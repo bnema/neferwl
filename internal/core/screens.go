@@ -339,6 +339,7 @@ func (c *Core) addScreen(info domain.OutputInfo) {
 	if i := c.screenIndex(info.Name); i >= 0 {
 		s := c.screens[i]
 		s.info = info
+		c.noteTwins(s)
 		if s.mon.Key != info.Key() {
 			// Another monitor on the same connector: key rules change.
 			s.mon.Key = info.Key()
@@ -358,6 +359,7 @@ func (c *Core) addScreen(info domain.OutputInfo) {
 		c.resetRoutes(s)
 		c.screens = append(c.screens, s)
 	}
+	c.noteTwins(s)
 	s.off = c.offGone[info.Name]
 	delete(c.offGone, info.Name)
 	s.mon.Name, s.mon.Key = info.Name, info.Key()
