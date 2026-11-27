@@ -323,9 +323,9 @@ output.DP-2.offset = 360    # DP-2 starts 360 px lower than DP-1
 
 ### Unplugging monitors
 
-- The workspaces of an unplugged monitor move to the focused one. They return when it is plugged in again, on any port: the monitor is recognized by its EDID.
-- A returning workspace you are looking at stays until you leave it. When every screen was off, it returns right away and the focus follows it.
-- Identical monitors without a serial are told apart by their port. If that fails, the workspace stays where it is until you move it with `move-workspace-to-monitor`, which it then remembers.
+- The workspaces of an unplugged monitor move to the focused one. They return when it is plugged in again: on any port when its EDID identifies it unambiguously, on the same port when its EDID cannot be read.
+- A returning workspace you are looking at stays until you leave it. When every screen was off, it returns right away and the focus follows it, once that monitor is on.
+- Identical monitors (same EDID identity) are told apart by their port. If that fails, the workspace stays where it is until you move it with `move-workspace-to-monitor-left`, `-right`, `-up` or `-down`, which it then remembers.
 - These homes last for the session.
 
 ## GPUs

@@ -21,7 +21,7 @@ is sent. Open several connections for concurrent requests.
 
 ```json
 {"id":1,"op":"hello"}
-{"id":1,"ok":true,"v":1,"caps":["read","act","input","capture","admin"],"commands":[{"name":"output-add","arg":"MODE","kind":"admin","caps":["admin"],"summary":"Add a runtime virtual output."},...]}
+{"id":1,"ok":true,"v":1,"caps":["read","act","input","capture","admin"],"commands":[{"name":"output-add","arg":"MODE","kind":"admin","caps":["admin"],"summary":"Add a runtime virtual output, optionally with an EDID identity."},...]}
 ```
 
 `commands` is the catalog: each entry has `name`, `arg`, `kind` (`action`,

@@ -13,8 +13,11 @@ type OutputInfo struct {
 	Name string
 	// Make, Model and Serial come from EDID; empty when unknown.
 	Make, Model, Serial string
-	// EDIDID is the lowercase hex of EDID base-block bytes 8..17 (vendor,
-	// product, numeric serial, week, year); empty without a valid EDID.
+	// EDIDID identifies the monitor across connectors; "" when unknown.
+	// From DRM it is the lowercase hex of EDID base-block bytes 8..17
+	// (vendor, product, numeric serial, week, year); the parser only checks
+	// the EDID header and a 128-byte minimum. On a runtime headless output it
+	// is an opaque token of [0-9a-zA-Z._-] (ValidEDIDID) given for tests.
 	EDIDID string
 	// EDIDHash is the lowercase hex of the first 16 bytes of the full EDID's
 	// SHA-256; empty without a valid EDID.
