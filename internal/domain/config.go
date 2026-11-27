@@ -54,6 +54,9 @@ type OutputConfig struct {
 	// KeepFocus keeps an X11 window of this output X11-active (input focus,
 	// _NET_ACTIVE_WINDOW) while a native window holds the keyboard elsewhere.
 	KeepFocus bool
+	// EDIDID gives a virtual output a monitor identity (OutputInfo.EDIDID).
+	// Runtime-only (output add --edid-id); never parsed from the config file.
+	EDIDID string
 }
 
 // OutputAnchor places an output against another connected one, named by To.

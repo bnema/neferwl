@@ -208,6 +208,10 @@ func (c *Core) returnStash(s *screen) {
 			continue
 		}
 		unlend(&o.mon.lendee)
-		o.mon.stash.TakeHome(&s.mon.stash, s.mon.matches)
+		moved := o.mon.stash.TakeHome(&s.mon.stash, func(r domain.MonitorRef) bool { return c.resolveHome(r) == s })
+		if l := s.mon.lendee; moved && l != nil {
+			// A returned pending fullscreen covers s's lendee, as on Lend.
+			l.Reattach()
+		}
 	}
 }

@@ -191,7 +191,10 @@ neferwl -s demo output rm side
 ```
 
 An added output lasts until `output rm` or the end of the session. The reply
-comes once the state lists or drops it.
+comes once the state lists or drops it. `--edid-id ID` gives the runtime
+output a monitor identity for tests: it is placed and focused like a physical
+monitor and its workspaces return to it on replug; it stays virtual for output
+management.
 
 ## Security
 

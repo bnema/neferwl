@@ -388,7 +388,7 @@ func (o *Output) Info() domain.OutputInfo {
 		}
 		return v
 	}
-	return domain.OutputInfo{Name: o.conn.name, Make: known(o.monitor.Make), Model: known(o.monitor.Model), Serial: o.monitor.Serial, Width: o.Width(), Height: o.Height(), RefreshMilli: o.mode.refreshMilli(), PhysicalW: o.conn.mmW, PhysicalH: o.conn.mmH}
+	return domain.OutputInfo{Name: o.conn.name, Make: known(o.monitor.Make), Model: known(o.monitor.Model), Serial: o.monitor.Serial, EDIDID: o.monitor.EDIDID, EDIDHash: o.monitor.EDIDHash, Width: o.Width(), Height: o.Height(), RefreshMilli: o.mode.refreshMilli(), PhysicalW: o.conn.mmW, PhysicalH: o.conn.mmH}
 }
 
 func (o *Output) Width() int  { return int(o.mode.HDisplay) }

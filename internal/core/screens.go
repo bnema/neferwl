@@ -1,6 +1,7 @@
 package core
 
 import (
+	"cmp"
 	"math"
 	"slices"
 
@@ -164,7 +165,7 @@ func (c *Core) order() {
 		if cfg, ok := c.outputConfig(s.name()); ok {
 			items[i].pos, items[i].anchor = cfg.Pos, cfg.Anchor
 		}
-		s.isolated = !c.opts.PlaceVirtuals && s.info.Virtual && items[i].pos == nil && items[i].anchor.Relation == domain.RelationNone
+		s.isolated = !c.opts.PlaceVirtuals && !s.info.Physical() && items[i].pos == nil && items[i].anchor.Relation == domain.RelationNone
 		items[i].isolated = s.isolated
 	}
 	for i, p := range placeOutputs(items) {
@@ -338,26 +339,41 @@ func (c *Core) applyOutputConfig() {
 func (c *Core) addScreen(info domain.OutputInfo) {
 	if i := c.screenIndex(info.Name); i >= 0 {
 		s := c.screens[i]
+		changed := s.info.Ref() != info.Ref()
 		s.info = info
-		if s.mon.Key != info.Key() {
+		c.noteTwins(s)
+		keyChanged := s.mon.Key != info.Key()
+		if keyChanged {
 			// Another monitor on the same connector: key rules change.
 			s.mon.Key = info.Key()
 			c.settings(s)
 		}
+		if changed {
+			// Another identity on the same connector: its stash windows
+			// may come back.
+			c.returnStash(s)
+		}
 		s.transform = c.configTransform(info.Name)
 		s.setScale(s.scale)
 		c.order()
+		if keyChanged {
+			// Named workspace homes match the key too.
+			c.named()
+		}
 		return
 	}
 	var s *screen
 	if len(c.screens) == 1 && c.screens[0].name() == "" {
 		s = c.screens[0]
 		s.info = info
+		// The home monitor came back first: its stash windows are home.
+		s.mon.stash.ClearHome(func(r domain.MonitorRef) bool { return c.resolveHome(r) == s })
 	} else {
 		s = &screen{info: info, mon: newMonitorWithIDs(info.Name, info.Key(), &c.nextWorkspaceID)}
 		c.resetRoutes(s)
 		c.screens = append(c.screens, s)
 	}
+	c.noteTwins(s)
 	s.off = c.offGone[info.Name]
 	delete(c.offGone, info.Name)
 	s.mon.Name, s.mon.Key = info.Name, info.Key()
@@ -399,11 +415,12 @@ func (c *Core) removeScreen(name string) {
 		return
 	}
 	gone := c.screens[i]
-	if gone.info.Virtual {
+	if !gone.info.Physical() {
 		for _, s := range c.screens {
 			for w := range s.mon.all() {
-				if s == gone || gone.mon.matches(w.Home) {
-					w.Home, w.HomePos = "", 0
+				if s == gone || c.homeOf(w) == gone {
+					forgetHome(w)
+					w.HomeSpec = ""
 				}
 			}
 		}
@@ -421,7 +438,28 @@ func (c *Core) removeScreen(name string) {
 		}
 		c.offGone[name] = true
 	}
+	// A workspace at home on gone returns to the same position; guests keep
+	// the position saved when they left their own home.
+	for pos, w := range gone.mon.Workspaces {
+		if len(w.Homes) > 0 && c.homeOf(w) == gone {
+			w.HomePos = pos
+		}
+	}
 	if len(c.screens) == 1 {
+		// The placeholder keeps the workspaces of a physical last output:
+		// stranded, they return to it even when on screen (settleGuests).
+		if gone.info.Physical() {
+			for pos, w := range gone.mon.Workspaces {
+				strand(w, gone, pos)
+			}
+			for _, w := range gone.mon.hidden {
+				strand(w, gone, 0)
+			}
+			if c.cfg.Stash.Scope == domain.StashScopeOutput {
+				// Its windows return with it, whichever output comes first.
+				gone.mon.stash.TagHome(gone.info.Ref())
+			}
+		}
 		c.screens[0].info = domain.OutputInfo{}
 		c.screens[0].layers = nil
 		// The next output is a new one for wayland: it needs its routes sent.
@@ -448,9 +486,9 @@ func (c *Core) removeScreen(name string) {
 	host := c.cur()
 	// The gone monitor's stash joins the host's; its lendee gives it back.
 	unlend(&gone.mon.lendee)
-	if c.cfg.Stash.Scope == domain.StashScopeOutput && !gone.info.Virtual {
+	if c.cfg.Stash.Scope == domain.StashScopeOutput && gone.info.Physical() {
 		// Its windows return with it (addScreen).
-		gone.mon.stash.TagHome(gone.info.Key())
+		gone.mon.stash.TagHome(gone.info.Ref())
 	}
 	host.mon.stash.Absorb(&gone.mon.stash, false)
 	if l := host.mon.lendee; l != nil {
@@ -465,24 +503,24 @@ func (c *Core) removeScreen(name string) {
 		if w.Empty() && w.Name == "" {
 			continue
 		}
-		switch {
-		case host.mon.matches(w.Home):
+		if home, idx := c.homeIndex(w); home == host {
 			// A guest from the host goes home.
-			w.Home = ""
-			host.mon.adopt(w, false, w.HomePos)
+			homePos := w.HomePos
+			arrive(w, host, idx)
+			host.mon.adopt(w, false, homePos)
 			continue
-		case w.Home == "" && !gone.info.Virtual:
-			w.Home, w.HomePos = gone.info.Key(), pos
 		}
+		tagHome(w, gone, pos)
+		w.Stranded = false
 		host.mon.adopt(w, false, len(host.mon.Workspaces))
 	}
 	for _, w := range gone.mon.hidden {
-		switch {
-		case host.mon.matches(w.Home):
-			w.Home = ""
-		case w.Home == "" && !gone.info.Virtual:
-			w.Home = gone.info.Key()
+		if home, idx := c.homeIndex(w); home == host {
+			arrive(w, host, idx)
+		} else {
+			tagHome(w, gone, 0)
 		}
+		w.Stranded = false
 		host.mon.adopt(w, true, 0)
 	}
 	c.order()
@@ -490,46 +528,118 @@ func (c *Core) removeScreen(name string) {
 
 // settleGuests returns guests to their connected home monitor, at their
 // original positions. A guest on screen stays until the user leaves it
-// (golden rule: automatic events never move the user).
+// (golden rule: automatic events never move the user), unless it is
+// stranded: kept by the placeholder when every output was gone, it never
+// chose its host. It is shown on its home, and the focus follows it, once
+// that home is on. Each workspace's home is resolved once; without a move it
+// does not allocate (it runs on every workspace switch).
 func (c *Core) settleGuests() {
-	for _, home := range c.screens {
-		type guest struct {
-			w, anchor *Workspace
-			host      *Monitor
-			hidden    bool
+	focused := c.cur()
+	moves := c.settleMoves[:0]
+	for _, host := range c.screens {
+		shown := host.mon.Current()
+		for _, w := range host.mon.Workspaces {
+			moves = c.settleCandidate(moves, host, w, false, w == shown)
 		}
-		var list []guest
-		for _, host := range c.screens {
-			if host == home {
-				continue
-			}
-			for w := range host.mon.all() {
-				if home.mon.matches(w.Home) && host.mon.Current() != w {
-					list = append(list, guest{w: w, anchor: w.OverviewAfter, host: host.mon, hidden: host.mon.isHidden(w)})
-				}
-			}
+		for _, w := range host.mon.hidden {
+			moves = c.settleCandidate(moves, host, w, true, w == shown)
 		}
-		// Snapshot every anchor before take normalizes a host and clears
-		// references to numbered workspaces returning alongside named rows.
-		for _, g := range list {
-			g.host.take(g.w)
+	}
+	// One bucket per home, in screen order; guests in HomePos order.
+	slices.SortStableFunc(moves, func(a, b guestMove) int { return cmp.Or(a.homeAt-b.homeAt, a.w.HomePos-b.w.HomePos) })
+	for start := 0; start < len(moves); {
+		end := start + 1
+		for end < len(moves) && moves[end].home == moves[start].home {
+			end++
 		}
-		slices.SortStableFunc(list, func(a, b guest) int { return a.w.HomePos - b.w.HomePos })
-		// A monitor showing an empty workspace (just plugged in) shows
-		// its first returning workspace instead.
-		idle := home.mon.Current().Empty() && home.mon.Current().Name == ""
-		for _, g := range list {
-			g.w.Home = ""
-			home.mon.adopt(g.w, g.hidden, g.w.HomePos)
-			if idle && !g.hidden {
-				home.mon.show(g.w)
-				idle = false
-			}
+		c.settleBucket(moves[start:end], focused)
+		start = end
+	}
+	clear(moves)
+	c.settleMoves = moves[:0]
+}
+
+// guestMove is one workspace settleGuests sends home: idx is its matched
+// Homes entry (-1 for HomeSpec), anchor its OverviewAfter before any take.
+type guestMove struct {
+	w, anchor        *Workspace
+	host, home       *screen
+	homeAt, idx      int
+	hidden, onScreen bool
+}
+
+// settleCandidate classifies w, held by host: an unnamed empty workspace
+// belongs nowhere (normalize may drop it); one at home is refreshed (no
+// longer stranded, its ref follows the screen); a guest is appended to moves
+// unless the user looks at it, or it is stranded and its home is off.
+func (c *Core) settleCandidate(moves []guestMove, host *screen, w *Workspace, hidden, onScreen bool) []guestMove {
+	if w.Empty() && w.Name == "" {
+		if len(w.Homes) > 0 || w.HomePos != 0 || w.Stranded {
+			forgetHome(w)
 		}
-		for _, g := range list {
-			if g.hidden && indexOf(home.mon.Workspaces, g.anchor) >= 0 {
-				g.w.OverviewAfter = g.anchor
-			}
+		return moves
+	}
+	if len(w.Homes) == 0 && w.HomeSpec == "" {
+		return moves
+	}
+	home, idx := c.homeIndex(w)
+	switch {
+	case home == nil:
+	case home == host:
+		w.Stranded = false
+		if idx >= 0 {
+			refreshHome(w, idx, host)
+		}
+	case onScreen && (!w.Stranded || home.off):
+	default:
+		moves = append(moves, guestMove{w: w, anchor: w.OverviewAfter, host: host, home: home, homeAt: slices.Index(c.screens, home), idx: idx, hidden: hidden, onScreen: onScreen})
+	}
+	return moves
+}
+
+// settleBucket moves the guests of one home there. A monitor showing an
+// empty workspace (just plugged in) shows its first returning workspace; a
+// stranded one that was on screen is shown, and takes the focus with it
+// when its host had it.
+func (c *Core) settleBucket(bucket []guestMove, focused *screen) {
+	home := bucket[0].home
+	// Every anchor was snapshot before take normalizes a host and clears
+	// references to numbered workspaces returning alongside named rows.
+	for _, g := range bucket {
+		g.host.mon.take(g.w)
+	}
+	idle := home.mon.Current().Empty() && home.mon.Current().Name == ""
+	// One workspace is shown: the one the focused host showed, else the
+	// first one shown elsewhere (bucket order), else, on an idle home, the
+	// first numbered one.
+	var show *Workspace
+	follow := false
+	for _, g := range bucket {
+		switch {
+		case !g.onScreen || follow:
+		case g.host == focused:
+			show, follow = g.w, true
+		case show == nil:
+			show = g.w
+		}
+	}
+	for _, g := range bucket {
+		homePos := g.w.HomePos
+		arrive(g.w, home, g.idx)
+		home.mon.adopt(g.w, g.hidden, homePos)
+		if show == nil && idle && !g.hidden {
+			show = g.w
+		}
+	}
+	if show != nil {
+		home.mon.show(show)
+	}
+	if follow {
+		c.focusScreen = slices.Index(c.screens, home)
+	}
+	for _, g := range bucket {
+		if g.hidden && indexOf(home.mon.Workspaces, g.anchor) >= 0 {
+			g.w.OverviewAfter = g.anchor
 		}
 	}
 }
@@ -563,9 +673,16 @@ func (c *Core) named() {
 	}
 	for _, spec := range c.specs {
 		s, w := c.byName(spec.Name)
-		w.Home = ""
-		if spec.Monitor != "" && !s.mon.matches(spec.Monitor) {
-			w.Home = spec.Monitor
+		switch {
+		case spec.Monitor == "":
+			w.HomeSpec = ""
+		case !s.mon.matches(spec.Monitor):
+			w.HomeSpec = spec.Monitor
+		case w.HomeSpec != "":
+			// Its holder is its configured home: it arrived in place, and the
+			// config stays authoritative over homes learned before.
+			w.HomeSpec = ""
+			forgetHome(w)
 		}
 	}
 }
@@ -599,12 +716,15 @@ func (c *Core) bringNamed(name string) bool {
 }
 
 // moveNamed moves the named workspace w from src to dst, without changing
-// what dst shows. home is its new w.home: a guest keeps waiting for its
-// home; any other forgets the output it was unplugged from.
+// what dst shows. home is its new w.HomeSpec: a guest keeps waiting for its
+// home; any other forgets the output it was unplugged from (Homes).
 func moveNamed(src, dst *screen, w *Workspace, home string) {
 	hidden := src.mon.isHidden(w)
 	src.mon.take(w)
-	w.Home = home
+	w.HomeSpec = home
+	if home == "" {
+		forgetHome(w)
+	}
 	dst.mon.adopt(w, hidden, len(dst.mon.Workspaces))
 }
 
@@ -717,8 +837,14 @@ func (c *Core) moveWorkspace(d direction) {
 	}
 	hidden := from.mon.isHidden(w)
 	from.mon.take(w)
-	w.Home = ""
 	dst := c.screens[to]
+	w.HomeSpec = ""
+	if dst.info.Physical() {
+		pushHome(w, dst.info.Ref())
+		w.Stranded = false
+	} else {
+		forgetHome(w)
+	}
 	dst.mon.adopt(w, hidden, len(dst.mon.Workspaces))
 	dst.mon.show(w)
 	c.focusScreen = to

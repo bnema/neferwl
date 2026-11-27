@@ -6,9 +6,10 @@ import (
 	"os"
 )
 
-var outputCmd = Command{Name: "output", Args: "add MODE [--name NAME] | rm NAME", Summary: "Manage runtime virtual outputs.", Setup: func(fs *flag.FlagSet) Runner {
+var outputCmd = Command{Name: "output", Args: "add MODE [--name NAME] [--edid-id ID] | rm NAME", Summary: "Manage runtime virtual outputs.", Setup: func(fs *flag.FlagSet) Runner {
 	target := addTargetFlag(fs)
 	name := fs.String("name", "", "Name for a new output.")
+	edidID := fs.String("edid-id", "", "Monitor identity for a new output: it behaves like a replugged physical monitor.")
 	return func(ctx context.Context, env Env, args []string) (runErr error) {
 		positional, err := injectArguments(fs, args)
 		if err != nil {
@@ -17,9 +18,17 @@ var outputCmd = Command{Name: "output", Args: "add MODE [--name NAME] | rm NAME"
 		if len(positional) != 2 || (positional[0] != "add" && positional[0] != "rm") {
 			return usagef("expected output add MODE or output rm NAME")
 		}
+		edidSet := false
+		fs.Visit(func(f *flag.Flag) { edidSet = edidSet || f.Name == "edid-id" })
 		req := map[string]any{}
 		if positional[0] == "add" {
 			req["op"], req["mode"], req["name"] = "output-add", positional[1], *name
+			if edidSet {
+				// Sent as given, even empty: the compositor validates it.
+				req["edid_id"] = *edidID
+			}
+		} else if edidSet {
+			return usagef("--edid-id applies to output add only")
 		} else {
 			req["op"], req["name"] = "output-rm", positional[1]
 		}

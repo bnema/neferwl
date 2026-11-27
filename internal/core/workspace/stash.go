@@ -127,7 +127,7 @@ func (w *Workspace) unstash(i int) {
 	f := w.st().entries[i]
 	w.RemoveWindow(f.ID)
 	if f.free {
-		f.home = ""
+		f.home = domain.MonitorRef{}
 		w.Floats = append(w.Floats, f)
 		w.floatFocus, w.st().focus = true, false
 		return
@@ -202,7 +202,7 @@ func (f Float) rehome() Float {
 	if f.back != nil {
 		back.cells = f.back.cells
 	}
-	f.back, f.origin, f.home = back, 0, ""
+	f.back, f.origin, f.home = back, 0, domain.MonitorRef{}
 	return f
 }
 

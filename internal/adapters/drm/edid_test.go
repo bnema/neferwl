@@ -1,6 +1,8 @@
 package drm
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"math"
 	"testing"
 )
@@ -80,5 +82,44 @@ func TestDetectHDR(t *testing.T) {
 				t.Fatalf("%+v", c)
 			}
 		})
+	}
+}
+
+// fingerprintEDID is capabilityEDID with base-block bytes 8..17 set and the
+// base checksum fixed.
+func fingerprintEDID(id [10]byte) []byte {
+	d := capabilityEDID(false, 0, 0)
+	copy(d[8:18], id[:])
+	var sum byte
+	for _, b := range d[:127] {
+		sum += b
+	}
+	d[127] = -sum
+	return d
+}
+
+func TestEDIDFingerprint(t *testing.T) {
+	id := [10]byte{0x10, 0xac, 0x34, 0x12, 0x01, 0x00, 0x00, 0x00, 0x05, 0x1e}
+	edid := fingerprintEDID(id)
+	a := parseEDID(edid)
+	if want := "10ac341201000000051e"; a.EDIDID != want {
+		t.Fatalf("EDIDID = %q, want %q", a.EDIDID, want)
+	}
+	sum := sha256.Sum256(edid)
+	if want := hex.EncodeToString(sum[:16]); a.EDIDHash != want {
+		t.Fatalf("EDIDHash = %q, want %q", a.EDIDHash, want)
+	}
+	id[4] = 0x02 // byte 12: numeric serial
+	b := parseEDID(fingerprintEDID(id))
+	if b.EDIDID == a.EDIDID || b.EDIDHash == a.EDIDHash {
+		t.Fatalf("serial change kept fingerprint: %q/%q vs %q/%q", a.EDIDID, a.EDIDHash, b.EDIDID, b.EDIDHash)
+	}
+	bad := fingerprintEDID(id)
+	bad[0] = 1
+	if m := parseEDID(bad); m.EDIDID != "" || m.EDIDHash != "" {
+		t.Fatalf("bad header fingerprint = %q/%q, want empty", m.EDIDID, m.EDIDHash)
+	}
+	if m := parseEDID(fingerprintEDID(id)[:127]); m.EDIDID != "" || m.EDIDHash != "" {
+		t.Fatalf("short EDID fingerprint = %q/%q, want empty", m.EDIDID, m.EDIDHash)
 	}
 }

@@ -12,19 +12,19 @@ func TestVirtualRemovalForgetsHomes(t *testing.T) {
 	host, gone := c.screens[0].mon, c.screens[1].mon
 	numbered := gone.Current()
 	numbered.AddWindow(1)
-	numbered.Home, numbered.HomePos = "other", 7
+	numbered.Homes, numbered.HomePos = []domain.MonitorRef{{Connector: "other"}}, 7
 	hidden := workspace()
 	hidden.Name = "hidden"
 	hidden.AddWindow(2)
 	gone.adopt(hidden, true, 0)
 	guest := workspace()
 	guest.AddWindow(3)
-	guest.Home, guest.HomePos = "tv", 5
+	guest.HomeSpec, guest.HomePos = "tv", 5
 	host.adopt(guest, false, len(host.Workspaces))
 	c.removeScreen("tv")
 	for _, w := range []*Workspace{numbered, hidden, guest} {
-		if w.Home != "" || w.HomePos != 0 {
-			t.Fatalf("home retained: %q %d", w.Home, w.HomePos)
+		if len(w.Homes) != 0 || w.HomeSpec != "" || w.HomePos != 0 {
+			t.Fatalf("home retained: %v %q %d", w.Homes, w.HomeSpec, w.HomePos)
 		}
 	}
 	if w, _ := host.find(1); w != numbered {
@@ -47,9 +47,9 @@ func TestLastVirtualRemovalClearsHome(t *testing.T) {
 	c.screens[0].info.Virtual = true
 	w := c.cur().mon.Current()
 	w.AddWindow(1)
-	w.Home, w.HomePos = "tv", 9
+	w.Homes, w.HomePos = []domain.MonitorRef{{Connector: "tv"}}, 9
 	c.removeScreen("tv")
-	if w.Home != "" || w.HomePos != 0 || c.cur().name() != "" || !w.Has(1) {
+	if len(w.Homes) != 0 || w.HomePos != 0 || c.cur().name() != "" || !w.Has(1) {
 		t.Fatal("placeholder did not retain window without home")
 	}
 }

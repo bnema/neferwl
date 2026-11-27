@@ -21,7 +21,7 @@ is sent. Open several connections for concurrent requests.
 
 ```json
 {"id":1,"op":"hello"}
-{"id":1,"ok":true,"v":1,"caps":["read","act","input","capture","admin"],"commands":[{"name":"output-add","arg":"MODE","kind":"admin","caps":["admin"],"summary":"Add a runtime virtual output."},...]}
+{"id":1,"ok":true,"v":1,"caps":["read","act","input","capture","admin"],"commands":[{"name":"output-add","arg":"MODE","kind":"admin","caps":["admin"],"summary":"Add a runtime virtual output, optionally with an EDID identity."},...]}
 ```
 
 `commands` is the catalog: each entry has `name`, `arg`, `kind` (`action`,
@@ -38,7 +38,7 @@ keep `v: 1`; clients ignore unknown fields.
 | `query` | `what`: `"state"` | `read` |
 | `shot` | `outputs`, `inline`, `raw`, `timeout` | `capture` |
 | `shot` (continuous) | `every_frame` or `stop`, `outputs`, `dir`, `raw` | `capture` |
-| `output-add` | `mode` (`WxH[@Hz]`), optional `name` | `admin` |
+| `output-add` | `mode` (`WxH[@Hz]`), optional `name` and `edid_id` (1–64 of `[0-9a-zA-Z._-]`) | `admin` |
 | `output-rm` | `name` | `admin` |
 
 Wait fields, on `do` and `inject`:

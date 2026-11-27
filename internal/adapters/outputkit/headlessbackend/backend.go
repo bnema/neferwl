@@ -123,7 +123,7 @@ func Run(ctx context.Context, o BackendOptions, apply *core.OutputApply, ch rout
 			if req.Remove {
 				err = apply.RuntimeRemove(runtimeID, name)
 			} else {
-				name, err = apply.RuntimeAdd(runtimeID, name, req.Mode)
+				name, err = apply.RuntimeAdd(runtimeID, name, req.Mode, req.EDIDID)
 			}
 			if err != nil {
 				select {

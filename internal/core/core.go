@@ -139,6 +139,11 @@ type Core struct {
 	// offGone names outputs unplugged while turned off: a display that
 	// reconnects from deep sleep comes back off, until the next input.
 	offGone        map[string]bool
+	// twins holds the EDID fingerprints two connected physical screens have
+	// shared this session (noteTwins); never cleared.
+	twins map[twinKey]bool
+	// settleMoves is settleGuests' scratch.
+	settleMoves []guestMove
 	binds          map[binding]Action
 	modes          map[string]map[binding]Action // bind tables of declared modes
 	mode           string                        // active bind mode, "" for default

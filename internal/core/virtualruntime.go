@@ -13,8 +13,9 @@ var ErrRuntimeOutputForbidden = errors.New("only runtime-added outputs can be re
 
 // RuntimeAdd starts the same backend transaction used for output configuration.
 // The caller obtains completion through ReplyOut using id. An empty name selects
-// the next free HEADLESS-n. Validation failures leave the desired set unchanged.
-func (a *OutputApply) RuntimeAdd(id uint64, name string, mode domain.OutputMode) (string, error) {
+// the next free HEADLESS-n. A non-empty edidID gives the output a monitor
+// identity. Validation failures leave the desired set unchanged.
+func (a *OutputApply) RuntimeAdd(id uint64, name string, mode domain.OutputMode, edidID string) (string, error) {
 	if a.running || a.pending {
 		return "", errors.New("output apply already pending")
 	}
@@ -23,6 +24,9 @@ func (a *OutputApply) RuntimeAdd(id uint64, name string, mode domain.OutputMode)
 	}
 	if mode.Width < 1 || mode.Width > domain.MaxOutputDim || mode.Height < 1 || mode.Height > domain.MaxOutputDim || mode.RefreshMilli < 0 {
 		return "", errors.New("invalid virtual output mode")
+	}
+	if edidID != "" && !domain.ValidEDIDID(edidID) {
+		return "", errors.New("invalid EDID identifier")
 	}
 	used := func(name string) bool {
 		for _, o := range a.state.Effective().Outputs {
@@ -53,7 +57,7 @@ func (a *OutputApply) RuntimeAdd(id uint64, name string, mode domain.OutputMode)
 		mode.RefreshMilli = domain.DefaultRefreshMilli
 	}
 	a.beginRuntime(id)
-	a.state.runtime = append(a.state.runtime, domain.OutputConfig{Name: name, Virtual: true, Mode: domain.FormatOutputMode(mode)})
+	a.state.runtime = append(a.state.runtime, domain.OutputConfig{Name: name, Virtual: true, Mode: domain.FormatOutputMode(mode), EDIDID: edidID})
 	a.setConfig(a.state.Effective())
 	a.due(a.state.Effective())
 	return name, nil

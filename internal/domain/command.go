@@ -59,7 +59,7 @@ type CommandSpec struct {
 }
 
 var commandCatalog = []CommandSpec{
-	{Name: "output-add", Arg: "MODE", Summary: "Add a runtime virtual output.", Kind: CommandAdmin, Caps: CapAdmin},
+	{Name: "output-add", Arg: "MODE", Summary: "Add a runtime virtual output, optionally with an EDID identity.", Kind: CommandAdmin, Caps: CapAdmin},
 	{Name: "output-rm", Arg: "NAME", Summary: "Remove a runtime virtual output.", Kind: CommandAdmin, Caps: CapAdmin},
 	{Name: "spawn-terminal", Summary: "Spawn terminal.", Kind: CommandAction, Caps: CapAct},
 	{Name: "focus-column-left", Summary: "Focus column left.", Kind: CommandAction, Caps: CapAct},

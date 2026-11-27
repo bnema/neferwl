@@ -2,16 +2,18 @@ package core
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/bnema/neferwl/internal/domain"
+	"github.com/bnema/neferwl/internal/ports"
 )
 
 func TestRuntimeVirtualTransactions(t *testing.T) {
 	file := domain.Config{Outputs: []domain.OutputConfig{{Name: "tv", Virtual: true, Mode: "640x480"}}}
 	a := NewOutputApply(NewOutputOverrides(file, true))
 	mode := domain.OutputMode{Width: 1280, Height: 720, RefreshMilli: 60000}
-	name, err := a.RuntimeAdd(10, "", mode)
+	name, err := a.RuntimeAdd(10, "", mode, "")
 	if err != nil || name != "HEADLESS-1" {
 		t.Fatalf("add %q %v", name, err)
 	}
@@ -60,7 +62,7 @@ func TestRuntimeVirtualTransactions(t *testing.T) {
 		t.Fatal(a.Virtuals())
 	}
 	// A failed addition restores the desired set too.
-	if _, err := a.RuntimeAdd(14, name, mode); err != nil {
+	if _, err := a.RuntimeAdd(14, name, mode, ""); err != nil {
 		t.Fatal(err)
 	}
 	a.Next()
@@ -69,5 +71,29 @@ func TestRuntimeVirtualTransactions(t *testing.T) {
 	a.Finished(nil)
 	if len(a.Virtuals()) != 1 {
 		t.Fatal(a.Virtuals())
+	}
+}
+
+// An EDID identity travels into the runtime desired set; an invalid one is
+// refused as a bad request and leaves the set unchanged.
+func TestRuntimeAddEDIDID(t *testing.T) {
+	a := NewOutputApply(NewOutputOverrides(domain.Config{}, true))
+	mode := domain.OutputMode{Width: 1280, Height: 720, RefreshMilli: 60000}
+	for _, bad := range []string{"a b", "a/b", strings.Repeat("a", 65)} {
+		_, err := a.RuntimeAdd(1, "ext", mode, bad)
+		if err == nil || RuntimeOutputCode(err) != ports.ControlErrBadRequest {
+			t.Fatalf("%q: %v", bad, err)
+		}
+		if len(a.Virtuals()) != 0 {
+			t.Fatalf("%q changed the desired set: %v", bad, a.Virtuals())
+		}
+	}
+	if _, err := a.RuntimeAdd(2, "ext", mode, "10ac0000aaaa0000011e"); err != nil {
+		t.Fatal(err)
+	}
+	a.Next()
+	a.Finished(nil)
+	if v := a.Virtuals(); len(v) != 1 || v[0].Name != "ext" || v[0].EDIDID != "10ac0000aaaa0000011e" {
+		t.Fatalf("virtuals %+v", v)
 	}
 }

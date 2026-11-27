@@ -9,6 +9,7 @@ import (
 
 	"github.com/bnema/neferwl/internal/core/layout"
 	"github.com/bnema/neferwl/internal/core/layout/layoutmocks"
+	"github.com/bnema/neferwl/internal/domain"
 )
 
 // Settings of a workspace that NewFrom copies from the template; every other
@@ -18,7 +19,7 @@ var workspaceFields = map[string]bool{ // true: setting
 	"ID": false, "Name": false, "OverviewAfter": false, "recent": false, "view": false,
 	"monitor": true, "reserved": true, "size": false, "border": true, "TabBar": true, "left": false,
 	"Floats": false, "floatFocus": false, "own": false, "lent": false,
-	"stashWidth": true, "stashGap": true, "stashOver": false, "Home": false, "HomePos": false, "TermAt": false,
+	"stashWidth": true, "stashGap": true, "stashOver": false, "HomePos": false, "Homes": false, "HomeSpec": false, "Stranded": false, "TermAt": false,
 	"colBuf": false, "rowBuf": false, "tileBuf": false, "zoomBuf": false,
 	"anchorBuf": false, "anchorCols": false, "snapBuf": false,
 }
@@ -62,7 +63,8 @@ func dirty(w *Workspace) {
 	w.recent = []WindowID{1, 2}
 	w.view.Off, w.st().view.Off, w.left = 3, 4, 3
 	w.size = [2]int{50, 50}
-	w.Name, w.Home, w.HomePos, w.TermAt = "dev", "HDMI-1", 2, time.Unix(1, 0)
+	w.Name, w.HomePos, w.TermAt = "dev", 2, time.Unix(1, 0)
+	w.Homes, w.HomeSpec, w.Stranded = []domain.MonitorRef{{Connector: "HDMI-1", EDIDID: "aa"}}, "HDMI-1", true
 	w.OverviewAfter = &Workspace{}
 	w.colBuf, w.rowBuf, w.tileBuf, w.zoomBuf = make([]Rect, 1), make([]Rect, 1), make([]Placement, 1), make([]Placement, 1)
 	w.anchorBuf, w.anchorCols, w.snapBuf = make([]Placement, 1), make([]visibleColumn, 1), make([]float64, 1)

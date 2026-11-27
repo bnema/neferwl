@@ -225,6 +225,7 @@ type request struct {
 	Stop       bool            `json:"stop"`
 	Name       string          `json:"name"`
 	Mode       string          `json:"mode"`
+	EDIDID     *string         `json:"edid_id"`
 	Outputs    []string        `json:"outputs"`
 	Inline     bool            `json:"inline"`
 	Raw        bool            `json:"raw"`
@@ -367,16 +368,28 @@ func (s *Server) dispatch(ctx context.Context, req request, out chan<- ports.Con
 	switch req.Op {
 	case "output-add", "output-rm":
 		mode := domain.OutputMode{}
+		edidID := ""
 		if req.Op == "output-add" {
 			var err error
 			mode, err = domain.ParseOutputMode(req.Mode)
 			if err != nil {
 				return response
 			}
+			if req.EDIDID != nil {
+				// Supplied means set: an empty or malformed identity is refused.
+				if !domain.ValidEDIDID(*req.EDIDID) {
+					response.Detail = "edid_id must be 1-64 characters of [0-9a-zA-Z._-]"
+					return response
+				}
+				edidID = *req.EDIDID
+			}
 		} else if req.Name == "" {
 			return response
+		} else if req.EDIDID != nil {
+			response.Detail = "edid_id applies to output-add only"
+			return response
 		}
-		message = ports.ControlOutput{Name: req.Name, Mode: mode, Remove: req.Op == "output-rm", Caps: domain.CapsAll, Reply: ch}
+		message = ports.ControlOutput{Name: req.Name, Mode: mode, EDIDID: edidID, Remove: req.Op == "output-rm", Caps: domain.CapsAll, Reply: ch}
 
 	case "do", "inject", "shot":
 		shots, err := requestShots(req)

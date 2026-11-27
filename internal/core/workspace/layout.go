@@ -69,12 +69,18 @@ type Workspace struct {
 	// (Activate); 0 without. Bound to that window,
 	// it ends with its cover. Focusing another window ends it too.
 	stashOver WindowID
-	// Home is the monitor (key or connector) the workspace belongs to; ""
-	// means the one it is on. On another monitor it is a guest; HomePos is
-	// its position there, where it returns.
-	Home string
 	// HomePos is the position to restore on the home monitor; core owns ordering.
 	HomePos int
+	// Homes are the monitors the workspace belongs to, most preferred first
+	// (at most 4); empty means the one it is on. On another monitor it is a
+	// guest and returns at HomePos.
+	Homes []domain.MonitorRef
+	// HomeSpec is the workspace.<name>.monitor config string (key or
+	// connector); it wins over Homes.
+	HomeSpec string
+	// Stranded marks a workspace kept by the placeholder when the last
+	// output left.
+	Stranded bool
 	// TermAt is when core last spawned a terminal for this workspace.
 	TermAt time.Time
 	// colBuf, rowBuf and tileBuf are appendLayout's scratch (column rects,
@@ -122,10 +128,10 @@ type Float struct {
 	// origin is the ID of the workspace the window was stashed from; 0
 	// once rehomed or unknown. Elsewhere, back does not apply (unstash).
 	origin uint64
-	// home is the Key of the unplugged monitor whose stash the window
-	// came from in output scope; it returns there on replug (TakeHome).
-	// Cleared once the window leaves the stash or moves.
-	home string
+	// home is the unplugged monitor whose stash the window came from in
+	// output scope; it returns there on replug (TakeHome). Zero means
+	// none; cleared once the window leaves the stash or moves.
+	home domain.MonitorRef
 	// free marks a window the user floated (toggle-floating) or dragged:
 	// core owns its size and its centre is at cx, cy, fractions of the
 	// usable area, so it keeps its place on any output.

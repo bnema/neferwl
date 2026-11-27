@@ -43,12 +43,12 @@ func TestHostLifecycle(t *testing.T) {
 			return second, nil
 		}
 		host := New(set, ch, cursors.New(nil, 0), factory, logging.For(ctx, "virtuals"))
-		want := []domain.OutputConfig{{Name: "tv", Virtual: true, Mode: "1920x1080"}}
+		want := []domain.OutputConfig{{Name: "tv", Virtual: true, Mode: "1920x1080", EDIDID: "10ac0000aaaa0000011e"}}
 		if err := host.Sync(ctx, want); err != nil {
 			t.Fatal(err)
 		}
 		added, ok := (<-events).(ports.OutputAdded)
-		if !ok || !added.Info.Virtual || added.Info.RefreshMilli != 60000 {
+		if !ok || !added.Info.Virtual || added.Info.RefreshMilli != 60000 || added.Info.EDIDID != "10ac0000aaaa0000011e" {
 			t.Fatalf("added=%+v", added)
 		}
 		caps, ok := (<-events).(ports.OutputHDRCaps)

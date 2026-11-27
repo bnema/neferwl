@@ -3,6 +3,8 @@ package drm
 import (
 	"bufio"
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"io"
 	"math"
@@ -14,9 +16,12 @@ import (
 // Monitor identifies the display attached to a connector.
 type Monitor struct {
 	Make, Model, Serial string
-	Chromaticity        Chromaticity
-	BitsPerColor        int // 0 when unspecified
-	HDR                 HDRMetadata
+	// EDIDID is hex of base-block bytes 8..17; EDIDHash is hex of the first
+	// 16 bytes of sha256(EDID). Both are empty without a valid EDID.
+	EDIDID, EDIDHash string
+	Chromaticity     Chromaticity
+	BitsPerColor     int // 0 when unspecified
+	HDR              HDRMetadata
 }
 
 // Chromaticity is the EDID base block's 10-bit CIE xy coordinates.
@@ -44,6 +49,9 @@ func parseEDID(d []byte) Monitor {
 	if len(d) < 128 || string(d[:8]) != "\x00\xff\xff\xff\xff\xff\xff\x00" {
 		return m
 	}
+	m.EDIDID = hex.EncodeToString(d[8:18])
+	sum := sha256.Sum256(d)
+	m.EDIDHash = hex.EncodeToString(sum[:16])
 	id := uint16(d[8])<<8 | uint16(d[9])
 	pnp := string([]byte{byte(id>>10&0x1f) + '@', byte(id>>5&0x1f) + '@', byte(id&0x1f) + '@'})
 	m.Make = pnpName(pnp)

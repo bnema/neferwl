@@ -231,19 +231,22 @@ func (c *Card) ConnectedHeads() ([]domain.OutputHead, error) {
 		if !conn.connected || conn.nonDesktop || len(conn.modes) == 0 {
 			continue
 		}
-		monitor := readMonitor(c.info.Path, conn.name)
-		h := domain.OutputHead{Info: domain.OutputInfo{Name: conn.name, Make: monitor.Make, Model: monitor.Model, Serial: monitor.Serial, PhysicalW: conn.mmW, PhysicalH: conn.mmH}}
-		if h.Info.Make == "Unknown" {
-			h.Info.Make = ""
-		}
-		if h.Info.Model == "Unknown" {
-			h.Info.Model = ""
-		}
+		var h domain.OutputHead
 		if o := c.outputs[conn.name]; o != nil {
+			// A running output read its EDID when it started.
 			h.Info = o.Info()
 			m := domain.OutputMode{Width: o.Width(), Height: o.Height(), RefreshMilli: o.mode.refreshMilli()}
 			h.Current = &m
 			h.Enabled = true
+		} else {
+			monitor := readMonitor(c.info.Path, conn.name)
+			h.Info = domain.OutputInfo{Name: conn.name, Make: monitor.Make, Model: monitor.Model, Serial: monitor.Serial, EDIDID: monitor.EDIDID, EDIDHash: monitor.EDIDHash, PhysicalW: conn.mmW, PhysicalH: conn.mmH}
+			if h.Info.Make == "Unknown" {
+				h.Info.Make = ""
+			}
+			if h.Info.Model == "Unknown" {
+				h.Info.Model = ""
+			}
 		}
 		for _, m := range conn.modes {
 			h.Modes = append(h.Modes, domain.OutputMode{Width: int(m.HDisplay), Height: int(m.VDisplay), RefreshMilli: m.refreshMilli(), Preferred: m.Type&modeTypePrefered != 0})
