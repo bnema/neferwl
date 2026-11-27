@@ -232,7 +232,7 @@ func (c *Card) ConnectedHeads() ([]domain.OutputHead, error) {
 			continue
 		}
 		monitor := readMonitor(c.info.Path, conn.name)
-		h := domain.OutputHead{Info: domain.OutputInfo{Name: conn.name, Make: monitor.Make, Model: monitor.Model, Serial: monitor.Serial, PhysicalW: conn.mmW, PhysicalH: conn.mmH}}
+		h := domain.OutputHead{Info: domain.OutputInfo{Name: conn.name, Make: monitor.Make, Model: monitor.Model, Serial: monitor.Serial, EDIDID: monitor.EDIDID, EDIDHash: monitor.EDIDHash, PhysicalW: conn.mmW, PhysicalH: conn.mmH}}
 		if h.Info.Make == "Unknown" {
 			h.Info.Make = ""
 		}
