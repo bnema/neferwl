@@ -249,3 +249,18 @@ func TestStashTakeHome(t *testing.T) {
 		}
 	})
 }
+
+// ClearHome forgets matching homes only, keeping order, selection and
+// visibility.
+func TestStashClearHome(t *testing.T) {
+	b := domain.MonitorRef{Connector: "B", EDIDID: "bb01"}
+	c := domain.MonitorRef{Connector: "C", EDIDID: "cc01"}
+	s := Stash{entries: []Float{{ID: 1, home: b}, {ID: 2}, {ID: 3, home: c}}, at: 2, hidden: true}
+	s.ClearHome(func(h domain.MonitorRef) bool { return h == b })
+	if s.entries[0].home != (domain.MonitorRef{}) || s.entries[2].home != c {
+		t.Fatalf("homes %+v", s.entries)
+	}
+	if s.at != 2 || !s.hidden || s.entries[0].ID != 1 || s.entries[2].ID != 3 {
+		t.Fatalf("state changed: %+v", s)
+	}
+}

@@ -360,6 +360,8 @@ func (c *Core) addScreen(info domain.OutputInfo) {
 	if len(c.screens) == 1 && c.screens[0].name() == "" {
 		s = c.screens[0]
 		s.info = info
+		// The home monitor came back first: its stash windows are home.
+		s.mon.stash.ClearHome(func(r domain.MonitorRef) bool { return c.resolveHome(r) == s })
 	} else {
 		s = &screen{info: info, mon: newMonitorWithIDs(info.Name, info.Key(), &c.nextWorkspaceID)}
 		c.resetRoutes(s)
@@ -438,6 +440,10 @@ func (c *Core) removeScreen(name string) {
 			}
 			for _, w := range gone.mon.hidden {
 				strand(w, gone, 0)
+			}
+			if c.cfg.Stash.Scope == domain.StashScopeOutput {
+				// Its windows return with it, whichever output comes first.
+				gone.mon.stash.TagHome(gone.info.Ref())
 			}
 		}
 		c.screens[0].info = domain.OutputInfo{}

@@ -256,3 +256,75 @@ func TestMoveWorkspaceLearnsHome(t *testing.T) {
 		}
 	})
 }
+
+func info(name, id string) domain.OutputInfo {
+	return domain.OutputInfo{Name: name, EDIDID: id, Width: 300, Height: 200}
+}
+
+// C5: output scope, the last physical output leaves with its stash; it
+// returns with that output whether another one or itself comes first.
+func TestLastOutputStashReturns(t *testing.T) {
+	for _, first := range []string{"other", "home"} {
+		t.Run(first, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				c := scopeCore(t, domain.StashScopeOutput, "B")
+				c.screens[0].info.EDIDID = "bb01"
+				b := c.screens[0].mon
+				b.AddWindow(3)
+				stashTile(b.Current(), 4)
+				c.lendStashes()
+				c.removeScreen("B")
+				c.lendStashes()
+				if first == "other" {
+					a := plugAs(c, domain.OutputInfo{Name: "A"})
+					b = plugAs(c, domain.OutputInfo{Name: "B", EDIDID: "bb01"})
+					if got := seenStash(b.Current()); !slices.Equal(got, []WindowID{4}) || b.Current().StashShown() {
+						t.Fatalf("b %v shown %t", got, b.Current().StashShown())
+					}
+					if a.Current().StashLen() != 0 {
+						t.Fatalf("a kept %v", seenStash(a.Current()))
+					}
+					return
+				}
+				b = plugAs(c, domain.OutputInfo{Name: "B", EDIDID: "bb01"})
+				if got := seenStash(b.Current()); !slices.Equal(got, []WindowID{4}) || !b.Current().StashShown() {
+					t.Fatalf("b %v shown %t", got, b.Current().StashShown())
+				}
+				// Home already: no tag is left, so nothing matches any monitor.
+				tagged := false
+				b.stash.ClearHome(func(domain.MonitorRef) bool { tagged = true; return false })
+				if tagged {
+					t.Fatal("stash window still tagged at home")
+				}
+			})
+		})
+	}
+}
+
+// C6: a pending fullscreen member returned into a stash already lent and
+// shown covers the lendee (same-connector identity change).
+func TestReturnedStashFullscreenCoversLendee(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		c, a := outputRigIdentified(t)
+		c.screens[1].mon.Current().SetFullscreen(5, true)
+		c.removeScreen("B")
+		c.lendStashes()
+		if w := a.Current(); w.Fullscreen != 5 {
+			t.Fatalf("setup: a fullscreen %d", w.Fullscreen)
+		}
+		b := plugAs(c, domain.OutputInfo{Name: "B", EDIDID: "cc01"})
+		stashTile(b.Current(), 6)
+		c.lendStashes()
+		if !b.Current().StashShown() || c.screens[c.screenIndex("B")].mon.lendee == nil {
+			t.Fatal("setup: b stash not lent and shown")
+		}
+		b = plugAs(c, domain.OutputInfo{Name: "B", EDIDID: "bb01", EDIDHash: "h1"})
+		w := b.Current()
+		if got := seenStash(w); !slices.Equal(got, []WindowID{6, 4, 5}) {
+			t.Fatalf("b stash %v", got)
+		}
+		if w.Fullscreen != 5 {
+			t.Fatalf("lendee fullscreen %d, want 5", w.Fullscreen)
+		}
+	})
+}

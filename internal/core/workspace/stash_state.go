@@ -197,10 +197,11 @@ func (s *Stash) TagHome(ref domain.MonitorRef) {
 // home cleared, and keeps the selection of s on the same window, else the
 // nearest one. A pending fullscreen moves with its window. An empty dst
 // that receives windows starts hidden: they return without covering the
-// screen. Rare (replug): it may allocate.
-func (s *Stash) TakeHome(dst *Stash, matches func(home domain.MonitorRef) bool) {
+// screen. It reports whether any window moved. Rare (replug): it may
+// allocate.
+func (s *Stash) TakeHome(dst *Stash, matches func(home domain.MonitorRef) bool) bool {
 	if s == dst {
-		return
+		return false
 	}
 	empty := len(dst.entries) == 0
 	var sel WindowID
@@ -223,7 +224,7 @@ func (s *Stash) TakeHome(dst *Stash, matches func(home domain.MonitorRef) bool) 
 	clear(s.entries[len(kept):])
 	s.entries = kept
 	if !moved {
-		return
+		return false
 	}
 	at := slices.IndexFunc(kept, func(f Float) bool { return f.ID == sel })
 	if at < 0 {
@@ -235,5 +236,16 @@ func (s *Stash) TakeHome(dst *Stash, matches func(home domain.MonitorRef) bool) 
 	}
 	if empty {
 		dst.at, dst.hidden, dst.focus = 0, true, false
+	}
+	return true
+}
+
+// ClearHome forgets the home of the windows of s whose home matches: they
+// are home already. Order, selection and visibility are unchanged.
+func (s *Stash) ClearHome(matches func(home domain.MonitorRef) bool) {
+	for i := range s.entries {
+		if h := s.entries[i].home; h != (domain.MonitorRef{}) && matches(h) {
+			s.entries[i].home = domain.MonitorRef{}
+		}
 	}
 }
