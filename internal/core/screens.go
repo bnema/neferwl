@@ -164,7 +164,7 @@ func (c *Core) order() {
 		if cfg, ok := c.outputConfig(s.name()); ok {
 			items[i].pos, items[i].anchor = cfg.Pos, cfg.Anchor
 		}
-		s.isolated = !c.opts.PlaceVirtuals && s.info.Virtual && items[i].pos == nil && items[i].anchor.Relation == domain.RelationNone
+		s.isolated = !c.opts.PlaceVirtuals && !s.info.Physical() && items[i].pos == nil && items[i].anchor.Relation == domain.RelationNone
 		items[i].isolated = s.isolated
 	}
 	for i, p := range placeOutputs(items) {
@@ -338,12 +338,18 @@ func (c *Core) applyOutputConfig() {
 func (c *Core) addScreen(info domain.OutputInfo) {
 	if i := c.screenIndex(info.Name); i >= 0 {
 		s := c.screens[i]
+		changed := s.info.Ref() != info.Ref()
 		s.info = info
 		c.noteTwins(s)
 		if s.mon.Key != info.Key() {
 			// Another monitor on the same connector: key rules change.
 			s.mon.Key = info.Key()
 			c.settings(s)
+		}
+		if changed {
+			// Another identity on the same connector: its stash windows
+			// may come back.
+			c.returnStash(s)
 		}
 		s.transform = c.configTransform(info.Name)
 		s.setScale(s.scale)
@@ -401,11 +407,11 @@ func (c *Core) removeScreen(name string) {
 		return
 	}
 	gone := c.screens[i]
-	if gone.info.Virtual {
+	if !gone.info.Physical() {
 		for _, s := range c.screens {
 			for w := range s.mon.all() {
-				if s == gone || gone.mon.matches(w.Home) {
-					w.Home, w.HomePos = "", 0
+				if s == gone || c.homeOf(w) == gone {
+					w.Homes, w.HomeSpec, w.HomePos = nil, "", 0
 				}
 			}
 		}
@@ -439,6 +445,12 @@ func (c *Core) removeScreen(name string) {
 		c.dropSwipe()
 		c.swipe = nil
 	}
+	// A workspace at home on gone returns to the same position.
+	for pos, w := range gone.mon.Workspaces {
+		if len(w.Homes) > 0 && c.homeOf(w) == gone {
+			w.HomePos = pos
+		}
+	}
 	focused := c.cur()
 	c.screens = slices.Delete(c.screens, i, i+1)
 	c.focusScreen = slices.Index(c.screens, focused)
@@ -450,7 +462,7 @@ func (c *Core) removeScreen(name string) {
 	host := c.cur()
 	// The gone monitor's stash joins the host's; its lendee gives it back.
 	unlend(&gone.mon.lendee)
-	if c.cfg.Stash.Scope == domain.StashScopeOutput && !gone.info.Virtual {
+	if c.cfg.Stash.Scope == domain.StashScopeOutput && gone.info.Physical() {
 		// Its windows return with it (addScreen).
 		gone.mon.stash.TagHome(gone.info.Key())
 	}
@@ -467,23 +479,21 @@ func (c *Core) removeScreen(name string) {
 		if w.Empty() && w.Name == "" {
 			continue
 		}
-		switch {
-		case host.mon.matches(w.Home):
+		if home, idx := c.homeIndex(w); home == host {
 			// A guest from the host goes home.
-			w.Home = ""
-			host.mon.adopt(w, false, w.HomePos)
+			homePos := w.HomePos
+			arrive(w, host, idx)
+			host.mon.adopt(w, false, homePos)
 			continue
-		case w.Home == "" && !gone.info.Virtual:
-			w.Home, w.HomePos = gone.info.Key(), pos
 		}
+		tagHome(w, gone, pos)
 		host.mon.adopt(w, false, len(host.mon.Workspaces))
 	}
 	for _, w := range gone.mon.hidden {
-		switch {
-		case host.mon.matches(w.Home):
-			w.Home = ""
-		case w.Home == "" && !gone.info.Virtual:
-			w.Home = gone.info.Key()
+		if home, idx := c.homeIndex(w); home == host {
+			arrive(w, host, idx)
+		} else {
+			tagHome(w, gone, 0)
 		}
 		host.mon.adopt(w, true, 0)
 	}
@@ -506,7 +516,7 @@ func (c *Core) settleGuests() {
 				continue
 			}
 			for w := range host.mon.all() {
-				if home.mon.matches(w.Home) && host.mon.Current() != w {
+				if host.mon.Current() != w && c.homeOf(w) == home {
 					list = append(list, guest{w: w, anchor: w.OverviewAfter, host: host.mon, hidden: host.mon.isHidden(w)})
 				}
 			}
@@ -521,8 +531,10 @@ func (c *Core) settleGuests() {
 		// its first returning workspace instead.
 		idle := home.mon.Current().Empty() && home.mon.Current().Name == ""
 		for _, g := range list {
-			g.w.Home = ""
-			home.mon.adopt(g.w, g.hidden, g.w.HomePos)
+			homePos := g.w.HomePos
+			_, idx := c.homeIndex(g.w)
+			arrive(g.w, home, idx)
+			home.mon.adopt(g.w, g.hidden, homePos)
 			if idle && !g.hidden {
 				home.mon.show(g.w)
 				idle = false
@@ -565,9 +577,9 @@ func (c *Core) named() {
 	}
 	for _, spec := range c.specs {
 		s, w := c.byName(spec.Name)
-		w.Home = ""
+		w.HomeSpec = ""
 		if spec.Monitor != "" && !s.mon.matches(spec.Monitor) {
-			w.Home = spec.Monitor
+			w.HomeSpec = spec.Monitor
 		}
 	}
 }
@@ -601,12 +613,15 @@ func (c *Core) bringNamed(name string) bool {
 }
 
 // moveNamed moves the named workspace w from src to dst, without changing
-// what dst shows. home is its new w.home: a guest keeps waiting for its
-// home; any other forgets the output it was unplugged from.
+// what dst shows. home is its new w.HomeSpec: a guest keeps waiting for its
+// home; any other forgets the output it was unplugged from (Homes).
 func moveNamed(src, dst *screen, w *Workspace, home string) {
 	hidden := src.mon.isHidden(w)
 	src.mon.take(w)
-	w.Home = home
+	w.HomeSpec = home
+	if home == "" {
+		w.Homes = nil
+	}
 	dst.mon.adopt(w, hidden, len(dst.mon.Workspaces))
 }
 
@@ -719,8 +734,14 @@ func (c *Core) moveWorkspace(d direction) {
 	}
 	hidden := from.mon.isHidden(w)
 	from.mon.take(w)
-	w.Home = ""
 	dst := c.screens[to]
+	w.HomeSpec = ""
+	if dst.info.Physical() {
+		pushHome(w, dst.info.Ref())
+	} else {
+		w.Homes = nil
+	}
+	w.Stranded = false
 	dst.mon.adopt(w, hidden, len(dst.mon.Workspaces))
 	dst.mon.show(w)
 	c.focusScreen = to

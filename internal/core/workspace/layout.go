@@ -69,14 +69,11 @@ type Workspace struct {
 	// (Activate); 0 without. Bound to that window,
 	// it ends with its cover. Focusing another window ends it too.
 	stashOver WindowID
-	// Home is the monitor (key or connector) the workspace belongs to; ""
-	// means the one it is on. On another monitor it is a guest; HomePos is
-	// its position there, where it returns.
-	Home string
 	// HomePos is the position to restore on the home monitor; core owns ordering.
 	HomePos int
 	// Homes are the monitors the workspace belongs to, most preferred first
-	// (at most 4); empty means the one it is on.
+	// (at most 4); empty means the one it is on. On another monitor it is a
+	// guest and returns at HomePos.
 	Homes []domain.MonitorRef
 	// HomeSpec is the workspace.<name>.monitor config string (key or
 	// connector); it wins over Homes.

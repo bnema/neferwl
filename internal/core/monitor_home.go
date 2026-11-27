@@ -93,20 +93,60 @@ func (c *Core) resolveHome(r domain.MonitorRef) *screen {
 // homeOf is the screen w belongs to: the one HomeSpec matches, else the first
 // of Homes that resolves. Nil means w belongs where it is.
 func (c *Core) homeOf(w *Workspace) *screen {
+	s, _ := c.homeIndex(w)
+	return s
+}
+
+// homeIndex is homeOf with the index of the matched ref in w.Homes, -1 when
+// HomeSpec matched or nothing did.
+func (c *Core) homeIndex(w *Workspace) (*screen, int) {
 	if w.HomeSpec != "" {
 		for _, s := range c.screens {
 			if s.mon.matches(w.HomeSpec) {
-				return s
+				return s, -1
 			}
 		}
-		return nil
+		return nil, -1
 	}
-	for _, r := range w.Homes {
+	for i, r := range w.Homes {
 		if s := c.resolveHome(r); s != nil {
-			return s
+			return s, i
 		}
 	}
-	return nil
+	return nil, -1
+}
+
+// arrive records that w reached its home s through Homes[idx]: that ref
+// takes s's current identity, so the connector fallback follows a monitor
+// replugged elsewhere. idx < 0 means HomeSpec matched: the config home is
+// reached and cleared, until named() sets it again. HomePos is consumed.
+func arrive(w *Workspace, s *screen, idx int) {
+	if idx < 0 {
+		w.HomeSpec = ""
+	} else {
+		ref := s.info.Ref()
+		w.Homes[idx] = ref
+		// Keep Homes deduplicated: drop other entries now naming the same.
+		kept := w.Homes[:0]
+		for i, h := range w.Homes {
+			if i == idx || h.Connector != ref.Connector || h.EDIDID != ref.EDIDID {
+				kept = append(kept, h)
+			}
+		}
+		clear(w.Homes[len(kept):])
+		w.Homes = kept
+	}
+	w.HomePos = 0
+}
+
+// tagHome remembers the physical screen gone as home of w, at pos, unless w
+// already has a home (Homes or HomeSpec); an unnamed empty workspace has none.
+func tagHome(w *Workspace, gone *screen, pos int) {
+	if !gone.info.Physical() || len(w.Homes) > 0 || w.HomeSpec != "" || (w.Empty() && w.Name == "") {
+		return
+	}
+	w.Homes = append(w.Homes[:0], gone.info.Ref())
+	w.HomePos = pos
 }
 
 // pushHome makes ref w's most preferred home, dropping an older entry for the
