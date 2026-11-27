@@ -181,7 +181,9 @@ func (s *Server) addOutput(p domain.OutputPlacement) {
 		return
 	}
 	s.syncXOutput(o)
-	s.log.Info().Str("output", p.Info.Name).Str("make", p.Info.Make).Str("model", p.Info.Model).Str("serial", p.Info.Serial).Str("edid_id", p.Info.EDIDID).Int("x", p.X).Int("y", p.Y).Int("w", p.Width).Int("h", p.Height).Float64("scale", p.Scale).Msg("output added")
+	s.log.Info().Str("output", p.Info.Name).Str("make", p.Info.Make).Str("model", p.Info.Model).Int("x", p.X).Int("y", p.Y).Int("w", p.Width).Int("h", p.Height).Float64("scale", p.Scale).Msg("output added")
+	// Serial and EDID identity name one physical monitor: --debug=wayland only.
+	s.log.Debug().Str("output", p.Info.Name).Str("serial", p.Info.Serial).Str("edid_id", p.Info.EDIDID).Msg("output identity")
 }
 
 // publicOutputOrigin translates client-visible coordinates without moving the

@@ -29,3 +29,24 @@ func TestSetOutputsLogsPlacementChange(t *testing.T) {
 		t.Fatalf("unchanged layout logged: %s", out.String())
 	}
 }
+
+// A monitor's serial and EDID identity are logged only at debug level.
+func TestOutputAddedLogsIdentityAtDebugOnly(t *testing.T) {
+	for _, level := range []string{"info", "debug"} {
+		t.Run(level, func(t *testing.T) {
+			var out lockedBuffer
+			log := zerowrap.New(zerowrap.Config{Level: level, Format: "json", Output: &out}).WithField("component", "wayland")
+			h := newAdmissionHarnessWith(t, 1, Options{}, log)
+			p := domain.OutputPlacement{Info: domain.OutputInfo{Name: "DP-9", Make: "Dell", Model: "U27", Serial: "SN123", EDIDID: "10ac0000aaaa0000011e", Width: 2, Height: 2}, X: 2, Width: 2, Height: 2, Scale: 1}
+			h.s.display.Do(func() { h.s.addOutput(p) })
+			got := out.String()
+			if !strings.Contains(got, `"output":"DP-9","make":"Dell","model":"U27"`) {
+				t.Fatalf("output added without make/model: %s", got)
+			}
+			identity := strings.Contains(got, `"serial":"SN123"`) && strings.Contains(got, `"edid_id":"10ac0000aaaa0000011e"`)
+			if identity != (level == "debug") {
+				t.Fatalf("identity logged=%t at %s: %s", identity, level, got)
+			}
+		})
+	}
+}
