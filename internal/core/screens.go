@@ -609,16 +609,30 @@ func (c *Core) settleBucket(bucket []guestMove, focused *screen) {
 		g.host.mon.take(g.w)
 	}
 	idle := home.mon.Current().Empty() && home.mon.Current().Name == ""
+	// One workspace is shown: the one the focused host showed, else the
+	// first one shown elsewhere (bucket order), else, on an idle home, the
+	// first numbered one.
+	var show *Workspace
 	follow := false
+	for _, g := range bucket {
+		switch {
+		case !g.onScreen || follow:
+		case g.host == focused:
+			show, follow = g.w, true
+		case show == nil:
+			show = g.w
+		}
+	}
 	for _, g := range bucket {
 		homePos := g.w.HomePos
 		arrive(g.w, home, g.idx)
 		home.mon.adopt(g.w, g.hidden, homePos)
-		if g.onScreen || idle && !g.hidden {
-			home.mon.show(g.w)
-			idle = false
+		if show == nil && idle && !g.hidden {
+			show = g.w
 		}
-		follow = follow || g.onScreen && g.host == focused
+	}
+	if show != nil {
+		home.mon.show(show)
 	}
 	if follow {
 		c.focusScreen = slices.Index(c.screens, home)
@@ -659,9 +673,16 @@ func (c *Core) named() {
 	}
 	for _, spec := range c.specs {
 		s, w := c.byName(spec.Name)
-		w.HomeSpec = ""
-		if spec.Monitor != "" && !s.mon.matches(spec.Monitor) {
+		switch {
+		case spec.Monitor == "":
+			w.HomeSpec = ""
+		case !s.mon.matches(spec.Monitor):
 			w.HomeSpec = spec.Monitor
+		case w.HomeSpec != "":
+			// Its holder is its configured home: it arrived in place, and the
+			// config stays authoritative over homes learned before.
+			w.HomeSpec = ""
+			forgetHome(w)
 		}
 	}
 }

@@ -102,6 +102,15 @@ func TestNamedWorkspaceReturnsToItsMonitor(t *testing.T) {
 			t.Fatalf("web on the external: %v", got)
 		}
 		r.key(t, "Left", domain.ModAlt|domain.ModCtrl)
+		var webID uint64
+		for _, w := range stateAfter(t, r.state, func(domain.State) bool { return true }).Workspaces {
+			if w.Name == "web" {
+				webID = w.ID
+			}
+		}
+		if webID == 0 {
+			t.Fatal("setup: no web workspace in state")
+		}
 		r.output <- ports.OutputRemoved{Name: "DP-5"}
 		receive(t, r.scenes)
 		r.plug(t, extB)
@@ -112,13 +121,20 @@ func TestNamedWorkspaceReturnsToItsMonitor(t *testing.T) {
 				web = append(web, w)
 			}
 		}
-		if len(web) != 1 || web[0].Output != "DP-7" {
-			t.Fatalf("web workspaces %+v, want one on DP-7", web)
+		if len(web) != 1 || web[0].Output != "DP-7" || web[0].ID != webID {
+			t.Fatalf("web workspaces %+v, want one on DP-7 with ID %d", web, webID)
 		}
+		fives := 0
 		for _, w := range st.Windows {
-			if w.ID == 5 && (w.WorkspaceName != "web" || w.Output != "DP-7") {
-				t.Fatalf("window 5 on %s/%q, want web on DP-7", w.Output, w.WorkspaceName)
+			if w.ID == 5 {
+				fives++
+				if w.WorkspaceID != webID || w.Output != "DP-7" {
+					t.Fatalf("window 5 on %s in workspace %d, want web %d on DP-7", w.Output, w.WorkspaceID, webID)
+				}
 			}
+		}
+		if fives != 1 {
+			t.Fatalf("window 5 listed %d times", fives)
 		}
 	})
 }

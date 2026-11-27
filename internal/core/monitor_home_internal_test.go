@@ -1,6 +1,7 @@
 package core
 
 import (
+	"fmt"
 	"slices"
 	"testing"
 	"testing/synctest"
@@ -536,6 +537,156 @@ func TestSettleGuestsNoMoveDoesNotAllocate(t *testing.T) {
 		}
 		if s, _ := c.screenOf(1); s != c.screens[0] {
 			t.Fatal("shown guest moved")
+		}
+	})
+}
+
+// namedCore is a core with one named workspace web configured on monitor.
+func namedCore(t *testing.T, monitor string) *Core {
+	t.Helper()
+	var cfg domain.Config
+	cfg.Keyboard.CmdKey = "alt"
+	cfg.Layout.MaxColumns = 2
+	cfg.Workspaces = []domain.WorkspaceConfig{{Name: "web", Monitor: monitor}}
+	c, err := New(cfg, Channels{Scenes: make(chan []domain.Scene, 1)}, testOptions(t, Options{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c
+}
+
+// R1: web arrives in place on its configured B (the placeholder held it):
+// an older learned home A must not pull it away when A comes back.
+func TestNamedInPlaceArrivalForgetsLearnedHome(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		c := namedCore(t, "B")
+		a, b, other := info("A", "aa01"), info("B", "bb01"), info("C", "cc01")
+		c.addScreen(b)
+		c.addScreen(a)
+		s, w := c.byName("web")
+		if s.name() != "B" {
+			t.Fatalf("setup: web on %s", s.name())
+		}
+		w.AddWindow(1)
+		c.focusScreen = c.screenIndex("B")
+		s.mon.show(w)
+		c.moveWorkspace(dirRight) // explicit, onto A (right of B): learns A
+		if s, _ := c.byName("web"); s.name() != "A" || len(w.Homes) == 0 || w.Homes[0].Connector != "A" {
+			t.Fatalf("setup: web on %s homes %v", s.name(), w.Homes)
+		}
+		c.removeScreen("B")
+		c.addScreen(other) // named() runs: web's config home is B again
+		if w.HomeSpec != "B" {
+			t.Fatalf("spec %q", w.HomeSpec)
+		}
+		c.removeScreen("A")
+		c.removeScreen("C") // the placeholder keeps web
+		c.addScreen(b)      // B first: web arrives in place
+		c.settleGuests()
+		c.addScreen(a)
+		c.settleGuests()
+		if s, _ := c.byName("web"); s.name() != "B" {
+			t.Fatalf("web on %s, want its configured B", s.name())
+		}
+		if len(w.Homes) != 0 || w.HomeSpec != "" {
+			t.Fatalf("homes %v spec %q", w.Homes, w.HomeSpec)
+		}
+	})
+}
+
+// R2: two shown stranded guests share home E; the one the focused host
+// showed is the one shown on E.
+func TestSettleShowsFocusedHostsGuest(t *testing.T) {
+	for _, order := range [][2]int{{0, 1}, {1, 0}} {
+		t.Run(fmt.Sprint(order), func(t *testing.T) { settleShowsFocusedHostsGuest(t, order) })
+	}
+}
+
+func settleShowsFocusedHostsGuest(t *testing.T, order [2]int) {
+	synctest.Test(t, func(t *testing.T) {
+		e := info("E", "ee01")
+		c := homeCore(t, info("A", "aa01"), info("B", "bb01"), e)
+		ga, gb := workspace(), workspace()
+		ga.AddWindow(1)
+		gb.AddWindow(2)
+		for _, g := range []*Workspace{ga, gb} {
+			g.Homes, g.Stranded = []domain.MonitorRef{e.Ref()}, true
+		}
+		sa, sb := c.screens[c.screenIndex("A")], c.screens[c.screenIndex("B")]
+		// The focused host's guest wins whatever the bucket order.
+		ga.HomePos, gb.HomePos = order[0], order[1]
+		sa.mon.adopt(ga, true, 0)
+		sb.mon.adopt(gb, true, 0)
+		sa.mon.show(ga)
+		sb.mon.show(gb)
+		c.focusScreen = c.screenIndex("A")
+		c.settleGuests()
+		se := c.screens[c.screenIndex("E")]
+		if se.mon.Current() != ga {
+			t.Fatalf("E shows %v, want the focused host's guest", se.mon.Current().ID)
+		}
+		if c.cur() != se {
+			t.Fatalf("focus on %s, want E", c.cur().name())
+		}
+		if !se.mon.has(gb) {
+			t.Fatal("other guest not adopted by E")
+		}
+	})
+}
+
+// R4: a shown named workspace and its numbered overview anchor return
+// together to their home replugged on another connector: each exactly once,
+// the anchor kept.
+func TestShownNamedReturnsWithItsAnchor(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		c := namedCore(t, "")
+		ext := info("DP-5", "bb01")
+		c.addScreen(ext)
+		s, web := c.byName("web")
+		num := s.mon.Workspaces[0]
+		num.AddWindow(1)
+		web.AddWindow(2)
+		s.mon.normalize()
+		web.OverviewAfter = num
+		s.mon.show(web)
+		c.removeScreen("DP-5") // last output: both stranded
+		c.addScreen(info("eDP-1", "aa01"))
+		c.settleGuests()
+		c.addScreen(info("DP-7", "bb01")) // home back, another connector
+		c.settleGuests()
+		home := c.screens[c.screenIndex("DP-7")]
+		count := func(w *Workspace) (n int) {
+			for _, s := range c.screens {
+				for x := range s.mon.all() {
+					if x == w {
+						n++
+					}
+				}
+			}
+			return n
+		}
+		if count(web) != 1 || count(num) != 1 || !home.mon.has(web) || !home.mon.has(num) {
+			t.Fatalf("web %d num %d on home %t/%t", count(web), count(num), home.mon.has(web), home.mon.has(num))
+		}
+		if web.OverviewAfter != num {
+			t.Fatal("anchor lost")
+		}
+		if home.mon.Current() != web {
+			t.Fatal("shown named workspace not shown on its home")
+		}
+	})
+}
+
+// R5: the last virtual output leaving forgets a stranded flag too.
+func TestLastVirtualRemovalClearsStranded(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		c := homeCore(t, domain.OutputInfo{Name: "tv", Virtual: true})
+		w := c.cur().mon.Current()
+		w.AddWindow(1)
+		w.Homes, w.HomePos, w.Stranded = []domain.MonitorRef{{Connector: "tv"}}, 3, true
+		c.removeScreen("tv")
+		if len(w.Homes) != 0 || w.HomePos != 0 || w.Stranded {
+			t.Fatalf("homes %v pos %d stranded %t", w.Homes, w.HomePos, w.Stranded)
 		}
 	})
 }
