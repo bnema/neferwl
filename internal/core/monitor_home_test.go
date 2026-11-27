@@ -80,20 +80,11 @@ func TestReplugOfAnotherMonitorOnSameConnectorKeepsWorkspace(t *testing.T) {
 			t.Fatalf("replug: %v", got)
 		}
 		// The guest waits on the laptop, its stash hidden.
-		set := r.key2(t)
+		set := r.keyNum(t, 2)
 		if got := shown(set); !slices.Equal(got["eDP-1"], []domain.WindowID{2}) {
 			t.Fatalf("guest on the laptop: %v", got)
 		}
 	})
-}
-
-// key2 presses Cmd+2 (workspace 2) with its keycode.
-func (r *multiRig) key2(t *testing.T) []domain.Scene {
-	t.Helper()
-	r.input <- ports.KeyEvent{Keysym: "2", Keycode: 3, Mods: domain.ModAlt, Pressed: true}
-	set := receive(t, r.scenes)
-	r.input <- ports.KeyEvent{Keysym: "2", Keycode: 3, Mods: domain.ModAlt}
-	return set
 }
 
 // A named workspace without a configured monitor returns to the monitor it
@@ -115,9 +106,18 @@ func TestNamedWorkspaceReturnsToItsMonitor(t *testing.T) {
 		receive(t, r.scenes)
 		r.plug(t, extB)
 		st := stateAfter(t, r.state, func(st domain.State) bool { return len(st.Outputs) == 2 })
+		var web []domain.WorkspaceState
 		for _, w := range st.Workspaces {
-			if w.Name == "web" && w.Output != "DP-7" {
-				t.Fatalf("web on %s, want DP-7", w.Output)
+			if w.Name == "web" {
+				web = append(web, w)
+			}
+		}
+		if len(web) != 1 || web[0].Output != "DP-7" {
+			t.Fatalf("web workspaces %+v, want one on DP-7", web)
+		}
+		for _, w := range st.Windows {
+			if w.ID == 5 && (w.WorkspaceName != "web" || w.Output != "DP-7") {
+				t.Fatalf("window 5 on %s/%q, want web on DP-7", w.Output, w.WorkspaceName)
 			}
 		}
 	})
@@ -204,7 +204,7 @@ func TestStrandedReturnKeepsNativeLaptopWorkspace(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := lidClosed(t)
 		r.plug(t, laptop)
-		r.key2(t)
+		r.keyNum(t, 2)
 		if got := shown(r.mapWindow(t, 4)); !slices.Equal(got["eDP-1"], []domain.WindowID{4}) {
 			t.Fatalf("laptop: %v", got)
 		}
@@ -235,9 +235,7 @@ func TestStrandedClearedWhenHomeReturnsFirst(t *testing.T) {
 		r.output <- ports.OutputRemoved{Name: "DP-5"}
 		receive(t, r.scenes)
 		// The laptop's only workspace was empty: the guest is workspace 1.
-		r.input <- ports.KeyEvent{Keysym: "1", Keycode: 2, Mods: domain.ModAlt, Pressed: true}
-		got := shown(receive(t, r.scenes))
-		r.input <- ports.KeyEvent{Keysym: "1", Keycode: 2, Mods: domain.ModAlt}
+		got := shown(r.keyNum(t, 1))
 		if !slices.Equal(got["eDP-1"], []domain.WindowID{2}) {
 			t.Fatalf("guest shown: %v", got)
 		}
@@ -245,7 +243,7 @@ func TestStrandedClearedWhenHomeReturnsFirst(t *testing.T) {
 		if !slices.Equal(got["eDP-1"], []domain.WindowID{2}) || len(got["DP-5"]) != 0 {
 			t.Fatalf("shown guest moved: %v", got)
 		}
-		if got := shown(r.key2(t)); !slices.Equal(got["DP-5"], []domain.WindowID{2}) || slices.Contains(got["eDP-1"], 2) {
+		if got := shown(r.keyNum(t, 2)); !slices.Equal(got["DP-5"], []domain.WindowID{2}) || slices.Contains(got["eDP-1"], 2) {
 			t.Fatalf("left guest: %v", got)
 		}
 	})
