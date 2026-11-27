@@ -18,12 +18,17 @@ var outputCmd = Command{Name: "output", Args: "add MODE [--name NAME] [--edid-id
 		if len(positional) != 2 || (positional[0] != "add" && positional[0] != "rm") {
 			return usagef("expected output add MODE or output rm NAME")
 		}
+		edidSet := false
+		fs.Visit(func(f *flag.Flag) { edidSet = edidSet || f.Name == "edid-id" })
 		req := map[string]any{}
 		if positional[0] == "add" {
 			req["op"], req["mode"], req["name"] = "output-add", positional[1], *name
-			if *edidID != "" {
+			if edidSet {
+				// Sent as given, even empty: the compositor validates it.
 				req["edid_id"] = *edidID
 			}
+		} else if edidSet {
+			return usagef("--edid-id applies to output add only")
 		} else {
 			req["op"], req["name"] = "output-rm", positional[1]
 		}
