@@ -224,3 +224,35 @@ func TestVirtualLastOutputStrandsNothing(t *testing.T) {
 		}
 	})
 }
+
+// moveWorkspace learns a physical destination as the preferred home and
+// forgets homes on a virtual one.
+func TestMoveWorkspaceLearnsHome(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		t1 := domain.OutputInfo{Name: "DP-1", EDIDID: "dd01", EDIDHash: "h"}
+		virt := domain.OutputInfo{Name: "HEADLESS-2", Virtual: true}
+		c := homeCore(t, domain.OutputInfo{Name: "eDP-1"}, t1, virt)
+		c.opts.PlaceVirtuals = true
+		c.order()
+		c.focusScreen = c.screenIndex("eDP-1")
+		w := c.cur().mon.Current()
+		w.AddWindow(1)
+		old := domain.MonitorRef{Connector: "DP-9", EDIDID: "ee01"}
+		w.Homes, w.Stranded = []domain.MonitorRef{old}, true
+		c.moveWorkspace(dirRight)
+		if c.cur().name() != "DP-1" {
+			t.Fatalf("moved to %s, want DP-1", c.cur().name())
+		}
+		t1.Width, t1.Height = 300, 200
+		if want := []domain.MonitorRef{t1.Ref(), old}; !slices.Equal(w.Homes, want) || w.Stranded {
+			t.Fatalf("homes %v stranded %t, want %v", w.Homes, w.Stranded, want)
+		}
+		c.moveWorkspace(dirRight)
+		if c.cur().name() != "HEADLESS-2" {
+			t.Fatalf("moved to %s, want HEADLESS-2", c.cur().name())
+		}
+		if len(w.Homes) != 0 {
+			t.Fatalf("homes %v on a virtual output", w.Homes)
+		}
+	})
+}

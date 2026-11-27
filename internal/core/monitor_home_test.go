@@ -250,3 +250,70 @@ func TestStrandedClearedWhenHomeReturnsFirst(t *testing.T) {
 		}
 	})
 }
+
+// windowOutput is the output holding window id in the latest state.
+func windowOutput(t *testing.T, r *multiRig, id domain.WindowID) string {
+	t.Helper()
+	st := stateAfter(t, r.state, func(domain.State) bool { return true })
+	for _, w := range st.Windows {
+		if w.ID == id {
+			return w.Output
+		}
+	}
+	t.Fatalf("window %d not in state", id)
+	return ""
+}
+
+// keyNum presses Cmd+n with its keycode.
+func (r *multiRig) keyNum(t *testing.T, n int) []domain.Scene {
+	t.Helper()
+	sym, code := string(rune('0'+n)), uint32(n+1)
+	r.input <- ports.KeyEvent{Keysym: sym, Keycode: code, Mods: domain.ModAlt, Pressed: true}
+	set := receive(t, r.scenes)
+	r.input <- ports.KeyEvent{Keysym: sym, Keycode: code, Mods: domain.ModAlt}
+	return set
+}
+
+// A workspace moved to one of two identical monitors remembers that twin:
+// unplugging it never sends the workspace to the other twin, another
+// connector does not take it, and its own connector does (AC4).
+func TestMovedWorkspaceRemembersItsTwin(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		t1 := domain.OutputInfo{Name: "DP-1", EDIDID: "dd01", EDIDHash: "h", Width: 400, Height: 200}
+		t2 := t1
+		t2.Name = "DP-2"
+		r := startMulti(t, nil, laptop, t1, t2)
+		r.mapWindow(t, 1)
+		r.key(t, "Right", domain.ModAlt|domain.ModCtrl)
+		r.mapWindow(t, 2)
+		if got := shown(r.key(t, "Right", domain.ModAlt|domain.ModCtrl|domain.ModShift)); !slices.Equal(got["DP-2"], []domain.WindowID{2}) || len(got["DP-1"]) != 0 {
+			t.Fatalf("moved to t2: %v", got)
+		}
+		r.key(t, "Left", domain.ModAlt|domain.ModCtrl)
+		r.key(t, "Left", domain.ModAlt|domain.ModCtrl)
+		r.output <- ports.OutputRemoved{Name: "DP-2"}
+		receive(t, r.scenes)
+		// Show the guest, then leave it: the settle must not pick twin t1.
+		if got := shown(r.keyNum(t, 2)); !slices.Equal(got["eDP-1"], []domain.WindowID{2}) {
+			t.Fatalf("guest: %v", got)
+		}
+		if got := shown(r.keyNum(t, 1)); len(got["DP-1"]) != 0 {
+			t.Fatalf("guest went to the other twin: %v", got)
+		}
+		if out := windowOutput(t, r, 2); out != "eDP-1" {
+			t.Fatalf("window 2 on %s, want eDP-1", out)
+		}
+		// The same fingerprint on another connector is ambiguous: it stays.
+		if got := shown(r.plug(t, func() domain.OutputInfo { o := t1; o.Name = "DP-3"; return o }())); len(got["DP-3"]) != 0 {
+			t.Fatalf("DP-3 took the guest: %v", got)
+		}
+		if out := windowOutput(t, r, 2); out != "eDP-1" {
+			t.Fatalf("window 2 on %s, want eDP-1", out)
+		}
+		r.output <- ports.OutputRemoved{Name: "DP-3"}
+		receive(t, r.scenes)
+		if got := shown(r.plug(t, t2)); !slices.Equal(got["DP-2"], []domain.WindowID{2}) {
+			t.Fatalf("t2 back: %v", got)
+		}
+	})
+}
