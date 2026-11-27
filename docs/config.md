@@ -321,6 +321,13 @@ output.DP-2.offset = 360    # DP-2 starts 360 px lower than DP-1
 
 `offset` moves down for `right-of`/`left-of`, and right for `above`/`below`. kanshi, wdisplays and wlr-randr override these settings until the next reload.
 
+### Unplugging monitors
+
+- The workspaces of an unplugged monitor move to the focused one. They return when it is plugged in again, on any port: the monitor is recognized by its EDID.
+- A returning workspace you are looking at stays until you leave it. When every screen was off, it returns right away and the focus follows it.
+- Identical monitors without a serial are told apart by their port. If that fails, the workspace stays where it is until you move it with `move-workspace-to-monitor`, which it then remembers.
+- These homes last for the session.
+
 ## GPUs
 
 `drm.devices`, `drm.ignore` and `render.device` take these identifiers:
