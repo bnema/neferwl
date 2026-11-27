@@ -225,6 +225,7 @@ type request struct {
 	Stop       bool            `json:"stop"`
 	Name       string          `json:"name"`
 	Mode       string          `json:"mode"`
+	EDIDID     string          `json:"edid_id"`
 	Outputs    []string        `json:"outputs"`
 	Inline     bool            `json:"inline"`
 	Raw        bool            `json:"raw"`
@@ -376,7 +377,7 @@ func (s *Server) dispatch(ctx context.Context, req request, out chan<- ports.Con
 		} else if req.Name == "" {
 			return response
 		}
-		message = ports.ControlOutput{Name: req.Name, Mode: mode, Remove: req.Op == "output-rm", Caps: domain.CapsAll, Reply: ch}
+		message = ports.ControlOutput{Name: req.Name, Mode: mode, EDIDID: req.EDIDID, Remove: req.Op == "output-rm", Caps: domain.CapsAll, Reply: ch}
 
 	case "do", "inject", "shot":
 		shots, err := requestShots(req)

@@ -112,8 +112,10 @@ func (ControlCapture) controlRequest() {}
 
 // ControlOutput changes the runtime-only virtual output desired set.
 type ControlOutput struct {
-	Name   string
-	Mode   domain.OutputMode
+	Name string
+	Mode domain.OutputMode
+	// EDIDID is the monitor identity of an added output; "" for none.
+	EDIDID string
 	Remove bool
 	Caps   domain.Caps
 	Reply  chan<- ControlReply

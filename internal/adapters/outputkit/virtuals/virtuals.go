@@ -63,7 +63,7 @@ func (h *Host) Sync(ctx context.Context, want []domain.OutputConfig) error {
 	}
 	for _, cfg := range want {
 		mode := modes[cfg.Name]
-		info := domain.OutputInfo{Name: cfg.Name, Virtual: true, Width: mode.Width, Height: mode.Height, RefreshMilli: mode.RefreshMilli}
+		info := domain.OutputInfo{Name: cfg.Name, Virtual: true, EDIDID: cfg.EDIDID, Width: mode.Width, Height: mode.Height, RefreshMilli: mode.RefreshMilli}
 		current := h.outputs[cfg.Name]
 		if current != nil {
 			select {

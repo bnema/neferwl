@@ -38,7 +38,7 @@ keep `v: 1`; clients ignore unknown fields.
 | `query` | `what`: `"state"` | `read` |
 | `shot` | `outputs`, `inline`, `raw`, `timeout` | `capture` |
 | `shot` (continuous) | `every_frame` or `stop`, `outputs`, `dir`, `raw` | `capture` |
-| `output-add` | `mode` (`WxH[@Hz]`), optional `name` | `admin` |
+| `output-add` | `mode` (`WxH[@Hz]`), optional `name` and `edid_id` (1–64 of `[0-9a-zA-Z._-]`) | `admin` |
 | `output-rm` | `name` | `admin` |
 
 Wait fields, on `do` and `inject`:

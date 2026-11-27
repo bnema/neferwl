@@ -5,8 +5,10 @@ import "github.com/bnema/neferwl/internal/domain"
 // OutputRuntimeRequest transfers a desired-set change to the backend owner.
 // Reply must have capacity one; completion follows reconciliation.
 type OutputRuntimeRequest struct {
-	Name   string
-	Mode   domain.OutputMode
+	Name string
+	Mode domain.OutputMode
+	// EDIDID is the monitor identity of an added output; "" for none.
+	EDIDID string
 	Remove bool
 	Wake   chan<- struct{}
 	Reply  chan<- OutputRuntimeResult

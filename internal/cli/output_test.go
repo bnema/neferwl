@@ -9,10 +9,14 @@ import (
 
 func TestOutputCommands(t *testing.T) {
 	for _, tc := range []struct {
-		args     []string
-		op, name string
-	}{{[]string{"output", "add", "1920x1080@60", "--name", "X"}, "output-add", "X"}, {[]string{"output", "rm", "X"}, "output-rm", "X"}} {
-		t.Run(tc.op, func(t *testing.T) {
+		test, op, name, id string
+		args               []string
+	}{
+		{"add", "output-add", "X", "", []string{"output", "add", "1920x1080@60", "--name", "X"}},
+		{"add with identity", "output-add", "X", "aa01", []string{"output", "add", "1920x1080@60", "--name", "X", "--edid-id", "aa01"}},
+		{"rm", "output-rm", "X", "", []string{"output", "rm", "X"}},
+	} {
+		t.Run(tc.test, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "control.sock")
 			listener, err := net.Listen("unix", path)
 			if err != nil {
@@ -33,7 +37,8 @@ func TestOutputCommands(t *testing.T) {
 					done <- err
 					return
 				}
-				if req["op"] != tc.op || req["name"] != tc.name {
+				id, sent := req["edid_id"]
+				if req["op"] != tc.op || req["name"] != tc.name || sent != (tc.id != "") || (sent && id != tc.id) {
 					t.Error(req)
 				}
 				done <- json.NewEncoder(conn).Encode(map[string]any{"id": req["id"], "ok": true})

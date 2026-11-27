@@ -24,7 +24,7 @@ func (c *Core) controlOutput(ctx context.Context, r ports.ControlOutput) error {
 		c.runtimeWake = make(chan struct{}, 1)
 	}
 	result := make(chan ports.OutputRuntimeResult, 1)
-	request := ports.OutputRuntimeRequest{Name: r.Name, Mode: r.Mode, Remove: r.Remove, Reply: result, Wake: c.runtimeWake}
+	request := ports.OutputRuntimeRequest{Name: r.Name, Mode: r.Mode, EDIDID: r.EDIDID, Remove: r.Remove, Reply: result, Wake: c.runtimeWake}
 	select {
 	case c.ch.RuntimeOutputs <- request:
 		c.outputWaits = append(c.outputWaits, outputWait{before: c.state(), runtime: result, remove: r.Remove, reply: r.Reply, deadline: c.now().Add(runtimeOutputTimeout)})

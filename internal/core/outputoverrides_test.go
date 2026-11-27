@@ -206,7 +206,7 @@ func TestRuntimeAddedOutputOverridesKeepMode(t *testing.T) {
 			state := NewOutputOverrides(domain.Config{}, true)
 			a := NewOutputApply(state)
 			mode := domain.OutputMode{Width: 1280, Height: 720, RefreshMilli: 60000}
-			name, err := a.RuntimeAdd(1, "", mode)
+			name, err := a.RuntimeAdd(1, "", mode, "")
 			if err != nil {
 				t.Fatal(err)
 			}

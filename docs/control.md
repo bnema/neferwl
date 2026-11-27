@@ -191,7 +191,8 @@ neferwl -s demo output rm side
 ```
 
 An added output lasts until `output rm` or the end of the session. The reply
-comes once the state lists or drops it.
+comes once the state lists or drops it. `--edid-id ID` gives the output a
+monitor identity, so it behaves like a replugged physical monitor.
 
 ## Security
 
