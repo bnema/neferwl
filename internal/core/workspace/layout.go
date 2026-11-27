@@ -128,10 +128,10 @@ type Float struct {
 	// origin is the ID of the workspace the window was stashed from; 0
 	// once rehomed or unknown. Elsewhere, back does not apply (unstash).
 	origin uint64
-	// home is the Key of the unplugged monitor whose stash the window
-	// came from in output scope; it returns there on replug (TakeHome).
-	// Cleared once the window leaves the stash or moves.
-	home string
+	// home is the unplugged monitor whose stash the window came from in
+	// output scope; it returns there on replug (TakeHome). Zero means
+	// none; cleared once the window leaves the stash or moves.
+	home domain.MonitorRef
 	// free marks a window the user floated (toggle-floating) or dragged:
 	// core owns its size and its centre is at cx, cy, fractions of the
 	// usable area, so it keeps its place on any output.

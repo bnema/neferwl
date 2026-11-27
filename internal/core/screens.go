@@ -464,7 +464,7 @@ func (c *Core) removeScreen(name string) {
 	unlend(&gone.mon.lendee)
 	if c.cfg.Stash.Scope == domain.StashScopeOutput && gone.info.Physical() {
 		// Its windows return with it (addScreen).
-		gone.mon.stash.TagHome(gone.info.Key())
+		gone.mon.stash.TagHome(gone.info.Ref())
 	}
 	host.mon.stash.Absorb(&gone.mon.stash, false)
 	if l := host.mon.lendee; l != nil {

@@ -3,6 +3,8 @@ package workspace
 import (
 	"slices"
 	"testing"
+
+	"github.com/bnema/neferwl/internal/domain"
 )
 
 func lendWorkspace(id uint64, windows ...WindowID) *Workspace {
@@ -224,9 +226,10 @@ func TestLendShownOverCover(t *testing.T) {
 // window (else the nearest), moves a pending fullscreen and returns them
 // hidden.
 func TestStashTakeHome(t *testing.T) {
-	home := func(h string) bool { return h == "B" }
+	b := domain.MonitorRef{Connector: "B", EDIDID: "bb01"}
+	home := func(h domain.MonitorRef) bool { return h == b }
 	mk := func(at int) Stash {
-		return Stash{entries: []Float{{ID: 1}, {ID: 4, home: "B"}, {ID: 2}, {ID: 5, home: "B"}}, at: at, fullscreen: 5}
+		return Stash{entries: []Float{{ID: 1}, {ID: 4, home: b}, {ID: 2}, {ID: 5, home: b}}, at: at, fullscreen: 5}
 	}
 	t.Run("selection kept", func(t *testing.T) {
 		s, dst := mk(2), Stash{}
@@ -234,7 +237,7 @@ func TestStashTakeHome(t *testing.T) {
 		if s.Len() != 2 || s.entries[s.at].ID != 2 || s.fullscreen != 0 {
 			t.Fatalf("s %+v", s)
 		}
-		if dst.Len() != 2 || dst.entries[0].ID != 4 || dst.entries[1].ID != 5 || dst.entries[0].home != "" || !dst.hidden || dst.fullscreen != 5 {
+		if dst.Len() != 2 || dst.entries[0].ID != 4 || dst.entries[1].ID != 5 || dst.entries[0].home != (domain.MonitorRef{}) || !dst.hidden || dst.fullscreen != 5 {
 			t.Fatalf("dst %+v", dst)
 		}
 	})

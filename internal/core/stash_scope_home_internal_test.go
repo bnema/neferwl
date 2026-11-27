@@ -114,3 +114,66 @@ func TestStashScopeReloadWorkspaceGlobalOrder(t *testing.T) {
 		}
 	})
 }
+
+// outputRigIdentified is outputRig with B identified by EDID bb01.
+func outputRigIdentified(t *testing.T) (*Core, *Monitor) {
+	t.Helper()
+	c, a := outputRig(t, false)
+	c.screens[1].info.EDIDID, c.screens[1].info.EDIDHash = "bb01", "h1"
+	return c, a
+}
+
+func plugAs(c *Core, info domain.OutputInfo) *Monitor {
+	info.Width, info.Height = 300, 200
+	c.addScreen(info)
+	c.lendStashes()
+	return c.screens[c.screenIndex(info.Name)].mon
+}
+
+// B replugged on another connector is recognized by its EDID identifier: its
+// stash windows return there, hidden (AC7).
+func TestOutputStashReturnsOnAnotherConnector(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		c, a := outputRigIdentified(t)
+		c.removeScreen("B")
+		c.lendStashes()
+		b := plugAs(c, domain.OutputInfo{Name: "C", EDIDID: "bb01", EDIDHash: "h1"})
+		if got := seenStash(a.Current()); !slices.Equal(got, []WindowID{2}) {
+			t.Fatalf("a %v", got)
+		}
+		if got := seenStash(b.Current()); !slices.Equal(got, []WindowID{4, 5}) || b.Current().StashShown() {
+			t.Fatalf("c %v shown %t", got, b.Current().StashShown())
+		}
+	})
+}
+
+// Another known monitor on B's connector takes nothing.
+func TestOutputStashStaysForAnotherMonitor(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		c, a := outputRigIdentified(t)
+		c.removeScreen("B")
+		c.lendStashes()
+		b := plugAs(c, domain.OutputInfo{Name: "B", EDIDID: "cc01"})
+		if got := seenStash(a.Current()); !slices.Equal(got, []WindowID{2, 4, 5}) || b.Current().StashLen() != 0 {
+			t.Fatalf("a %v b %v", got, seenStash(b.Current()))
+		}
+	})
+}
+
+// A monitor that shows up on a connector already held by another identity
+// (same-connector path of addScreen) gets its stash back.
+func TestOutputStashReturnsWhenConnectorIdentityChanges(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		c, a := outputRigIdentified(t)
+		c.removeScreen("B")
+		c.lendStashes()
+		plugAs(c, domain.OutputInfo{Name: "B", EDIDID: "cc01"})
+		b := plugAs(c, domain.OutputInfo{Name: "B", EDIDID: "bb01", EDIDHash: "h1"})
+		if got := seenStash(a.Current()); !slices.Equal(got, []WindowID{2}) {
+			t.Fatalf("a %v", got)
+		}
+		if got := seenStash(b.Current()); !slices.Equal(got, []WindowID{4, 5}) {
+			t.Fatalf("b %v", got)
+		}
+	})
+}

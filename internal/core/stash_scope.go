@@ -208,6 +208,6 @@ func (c *Core) returnStash(s *screen) {
 			continue
 		}
 		unlend(&o.mon.lendee)
-		o.mon.stash.TakeHome(&s.mon.stash, s.mon.matches)
+		o.mon.stash.TakeHome(&s.mon.stash, func(r domain.MonitorRef) bool { return c.resolveHome(r) == s })
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"slices"
 
 	"github.com/bnema/neferwl/internal/core/motion"
+	"github.com/bnema/neferwl/internal/domain"
 )
 
 // Stash is the state of a stash: the windows set aside by
@@ -183,11 +184,11 @@ func (w *Workspace) detachStash(s *Stash) {
 }
 
 // TagHome marks every window of s without a home as coming from the
-// monitor key.
-func (s *Stash) TagHome(key string) {
+// monitor ref.
+func (s *Stash) TagHome(ref domain.MonitorRef) {
 	for i := range s.entries {
-		if s.entries[i].home == "" {
-			s.entries[i].home = key
+		if s.entries[i].home == (domain.MonitorRef{}) {
+			s.entries[i].home = ref
 		}
 	}
 }
@@ -197,7 +198,7 @@ func (s *Stash) TagHome(key string) {
 // nearest one. A pending fullscreen moves with its window. An empty dst
 // that receives windows starts hidden: they return without covering the
 // screen. Rare (replug): it may allocate.
-func (s *Stash) TakeHome(dst *Stash, matches func(home string) bool) {
+func (s *Stash) TakeHome(dst *Stash, matches func(home domain.MonitorRef) bool) {
 	if s == dst {
 		return
 	}
@@ -208,11 +209,11 @@ func (s *Stash) TakeHome(dst *Stash, matches func(home string) bool) {
 	}
 	kept, moved := s.entries[:0], false
 	for _, f := range s.entries {
-		if f.home == "" || !matches(f.home) {
+		if f.home == (domain.MonitorRef{}) || !matches(f.home) {
 			kept = append(kept, f)
 			continue
 		}
-		f.home = ""
+		f.home = domain.MonitorRef{}
 		if f.ID == s.fullscreen {
 			dst.fullscreen, s.fullscreen = f.ID, 0
 		}
